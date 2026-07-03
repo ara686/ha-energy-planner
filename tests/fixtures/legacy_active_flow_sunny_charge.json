@@ -1,0 +1,86 @@
+{
+  "description": "Sanitized parity case derived from the active Node-RED Energy Prediction 2 flow. This fixture intentionally contains no Node-RED code.",
+  "legacy_source": {
+    "flow_label": "Energy Prediction 2",
+    "active_calculation_node": "Kompletace a vypocet (charge)",
+    "ignored_sources": [
+      "backup nodes",
+      "dated archive nodes",
+      "disconnected branches"
+    ]
+  },
+  "home_assistant": {
+    "battery_soc_percent": 50,
+    "battery_capacity_kwh": 10,
+    "battery_min_soc_percent": 20,
+    "legacy_effective_min_soc_percent": 21,
+    "history_correction_percent": 0
+  },
+  "planner_input": {
+    "now": "2026-07-03T12:00:00",
+    "forecast_horizon_hours": 24,
+    "interval_minutes": 5,
+    "consumption_kwh_per_hour": 1.0,
+    "solar_hourly_kwh": [
+      {"hour": 0, "solar_kwh": 0.0},
+      {"hour": 1, "solar_kwh": 0.0},
+      {"hour": 2, "solar_kwh": 0.0},
+      {"hour": 3, "solar_kwh": 0.0},
+      {"hour": 4, "solar_kwh": 0.0},
+      {"hour": 5, "solar_kwh": 0.0},
+      {"hour": 6, "solar_kwh": 0.4},
+      {"hour": 7, "solar_kwh": 0.4},
+      {"hour": 8, "solar_kwh": 0.4},
+      {"hour": 9, "solar_kwh": 1.2},
+      {"hour": 10, "solar_kwh": 1.2},
+      {"hour": 11, "solar_kwh": 1.2},
+      {"hour": 12, "solar_kwh": 2.4},
+      {"hour": 13, "solar_kwh": 2.4},
+      {"hour": 14, "solar_kwh": 2.4},
+      {"hour": 15, "solar_kwh": 2.4},
+      {"hour": 16, "solar_kwh": 0.8},
+      {"hour": 17, "solar_kwh": 0.8},
+      {"hour": 18, "solar_kwh": 0.8},
+      {"hour": 19, "solar_kwh": 0.0},
+      {"hour": 20, "solar_kwh": 0.0},
+      {"hour": 21, "solar_kwh": 0.0},
+      {"hour": 22, "solar_kwh": 0.0},
+      {"hour": 23, "solar_kwh": 0.0}
+    ],
+    "nt_windows": [
+      {"start": "17:00", "end": "19:00"},
+      {"start": "22:00", "end": "04:00"}
+    ],
+    "charge_window": {"start": "22:00", "end": "04:00"},
+    "grid_charge_max_kw": 5.5,
+    "grid_charge_efficiency": 0.92,
+    "soc_reserve_percent": 1,
+    "soc_eps_kwh": 0.02,
+    "sun_start_required_minutes": 30
+  },
+  "expected_active_flow": {
+    "lock_soc": 90,
+    "charge_to_soc": 90,
+    "target_soc": 90,
+    "safe_discharge_soc": 21,
+    "free_capacity_soc": 29,
+    "free_capacity_kwh": 2.9,
+    "unused_surplus_kwh": 0.6,
+    "unused_surplus_kwh_total": 0.6,
+    "first_full_time": "2026-07-03T15:30:00",
+    "vt_grid_import_kwh_at_target": 0,
+    "charged_kwh_total_at_target": 2.6,
+    "soc_at_planner_start": 64,
+    "kwh_at_planner_start": 6.4,
+    "planner_start": "2026-07-03T22:00:00",
+    "lock_start": "2026-07-03T17:00:00",
+    "sun_start": "2026-07-04T09:00:00",
+    "soc_at_lock_start": 98,
+    "kwh_at_lock_start": 9.8,
+    "vt_peak_deficit_kwh_from_lock_start": 6.8
+  },
+  "known_differences": [
+    "The active Node-RED flow adds 1 percentage point to the HA minimum SoC before using it as the physical floor. The fixture passes that effective value into the pure planner.",
+    "The active Node-RED forecast includes an extra subslot at the exact horizon timestamp. The pure planner projects the final completed interval state to +24h instead."
+  ]
+}

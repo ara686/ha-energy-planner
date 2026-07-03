@@ -1,0 +1,13 @@
+.DS_Store
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+uv.lock
+nodered_export.json
+.coverage
+htmlcov/
+build/
+dist/

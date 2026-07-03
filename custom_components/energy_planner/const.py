@@ -1,0 +1,42 @@
+DOMAIN = "energy_planner"
+
+DEFAULT_NAME = "Energy Planner"
+
+CONF_BATTERY_SOC_ENTITY = "battery_soc_entity"
+CONF_BATTERY_CAPACITY_ENTITY = "battery_capacity_entity"
+CONF_BATTERY_MIN_SOC_ENTITY = "battery_min_soc_entity"
+CONF_HOME_ENERGY_HOURLY_ENTITY = "home_energy_hourly_entity"
+CONF_MANAGED_ENERGY_HOURLY_ENTITY = "managed_energy_hourly_entity"
+CONF_SOLCAST_TODAY_ENTITY = "solcast_today_entity"
+CONF_SOLCAST_TOMORROW_ENTITY = "solcast_tomorrow_entity"
+CONF_PRICE_ENTITY = "price_entity"
+
+CONF_INTERVAL_MINUTES = "interval_minutes"
+CONF_HISTORY_CORRECTION_PERCENT = "history_correction_percent"
+CONF_MIN_BASELINE_KWH_PER_HOUR = "min_baseline_kwh_per_hour"
+CONF_GRID_CHARGE_MAX_KW = "grid_charge_max_kw"
+CONF_GRID_CHARGE_EFFICIENCY = "grid_charge_efficiency"
+CONF_SOC_RESERVE_PERCENT = "soc_reserve_percent"
+CONF_SOC_EPS_KWH = "soc_eps_kwh"
+CONF_NT_WINDOWS = "nt_windows"
+CONF_CHARGE_WINDOW = "charge_window"
+CONF_SUN_START_REQUIRED_MINUTES = "sun_start_required_minutes"
+CONF_FORECAST_HORIZON_HOURS = "forecast_horizon_hours"
+
+DEFAULT_INTERVAL_MINUTES = 5
+DEFAULT_HISTORY_RETENTION_DAYS = 30
+DEFAULT_HISTORY_LEARNING_DAYS = 3
+DEFAULT_HISTORY_CORRECTION_PERCENT = 5
+DEFAULT_MIN_BASELINE_KWH_PER_HOUR = 0.2
+DEFAULT_GRID_CHARGE_MAX_KW = 5.5
+DEFAULT_GRID_CHARGE_EFFICIENCY = 0.92
+DEFAULT_SOC_RESERVE_PERCENT = 1
+DEFAULT_SOC_EPS_KWH = 0.02
+DEFAULT_SUN_START_REQUIRED_MINUTES = 30
+DEFAULT_FORECAST_HORIZON_HOURS = 36
+
+DEFAULT_NT_WINDOWS = [
+    {"start": "17:00", "end": "19:00"},
+    {"start": "22:00", "end": "04:00"},
+]
+DEFAULT_CHARGE_WINDOW = {"start": "22:00", "end": "04:00"}

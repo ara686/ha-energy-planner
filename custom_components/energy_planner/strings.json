@@ -1,0 +1,112 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Energy Planner",
+        "description": "Configure the energy planner input entities.",
+        "data": {
+          "battery_soc_entity": "Battery SoC entity",
+          "battery_capacity_entity": "Battery capacity entity",
+          "battery_min_soc_entity": "Battery minimum SoC entity",
+          "home_energy_hourly_entity": "Home hourly energy entity",
+          "managed_energy_hourly_entity": "Managed hourly energy entity",
+          "solcast_today_entity": "Solcast today entity",
+          "solcast_tomorrow_entity": "Solcast tomorrow entity",
+          "price_entity": "Price / tariff entity"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Energy Planner options",
+        "description": "Configure planner behavior.",
+        "data": {
+          "interval_minutes": "Planning interval in minutes",
+          "min_baseline_kwh_per_hour": "Minimum baseline kWh per hour",
+          "grid_charge_max_kw": "Grid charge max kW",
+          "grid_charge_efficiency": "Grid charge efficiency",
+          "soc_reserve_percent": "SoC reserve percent",
+          "soc_eps_kwh": "SoC epsilon kWh",
+          "nt_windows": "NT windows",
+          "charge_window": "Charge window",
+          "sun_start_required_minutes": "Sun start required minutes",
+          "forecast_horizon_hours": "Forecast horizon hours"
+        }
+      }
+    },
+    "error": {
+      "interval_minutes": "Planning interval must divide 60.",
+      "forecast_horizon_hours": "Forecast horizon must be at least 24 hours.",
+      "grid_charge_efficiency": "Grid charge efficiency must be greater than 0 and at most 1.",
+      "window": "Time window must use HH:MM-HH:MM format.",
+      "windows": "Windows must contain at least one valid HH:MM-HH:MM window.",
+      "invalid_options": "Options are invalid."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "State"
+      },
+      "lock_soc": {
+        "name": "Lock SoC"
+      },
+      "charge_to_soc": {
+        "name": "Charge to SoC"
+      },
+      "target_soc": {
+        "name": "Target SoC"
+      },
+      "safe_discharge_soc": {
+        "name": "Safe discharge SoC"
+      },
+      "free_capacity_soc": {
+        "name": "Free capacity SoC"
+      },
+      "free_capacity_kwh": {
+        "name": "Free capacity"
+      },
+      "unused_surplus_today_kwh": {
+        "name": "Unused surplus today"
+      },
+      "unused_surplus_total_kwh": {
+        "name": "Unused surplus total"
+      },
+      "first_full_time": {
+        "name": "First full time"
+      },
+      "vt_grid_import_kwh_at_target": {
+        "name": "VT grid import at target"
+      },
+      "charged_kwh_total_at_target": {
+        "name": "Charged total at target"
+      },
+      "soc_at_planner_start": {
+        "name": "SoC at planner start"
+      },
+      "soc_at_lock_start": {
+        "name": "SoC at lock start"
+      },
+      "soc_forecast": {
+        "name": "SoC forecast"
+      },
+      "soc_forecast_24h": {
+        "name": "SoC forecast 24h"
+      },
+      "sun_start": {
+        "name": "Sun start"
+      },
+      "lock_start": {
+        "name": "Lock start"
+      },
+      "updated": {
+        "name": "Updated"
+      },
+      "history_status": {
+        "name": "History status"
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Energy Planner",
+        "description": "Nastavení vstupních entit pro energetický plánovač."
+      }
+    }
+  }
+}
