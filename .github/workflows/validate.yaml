@@ -50,8 +50,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dev dependencies
-        run: python -m pip install --upgrade pip ".[dev]"
+      - name: Install Home Assistant test dependencies
+        run: python -m pip install --upgrade pip ".[dev,ha]"
 
       - name: Ruff check
         run: ruff check .
@@ -60,4 +60,4 @@ jobs:
         run: ruff format --check .
 
       - name: Pytest
-        run: pytest
+        run: pytest -q

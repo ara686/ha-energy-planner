@@ -54,6 +54,7 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
         super().__init__(
             hass,
             logger=_LOGGER,
+            config_entry=entry,
             name=DOMAIN,
             update_interval=timedelta(
                 minutes=_option(entry, CONF_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES)

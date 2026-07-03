@@ -57,6 +57,10 @@ current HACS publishing requirements. Release candidates must pass local tests,
 linting, Hassfest and HACS validation before being merged from `develop` to
 `main` or published as a GitHub release.
 
+The repository tracks the practical checklist in `docs/quality_gate.md` instead
+of claiming an official Home Assistant quality tier before the integration has
+enough production coverage and release history.
+
 Reason:
 - avoid custom-integration patterns that Home Assistant is actively deprecating
 - keep the repository installable and updatable through HACS

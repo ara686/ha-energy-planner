@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
+
+from homeassistant.exceptions import ServiceValidationError
 
 from .const import DOMAIN
 
@@ -16,11 +18,19 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up Energy Planner services."""
 
+    def _loaded_coordinators() -> list[Any]:
+        coordinators = [
+            coordinator
+            for entry in hass.config_entries.async_entries(DOMAIN)
+            if (coordinator := getattr(entry, "runtime_data", None)) is not None
+        ]
+        if not coordinators:
+            raise ServiceValidationError("No loaded Energy Planner config entry found")
+        return coordinators
+
     async def _handle_recalculate(call) -> None:
-        for entry in hass.config_entries.async_entries(DOMAIN):
-            coordinator = getattr(entry, "runtime_data", None)
-            if coordinator is not None:
-                await coordinator.async_request_refresh()
+        for coordinator in _loaded_coordinators():
+            await coordinator.async_request_refresh()
 
     async def _handle_export_debug(call) -> None:
         payload = {
@@ -29,6 +39,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             if getattr(entry, "runtime_data", None) is not None
             and getattr(entry.runtime_data, "data", None) is not None
         }
+        if not payload:
+            _loaded_coordinators()
         _LOGGER.info("Energy Planner debug export: %s", payload)
         hass.bus.async_fire(f"{DOMAIN}_debug_exported", payload)
 

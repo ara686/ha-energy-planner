@@ -155,14 +155,14 @@ Main state sensor:
 sensor.energy_planner_state:
   state: ok | warning | error | insufficient_data
   attributes:
-    plan: {}
-    forecast: {}
-    soc_forecast: {}
-    inputs: {}
-    history: {}
     warnings: []
-    debug: {}
+    slot_count: 0
+    history_status: unknown
 ```
+
+Large plan, forecast and debug payloads belong in diagnostics, the
+`energy_planner.export_debug` service event or dedicated forecast sensors, not in
+regular state attributes.
 
 SoC forecast sensors:
 

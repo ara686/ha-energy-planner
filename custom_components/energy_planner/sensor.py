@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -36,10 +36,9 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         icon="mdi:calculator-variant",
         value_fn=lambda result: result.state,
         attr_fn=lambda result: {
-            "plan": result.plan,
-            "forecast": result.forecast,
             "warnings": result.warnings,
-            "debug": result.debug,
+            "slot_count": result.debug.get("slot_count"),
+            "history_status": result.forecast.get("history_status", "unknown"),
         },
         always_available=True,
     ),
@@ -118,7 +117,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         translation_key="vt_grid_import_kwh_at_target",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=SensorStateClass.TOTAL,
         value_fn=lambda result: result.plan.get("vt_grid_import_kwh_at_target"),
     ),
     EnergyPlannerSensorDescription(
@@ -194,7 +193,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Energy Planner sensors."""
     coordinator: EnergyPlannerCoordinator = entry.runtime_data
