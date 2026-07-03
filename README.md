@@ -129,6 +129,23 @@ Runtime behavior is changed through the Options Flow: planning interval, history
 correction, baseline load, grid charge limits, NT windows, charge window and
 forecast horizon.
 
+Open Settings > Devices & services > Energy Planner > Configure to change these
+values.
+
+| UI field | Key | Default | Accepted value | Description |
+|----------|-----|---------|----------------|-------------|
+| Planning interval in minutes | `interval_minutes` | `5` | Positive number that divides 60 exactly. | Time step used for the planner simulation and forecast slots. Common values are `5`, `10`, `15`, `30` or `60`. |
+| History correction percent | `history_correction_percent` | `5.0` | Greater than `-100` and at most `500`. | Extra percentage applied after the hourly consumption profile is calculated. Use this to match or tune the legacy Node-RED `history_correction` behavior. |
+| Minimum baseline consumption in kWh per hour | `min_baseline_kwh_per_hour` | `0.2` | `0` or higher. | Fallback hourly home consumption when the target hour has no usable history sample. |
+| Maximum grid charging power in kW | `grid_charge_max_kw` | `5.5` | `0` or higher. | Maximum power the simulation may use when planning grid charging during the charge window. |
+| Grid charging efficiency | `grid_charge_efficiency` | `0.92` | Greater than `0` and at most `1`. | Battery charging efficiency used when converting grid energy into stored battery energy. |
+| SoC reserve percent | `soc_reserve_percent` | `1` | From `0` to `100`. | Extra SoC margin added to calculated lock/target values. |
+| SoC tolerance in kWh | `soc_eps_kwh` | `0.02` | `0` or higher. | Small battery-energy tolerance used by the planner to avoid unstable decisions around exact thresholds. |
+| Low-tariff windows | `nt_windows` | `17:00-19:00,22:00-04:00` | One or more `HH:MM-HH:MM` windows separated by commas. | Windows where low/high tariff protection is evaluated. Windows may cross midnight. |
+| Charging window | `charge_window` | `22:00-04:00` | One `HH:MM-HH:MM` window. | Window where simulated grid charging may be planned. The window may cross midnight. |
+| Minimum solar start duration in minutes | `sun_start_required_minutes` | `30` | Greater than `0`. | Minimum continuous forecasted solar period before the planner treats solar production as started. |
+| Forecast horizon in hours | `forecast_horizon_hours` | `36` | At least `24`. | Future horizon used for SoC forecast and planning. Longer horizons require matching future Solcast data. |
+
 ## Output entities
 
 Energy Planner creates sensor entities only. It does not create switches,
