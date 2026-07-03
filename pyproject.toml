@@ -1,6 +1,6 @@
 [project]
 name = "ha-energy-planner"
-version = "0.0.1"
+version = "0.0.2"
 description = "Home Assistant custom integration for PV, battery, tariff and EV planning."
 readme = "README.md"
 requires-python = ">=3.12"
