@@ -1,7 +1,3 @@
-recalculate:
-  name: Recalculate
-  description: Force Energy Planner recalculation.
+recalculate: {}
 
-export_debug:
-  name: Export debug
-  description: Export the last planner debug payload.
+export_debug: {}

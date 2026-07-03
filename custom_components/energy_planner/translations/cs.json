@@ -1,10 +1,134 @@
 {
+  "title": "Energy Planner",
   "config": {
     "step": {
       "user": {
         "title": "Energy Planner",
-        "description": "Nastavení vstupních entit pro energetický plánovač."
+        "description": "Vyberte entity z Home Assistantu, které plánovač použije jako vstupy.",
+        "data": {
+          "battery_soc_entity": "Stav nabití baterie",
+          "battery_capacity_entity": "Kapacita baterie",
+          "battery_min_soc_entity": "Minimální stav nabití baterie",
+          "home_energy_hourly_entity": "Hodinová historie spotřeby domu",
+          "managed_energy_hourly_entity": "Hodinová historie řízené spotřeby",
+          "solcast_today_entity": "Předpověď Solcast na dnes",
+          "solcast_tomorrow_entity": "Předpověď Solcast na zítřek",
+          "price_entity": "Cena nebo tarif"
+        }
       }
+    },
+    "abort": {
+      "already_configured": "Energy Planner už je nastavený.",
+      "single_instance_allowed": "Je povolena jen jedna instance Energy Planneru."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Možnosti Energy Planneru",
+        "description": "Nastavení chování plánovače, časových oken a predikce SoC.",
+        "data": {
+          "interval_minutes": "Interval plánování v minutách",
+          "history_correction_percent": "Korekce historie v procentech",
+          "min_baseline_kwh_per_hour": "Minimální základní spotřeba v kWh za hodinu",
+          "grid_charge_max_kw": "Maximální nabíjení ze sítě v kW",
+          "grid_charge_efficiency": "Účinnost nabíjení ze sítě",
+          "soc_reserve_percent": "Rezerva SoC v procentech",
+          "soc_eps_kwh": "Tolerance SoC v kWh",
+          "nt_windows": "Okna nízkého tarifu",
+          "charge_window": "Okno pro nabíjení",
+          "sun_start_required_minutes": "Minimální délka solárního startu v minutách",
+          "forecast_horizon_hours": "Horizont predikce v hodinách"
+        }
+      }
+    },
+    "error": {
+      "interval_minutes": "Interval plánování musí dělit 60 beze zbytku.",
+      "forecast_horizon_hours": "Horizont predikce musí být alespoň 24 hodin.",
+      "min_baseline_kwh_per_hour": "Minimální základní spotřeba nesmí být záporná.",
+      "history_correction_percent": "Korekce historie musí být větší než -100 % a nejvýše 500 %.",
+      "grid_charge_max_kw": "Maximální nabíjení ze sítě nesmí být záporné.",
+      "grid_charge_efficiency": "Účinnost nabíjení ze sítě musí být větší než 0 a nejvýše 1.",
+      "soc_reserve_percent": "Rezerva SoC musí být mezi 0 a 100 %.",
+      "soc_eps_kwh": "Tolerance SoC nesmí být záporná.",
+      "sun_start_required_minutes": "Minimální délka solárního startu musí být větší než 0 minut.",
+      "window": "Časové okno musí používat formát HH:MM-HH:MM.",
+      "windows": "Okna musí obsahovat alespoň jedno platné okno ve formátu HH:MM-HH:MM.",
+      "invalid_options": "Možnosti nejsou platné."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "Stav"
+      },
+      "lock_soc": {
+        "name": "SoC pro uzamčení"
+      },
+      "charge_to_soc": {
+        "name": "Nabít na SoC"
+      },
+      "target_soc": {
+        "name": "Cílové SoC"
+      },
+      "safe_discharge_soc": {
+        "name": "Bezpečné vybíjecí SoC"
+      },
+      "free_capacity_soc": {
+        "name": "Volná kapacita SoC"
+      },
+      "free_capacity_kwh": {
+        "name": "Volná kapacita"
+      },
+      "unused_surplus_today_kwh": {
+        "name": "Nevyužitý přebytek dnes"
+      },
+      "unused_surplus_total_kwh": {
+        "name": "Nevyužitý přebytek celkem"
+      },
+      "first_full_time": {
+        "name": "První čas plné baterie"
+      },
+      "vt_grid_import_kwh_at_target": {
+        "name": "Odběr ve vysokém tarifu při cíli"
+      },
+      "charged_kwh_total_at_target": {
+        "name": "Celkem nabito při cíli"
+      },
+      "soc_at_planner_start": {
+        "name": "SoC na začátku plánu"
+      },
+      "soc_at_lock_start": {
+        "name": "SoC na začátku uzamčení"
+      },
+      "soc_forecast": {
+        "name": "Predikce SoC"
+      },
+      "soc_forecast_24h": {
+        "name": "Predikce SoC za 24 h"
+      },
+      "sun_start": {
+        "name": "Začátek solární výroby"
+      },
+      "lock_start": {
+        "name": "Začátek uzamčení"
+      },
+      "updated": {
+        "name": "Aktualizováno"
+      },
+      "history_status": {
+        "name": "Stav historie"
+      }
+    }
+  },
+  "services": {
+    "recalculate": {
+      "name": "Přepočítat",
+      "description": "Vynutí přepočet Energy Planneru."
+    },
+    "export_debug": {
+      "name": "Export ladění",
+      "description": "Exportuje poslední ladicí data plánovače."
     }
   }
 }
