@@ -33,11 +33,11 @@ Required Home Assistant entities:
 - battery SoC in percent
 - battery capacity in kWh
 - battery minimum SoC in percent
-- home hourly energy in kWh
+- home hourly consumption history source in kWh
 
 Optional Home Assistant entities:
 
-- managed hourly energy in kWh
+- managed hourly consumption history source in kWh
 - Solcast today forecast entity
 - Solcast tomorrow forecast entity
 - price or tariff entity
@@ -47,6 +47,12 @@ not call Solcast directly.
 
 Runtime behavior is changed through the Options Flow: planning interval, baseline
 load, grid charge limits, NT windows, charge window and forecast horizon.
+
+The home consumption source is expected to be an hourly utility-meter-like entity
+whose state is cumulative kWh for the current hour. Energy Planner stores its own
+hourly history from that entity after installation and uses that history to
+predict future consumption. It does not require Home Assistant recorder internals
+and it does not backfill old recorder data in v1.
 
 ## Main outputs
 

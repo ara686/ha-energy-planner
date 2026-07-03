@@ -24,6 +24,6 @@ async def test_config_entry_diagnostics_include_compact_summary(hass, config_ent
     assert diagnostics["entry"]["domain"] == DOMAIN
     assert diagnostics["entry"]["configured_entities"]["battery_soc_entity"]
     assert diagnostics["last_state"] in {"ok", "warning"}
-    assert diagnostics["history"] in {"unknown", "not_configured"}
+    assert diagnostics["history"]["bucket_count"] >= 1
     assert len(diagnostics["entities"]) > 0
     assert "target_soc" in diagnostics["last_plan"]

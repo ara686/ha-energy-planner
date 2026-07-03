@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from math import ceil
@@ -20,7 +21,7 @@ def generate_forecast_slots(
     horizon_hours: int,
     interval_minutes: int,
     solar_forecast: list[SolarForecastPoint],
-    consumption_kwh_per_hour: float,
+    consumption_kwh_per_hour: float | Callable[[datetime], float],
 ) -> list[ForecastSlot]:
     """Generate regular planner slots from normalized forecast inputs."""
     if interval_minutes <= 0 or horizon_hours <= 0:
@@ -33,6 +34,11 @@ def generate_forecast_slots(
     slots: list[ForecastSlot] = []
     slot_start = _ceil_to_interval(now, interval_minutes)
     while slot_start < horizon_end:
+        slot_consumption_kwh_per_hour = (
+            consumption_kwh_per_hour(slot_start)
+            if callable(consumption_kwh_per_hour)
+            else consumption_kwh_per_hour
+        )
         slots.append(
             ForecastSlot(
                 start=slot_start,
@@ -44,7 +50,7 @@ def generate_forecast_slots(
                     )
                 ),
                 consumption_kwh=_round(
-                    max(0.0, consumption_kwh_per_hour) * interval_minutes / 60
+                    max(0.0, slot_consumption_kwh_per_hour) * interval_minutes / 60
                 ),
             )
         )

@@ -106,6 +106,22 @@ def test_generate_forecast_slots_aligns_start_to_next_interval():
     assert all(slot.start.second == 0 for slot in slots)
 
 
+def test_generate_forecast_slots_accepts_consumption_profile():
+    now = datetime(2026, 7, 3, 12, 0)
+
+    slots = generate_forecast_slots(
+        now=now,
+        horizon_hours=2,
+        interval_minutes=60,
+        solar_forecast=[],
+        consumption_kwh_per_hour=lambda slot_start: (
+            1.0 if slot_start.hour == 12 else 2.0
+        ),
+    )
+
+    assert [slot.consumption_kwh for slot in slots] == [1.0, 2.0]
+
+
 def test_soc_forecast_contains_24h_point_and_longer_horizon():
     now = datetime(2026, 7, 3, 0, 0)
     result = calculate_plan(

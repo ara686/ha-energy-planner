@@ -8,8 +8,8 @@
           "battery_soc_entity": "Battery SoC entity",
           "battery_capacity_entity": "Battery capacity entity",
           "battery_min_soc_entity": "Battery minimum SoC entity",
-          "home_energy_hourly_entity": "Home hourly energy entity",
-          "managed_energy_hourly_entity": "Managed hourly energy entity",
+          "home_energy_hourly_entity": "Home consumption history source entity",
+          "managed_energy_hourly_entity": "Managed consumption history source entity",
           "solcast_today_entity": "Solcast today entity",
           "solcast_tomorrow_entity": "Solcast tomorrow entity",
           "price_entity": "Price / tariff entity"

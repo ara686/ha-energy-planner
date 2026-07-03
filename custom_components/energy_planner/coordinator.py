@@ -31,6 +31,8 @@ from .const import (
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
+    DEFAULT_HISTORY_LEARNING_DAYS,
+    DEFAULT_HISTORY_RETENTION_DAYS,
     DEFAULT_INTERVAL_MINUTES,
     DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
     DEFAULT_NT_WINDOWS,
@@ -39,6 +41,7 @@ from .const import (
     DEFAULT_SUN_START_REQUIRED_MINUTES,
     DOMAIN,
 )
+from .history import EnergyHistory, EnergyHistoryStore
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
@@ -51,6 +54,8 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
+        self.history = EnergyHistory()
+        self._history_store = EnergyHistoryStore(hass, entry.entry_id)
         super().__init__(
             hass,
             logger=_LOGGER,
@@ -61,9 +66,33 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             ),
         )
 
+    async def async_load_history(self) -> None:
+        """Load stored consumption history before the first refresh."""
+        self.history = await self._history_store.async_load()
+
     async def _async_update_data(self) -> PlannerResult:
         """Fetch and calculate planner data."""
-        result = build_planner_result(self.hass, self.entry)
+        now = dt_util.utcnow()
+        source_warnings: list[str] = []
+        _record_consumption_history(
+            self.hass,
+            self.entry,
+            self.history,
+            now,
+            source_warnings,
+        )
+        self.history.cleanup(
+            now=now,
+            retention_days=DEFAULT_HISTORY_RETENTION_DAYS,
+        )
+        result = build_planner_result(
+            self.hass,
+            self.entry,
+            history=self.history,
+            now=now,
+            source_warnings=source_warnings,
+        )
+        await self._history_store.async_save(self.history)
         if result.warnings:
             _LOGGER.warning(
                 "Energy Planner update completed with warnings: %s",
@@ -72,18 +101,33 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
         return result
 
 
-def build_planner_result(hass: HomeAssistant, entry: ConfigEntry) -> PlannerResult:
+def build_planner_result(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    history: EnergyHistory | None = None,
+    now=None,
+    source_warnings: list[str] | None = None,
+) -> PlannerResult:
     """Build a planner result from configured Home Assistant entities."""
-    now = dt_util.utcnow()
-    planner_input, warnings = _build_planner_input(hass, entry, now)
+    now = now or dt_util.utcnow()
+    history = history or EnergyHistory()
+    history_status = history.status(
+        now=now, learning_days=DEFAULT_HISTORY_LEARNING_DAYS
+    )
+    planner_input, warnings = _build_planner_input(hass, entry, history, now)
+    warnings = [*(source_warnings or []), *warnings]
     if planner_input is None:
         return PlannerResult(
             state="insufficient_data",
             updated=now,
             warnings=warnings,
+            forecast={"history_status": history_status},
         )
 
     result = calculate_plan(planner_input)
+    result.forecast["history_status"] = history_status
+    result.debug["history_status"] = history_status
     if warnings:
         result.warnings = warnings + result.warnings
         if result.state == "ok":
@@ -94,6 +138,7 @@ def build_planner_result(hass: HomeAssistant, entry: ConfigEntry) -> PlannerResu
 def _build_planner_input(
     hass: HomeAssistant,
     entry: ConfigEntry,
+    history: EnergyHistory,
     now,
 ) -> tuple[PlannerInput | None, list[str]]:
     warnings: list[str] = []
@@ -105,32 +150,29 @@ def _build_planner_input(
     battery_min_soc = _required_float(
         hass, entry, CONF_BATTERY_MIN_SOC_ENTITY, warnings
     )
-    home_energy_hourly = _required_float(
-        hass, entry, CONF_HOME_ENERGY_HOURLY_ENTITY, warnings
-    )
-
-    if (
-        battery_soc is None
-        or battery_capacity is None
-        or battery_min_soc is None
-        or home_energy_hourly is None
-    ):
+    if not entry.data.get(CONF_HOME_ENERGY_HOURLY_ENTITY):
+        warnings.append(
+            "Required history source entity is not configured: "
+            f"{CONF_HOME_ENERGY_HOURLY_ENTITY}."
+        )
         return None, warnings
 
-    managed_energy_hourly = _optional_float(
-        hass,
+    if battery_soc is None or battery_capacity is None or battery_min_soc is None:
+        return None, warnings
+
+    min_baseline_kwh_per_hour = _option(
         entry,
-        CONF_MANAGED_ENERGY_HOURLY_ENTITY,
-        warnings,
+        CONF_MIN_BASELINE_KWH_PER_HOUR,
+        DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
     )
-    base_consumption_kwh_per_hour = max(
-        home_energy_hourly - (managed_energy_hourly or 0.0),
-        _option(
-            entry,
-            CONF_MIN_BASELINE_KWH_PER_HOUR,
-            DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
-        ),
-    )
+    if not history.status(
+        now=now,
+        learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
+    )["has_completed_bucket"]:
+        warnings.append(
+            "Consumption history has no completed hourly bucket yet; "
+            "using minimum baseline until history is collected."
+        )
 
     interval_minutes = _option(entry, CONF_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES)
     horizon_hours = _option(
@@ -144,7 +186,14 @@ def _build_planner_input(
         horizon_hours=max(24, horizon_hours),
         interval_minutes=interval_minutes,
         solar_forecast=solar_forecast,
-        consumption_kwh_per_hour=base_consumption_kwh_per_hour,
+        consumption_kwh_per_hour=lambda slot_start: (
+            history.predicted_base_consumption_kwh_per_hour(
+                now=now,
+                target=slot_start,
+                learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
+                min_baseline_kwh_per_hour=min_baseline_kwh_per_hour,
+            )
+        ),
     )
 
     return (
@@ -224,6 +273,44 @@ def _entity_float(hass: HomeAssistant, entity_id: str) -> float | None:
     if state is None:
         return None
     return parse_float(state.state)
+
+
+def _record_consumption_history(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    history: EnergyHistory,
+    now,
+    warnings: list[str],
+) -> None:
+    home_entity_id = entry.data.get(CONF_HOME_ENERGY_HOURLY_ENTITY)
+    if home_entity_id:
+        home_value = _entity_float(hass, home_entity_id)
+        if home_value is None:
+            warnings.append(
+                "Home consumption history source has no valid numeric state: "
+                f"{home_entity_id}."
+            )
+        else:
+            history.record_cumulative_hourly_source(
+                now,
+                source="home",
+                value=home_value,
+            )
+
+    managed_entity_id = entry.data.get(CONF_MANAGED_ENERGY_HOURLY_ENTITY)
+    if managed_entity_id:
+        managed_value = _entity_float(hass, managed_entity_id)
+        if managed_value is None:
+            warnings.append(
+                "Managed consumption history source has no valid numeric state: "
+                f"{managed_entity_id}."
+            )
+        else:
+            history.record_cumulative_hourly_source(
+                now,
+                source="managed",
+                value=managed_value,
+            )
 
 
 def _solcast_forecast(

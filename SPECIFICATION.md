@@ -43,8 +43,9 @@ Assumptions:
 
 - All input data is read from configured Home Assistant entities, states and attributes.
 - The integration must not call Solcast, Victron, tariff provider or device APIs directly in v1.
-- `home_energy_hourly_entity` is kWh per hour.
-- `managed_energy_hourly_entity` is kWh per hour.
+- `home_energy_hourly_entity` is an hourly utility-meter-like history source in kWh.
+- `managed_energy_hourly_entity` is an hourly utility-meter-like history source in kWh.
+- The integration stores its own hourly consumption history from those entities and uses that history to predict future consumption.
 - Solcast PV forecast data is read from the configured Solcast Home Assistant forecast entities.
 - Battery capacity is kWh.
 - Battery SoC is percent.
@@ -59,10 +60,10 @@ Required:
 - battery SoC entity
 - battery capacity entity
 - battery minimum SoC entity
-- home hourly energy entity
+- home hourly consumption history source entity
 
 Optional:
-- managed hourly energy entity
+- managed hourly consumption history source entity
 - Solcast today entity
 - Solcast tomorrow entity
 - price entity
@@ -114,7 +115,7 @@ Requirements:
 - include at least the next 24 hours
 - support a longer configurable horizon through `forecast_horizon_hours`
 - use Solcast forecast data from Home Assistant entities as PV input
-- use Home Assistant history-derived baseline consumption as load input
+- use Energy Planner's internal history-derived baseline consumption as load input
 - use current battery SoC, capacity and minimum SoC from Home Assistant entities
 - respect NT/VT windows, grid charge window and physical battery floor
 - expose a compact time series with timestamp, predicted SoC percent and predicted battery kWh
