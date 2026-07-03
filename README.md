@@ -28,39 +28,77 @@ YAML setup is intentionally not supported in v1.
 
 ## Configuration
 
-Required Home Assistant entities:
+Energy Planner is configured only through the Home Assistant UI. It expects
+already existing Home Assistant entities; it does not create helper sensors for
+you in v1.
 
-- battery SoC in percent
-- battery capacity in kWh
-- battery minimum SoC in percent
-- home hourly consumption history source in kWh
+### Input entities
 
-Optional Home Assistant entities:
+| Setup field | Required | Expected entity | How to prepare it |
+|-------------|----------|-----------------|-------------------|
+| Battery state of charge | Yes | Numeric battery SoC sensor in `%`. | Use the SoC entity from your PV/battery inverter integration, for example Victron, GoodWe, Solax, Huawei, SolarEdge or another FVE/PV system integration. |
+| Battery capacity | Yes | Numeric battery capacity sensor in `kWh`. | Use an entity from the inverter/BMS if it exists. If the battery capacity is fixed and your system does not expose it, create a Home Assistant helper that provides the configured capacity value. |
+| Battery minimum state of charge | Yes | Numeric minimum SoC sensor in `%`. | Use the minimum/reserve SoC entity from the inverter/BMS. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
+| Home hourly consumption history | Yes | Hourly `utility_meter` sensor in `kWh`. | Create a Utility Meter helper with cycle `hourly` from the whole-home energy consumption sensor. This is the main historical house consumption input. |
+| Managed hourly consumption history | No | Hourly `utility_meter` sensor in `kWh`. | Create another Utility Meter helper with cycle `hourly` from the controlled/managed load energy sensor. This value is subtracted from home consumption per hour. |
+| Solcast forecast for today | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains today's PV forecast in its state or attributes. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
+| Solcast forecast for tomorrow | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains tomorrow's PV forecast in its state or attributes. |
+| Price or tariff | No | Numeric price/tariff sensor or tariff state entity. | Reserved for tariff-aware planning and diagnostics. The current v1 planner does not control devices from this input. |
 
-- managed hourly consumption history source in kWh
-- Solcast today forecast entity
-- Solcast tomorrow forecast entity
-- price or tariff entity
+### Preparing hourly consumption helpers
 
-Solcast data is read from Home Assistant entity attributes. The integration does
-not call Solcast directly.
+Energy Planner needs hourly energy totals, not instantaneous power values. For
+the house and managed-load history inputs, create Home Assistant Utility Meter
+helpers:
 
-Runtime behavior is changed through the Options Flow: planning interval, history
-correction, baseline load, grid charge limits, NT windows, charge window and
-forecast horizon.
+1. Go to Settings > Devices & services > Helpers.
+2. Create helper > Utility Meter.
+3. Select the source energy sensor in `kWh`.
+4. Set the meter reset cycle to `hourly`.
+5. Leave tariffs empty unless you specifically need separate tariff meters.
+6. Save the helper and use the created sensor as the Energy Planner input.
 
-The home consumption source is expected to be an hourly utility-meter-like entity
-whose state is cumulative kWh for the current hour. When Home Assistant history
-is available, Energy Planner reads the last 3 days for the configured home and
-managed consumption sources, groups records by the hour from `last_reset`, keeps
-the maximum value per hour, subtracts managed consumption from home consumption,
-and builds a per-hour-of-day consumption profile. For example, the forecast for
-11:00 uses the average of previous 11:00 values, not the overall house average.
+For `Home hourly consumption history`, the source should represent total house
+consumption. Good sources are grid/import plus PV self-consumption totals from
+your energy meter or inverter, depending on what your installation exposes.
+
+For `Managed hourly consumption history`, the source should represent only the
+loads that are intentionally controlled outside the baseline house profile, for
+example EV charging, boiler heating, water heating or another managed load. This
+managed consumption must already be part of the home consumption total; Energy
+Planner subtracts it per hour to learn the uncontrollable baseline. Do not use a
+net-after-managed house sensor here, otherwise managed consumption would be
+subtracted twice.
+
+If you only have a power sensor in `W` or `kW`, create an Integration (Riemann
+sum integral) helper first to convert power to energy in `kWh`, then create the
+hourly Utility Meter from that energy sensor. For loads that switch on and off
+and hold a stable power value, the `left` integration method is usually the
+right choice.
+
+The first Utility Meter cycle is incomplete until the next hourly reset. Energy
+Planner works best after at least 3 days of Home Assistant history for both the
+home and managed consumption helpers.
+
+### Consumption history model
+
+When Home Assistant history is available, Energy Planner reads the last 3 days
+for the configured home and managed consumption sources, groups records by the
+hour from `last_reset`, keeps the maximum value per hour, subtracts managed
+consumption from home consumption, and builds a per-hour-of-day consumption
+profile. For example, the forecast for 11:00 uses the average of previous 11:00
+values, not the overall house average.
 
 The hourly profile is increased by the Node-RED-compatible 5% margin and then by
 the configurable `history_correction_percent`. If no value exists for a target
 hour, the planner uses `min_baseline_kwh_per_hour`. Energy Planner also stores
 its own hourly history as a fallback when Home Assistant history is unavailable.
+
+### Runtime options
+
+Runtime behavior is changed through the Options Flow: planning interval, history
+correction, baseline load, grid charge limits, NT windows, charge window and
+forecast horizon.
 
 ## Main outputs
 
