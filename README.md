@@ -112,6 +112,93 @@ forecast horizon.
 The forecast includes at least 24 hours and can use a longer configured horizon
 when Home Assistant source data is available.
 
+## Dashboard examples
+
+Entity IDs can differ if Home Assistant already had conflicting names. Check the
+actual entity IDs in Settings > Devices & services > Energy Planner > Entities
+and adjust the examples as needed.
+
+### Future SoC forecast with ApexCharts
+
+The full future SoC curve is exposed on the `soc_forecast` sensor as a compact
+`points` attribute. The sensor state itself is only the SoC at the configured
+forecast horizon.
+
+Install `apexcharts-card` through HACS, then add a manual card like this:
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 36h
+span:
+  start: hour
+locale: cs
+header:
+  title: Forecast SoC
+  show: true
+  show_states: true
+  colorize_states: true
+now:
+  show: true
+  label: Now
+yaxis:
+  - min: 0
+    max: 100
+    decimals: 0
+series:
+  - entity: sensor.energy_planner_soc_forecast
+    name: Predikce SoC
+    type: area
+    opacity: 0.35
+    stroke_width: 2
+    unit: "%"
+    show:
+      in_header: raw
+      extremas: true
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points
+        .filter((point) => point.timestamp && point.soc_percent !== undefined)
+        .map((point) => {
+          return [new Date(point.timestamp).getTime(), Number(point.soc_percent)];
+        });
+```
+
+The important part is `entity.attributes.points`. Each point uses
+`timestamp` and `soc_percent`; do not use `entity.points`, `time` or `SoC`.
+
+Set `graph_span` to match the configured forecast horizon. The default Energy
+Planner horizon is 36 hours, while the minimum supported horizon is 24 hours.
+
+If the card is empty:
+
+- Confirm that `sensor.energy_planner_soc_forecast` has a `points` attribute in
+  Developer Tools > States.
+- Replace the entity ID if Home Assistant created a localized or suffixed name.
+- Run the `energy_planner.recalculate` service and refresh the dashboard.
+- Clear the browser cache after installing or updating `apexcharts-card`.
+
+### Single 24 hour SoC value
+
+For a simple dashboard value, use the dedicated 24 hour sensor:
+
+```yaml
+type: gauge
+entity: sensor.energy_planner_soc_forecast_24h
+name: SoC za 24 hodin
+min: 0
+max: 100
+severity:
+  green: 50
+  yellow: 25
+  red: 0
+```
+
+This sensor is a normal numeric entity, so built-in `tile`, `gauge`,
+`history-graph` and `statistics-graph` cards can display its state history.
+That history shows how the predicted 24 hour SoC changes over time; it is not
+the full future forecast curve. Use the ApexCharts attribute example above for
+the complete future curve.
+
 ## Services
 
 - `energy_planner.recalculate` refreshes planner data for loaded entries.
