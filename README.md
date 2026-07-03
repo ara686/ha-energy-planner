@@ -2,7 +2,12 @@
 
 Home Assistant custom integration for PV, battery, tariff and EV planning.
 
+> [!WARNING]
+> Energy Planner is experimental software under active development. It is not recommended for production use. Install and use it at your own risk, and do not rely on it for safety-critical, life-critical, property protection, emergency, operational, financial, billing, regulatory, or compliance decisions.
+
 The integration calculates energy planning outputs only. It does **not** control Victron, EV chargers, heaters or other devices in v1.
+If you use its sensors in automations, you are responsible for validating the
+automation behavior and all consequences of those automations.
 
 ## Installation
 
@@ -106,3 +111,8 @@ Important migration notes:
 - The pure planner may expose cleaner timestamp formatting and compact forecast attributes while preserving the core planning outputs.
 
 See `SPECIFICATION.md` and `CODEX_IMPLEMENTATION_PROMPT.md`.
+
+## Disclaimer
+
+This software is provided as-is, without warranty, and without a support
+guarantee. See `DISCLAIMER.md` for project risk and support limitations.
