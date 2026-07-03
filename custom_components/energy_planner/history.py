@@ -10,6 +10,13 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 STORAGE_VERSION = 1
+MANAGED_POWER_CAP_KWH = (3 * 25 * 230) / 1000
+
+
+@dataclass(frozen=True)
+class HourlyCumulativeSample:
+    reset_time: datetime
+    value: float
 
 
 @dataclass
@@ -80,6 +87,29 @@ class EnergyHistory:
         bucket = self.buckets.get(key)
         return bucket.base_kwh if bucket else 0.0
 
+    @classmethod
+    def from_cumulative_history_samples(
+        cls,
+        *,
+        home_samples: list[HourlyCumulativeSample],
+        managed_samples: list[HourlyCumulativeSample] | None = None,
+        managed_cap_kwh: float = MANAGED_POWER_CAP_KWH,
+    ) -> EnergyHistory:
+        """Build Node-RED-compatible hourly history from HA history samples."""
+        managed_by_hour = _max_by_reset_hour(
+            managed_samples or [],
+            cap_kwh=managed_cap_kwh,
+        )
+        home_by_hour = _max_by_reset_hour(home_samples)
+        history = cls()
+        for key, home_kwh in home_by_hour.items():
+            history.buckets[key] = HourlyEnergyBucket(
+                hour_start=key,
+                home_kwh=home_kwh,
+                managed_kwh=managed_by_hour.get(key, 0.0),
+            )
+        return history
+
     def record_cumulative_hourly_source(
         self,
         timestamp: datetime,
@@ -131,6 +161,33 @@ class EnergyHistory:
             return min_baseline_kwh_per_hour
         return max(sum(values) / len(values), min_baseline_kwh_per_hour)
 
+    def hourly_base_consumption_profile(
+        self,
+        *,
+        now: datetime,
+        learning_days: int,
+        margin_percent: float,
+        include_current_hour: bool = True,
+    ) -> dict[int, float]:
+        """Return hourly average base consumption by hour of day."""
+        cutoff = now - timedelta(days=max(1, learning_days))
+        current_key = hour_key(now)
+        grouped: dict[int, list[float]] = {}
+        for key, bucket in self.buckets.items():
+            bucket_time = datetime.fromisoformat(key)
+            if bucket_time < cutoff:
+                continue
+            if not include_current_hour and key == current_key:
+                continue
+            grouped.setdefault(bucket_time.hour, []).append(bucket.base_kwh)
+
+        multiplier = 1 + margin_percent / 100
+        return {
+            hour: round((sum(values) / len(values)) * multiplier, 2)
+            for hour, values in grouped.items()
+            if values
+        }
+
     def predicted_base_consumption_kwh_per_hour(
         self,
         *,
@@ -138,28 +195,18 @@ class EnergyHistory:
         target: datetime,
         learning_days: int,
         min_baseline_kwh_per_hour: float,
+        margin_percent: float = 0.0,
+        correction_percent: float = 0.0,
     ) -> float:
         """Predict consumption for a future hour from stored history."""
-        cutoff = now - timedelta(days=max(1, learning_days))
-        current_key = hour_key(now)
-        same_hour_values = [
-            bucket.base_kwh
-            for key, bucket in self.buckets.items()
-            if key != current_key
-            and datetime.fromisoformat(key) >= cutoff
-            and datetime.fromisoformat(key).hour == target.hour
-        ]
-        if same_hour_values:
-            return max(
-                sum(same_hour_values) / len(same_hour_values),
-                min_baseline_kwh_per_hour,
-            )
-        return self.average_base_consumption_kwh_per_hour(
+        profile = self.hourly_base_consumption_profile(
             now=now,
             learning_days=learning_days,
-            min_baseline_kwh_per_hour=min_baseline_kwh_per_hour,
-            include_current_hour=False,
+            margin_percent=margin_percent,
         )
+        value = profile.get(target.hour, 0.0)
+        value *= 1 + correction_percent / 100
+        return max(value, min_baseline_kwh_per_hour)
 
     def cleanup(self, *, now: datetime, retention_days: int) -> None:
         cutoff = now - timedelta(days=max(1, retention_days))
@@ -242,3 +289,18 @@ class EnergyHistoryStore:
 
 def hour_key(timestamp: datetime) -> str:
     return timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
+
+
+def _max_by_reset_hour(
+    samples: list[HourlyCumulativeSample],
+    *,
+    cap_kwh: float | None = None,
+) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for sample in samples:
+        if sample.value < 0:
+            continue
+        value = sample.value if cap_kwh is None else min(sample.value, cap_kwh)
+        key = hour_key(sample.reset_time)
+        values[key] = max(values.get(key, 0.0), value)
+    return values

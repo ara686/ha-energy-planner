@@ -8,6 +8,7 @@ from .const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_HISTORY_CORRECTION_PERCENT,
     CONF_INTERVAL_MINUTES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
@@ -18,6 +19,7 @@ from .const import (
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
+    DEFAULT_HISTORY_CORRECTION_PERCENT,
     DEFAULT_INTERVAL_MINUTES,
     DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
     DEFAULT_NT_WINDOWS,
@@ -36,6 +38,7 @@ class OptionsValidationError(ValueError):
 def default_options() -> dict[str, Any]:
     return {
         CONF_INTERVAL_MINUTES: DEFAULT_INTERVAL_MINUTES,
+        CONF_HISTORY_CORRECTION_PERCENT: DEFAULT_HISTORY_CORRECTION_PERCENT,
         CONF_MIN_BASELINE_KWH_PER_HOUR: DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
         CONF_GRID_CHARGE_MAX_KW: DEFAULT_GRID_CHARGE_MAX_KW,
         CONF_GRID_CHARGE_EFFICIENCY: DEFAULT_GRID_CHARGE_EFFICIENCY,
@@ -58,6 +61,12 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
         raise OptionsValidationError("forecast_horizon_hours")
 
     min_baseline = float(values[CONF_MIN_BASELINE_KWH_PER_HOUR])
+    history_correction_percent = float(
+        values.get(
+            CONF_HISTORY_CORRECTION_PERCENT,
+            DEFAULT_HISTORY_CORRECTION_PERCENT,
+        )
+    )
     grid_charge_max_kw = float(values[CONF_GRID_CHARGE_MAX_KW])
     grid_charge_efficiency = float(values[CONF_GRID_CHARGE_EFFICIENCY])
     soc_reserve_percent = float(values[CONF_SOC_RESERVE_PERCENT])
@@ -66,6 +75,8 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
 
     if min_baseline < 0:
         raise OptionsValidationError("min_baseline_kwh_per_hour")
+    if history_correction_percent <= -100 or history_correction_percent > 500:
+        raise OptionsValidationError("history_correction_percent")
     if grid_charge_max_kw < 0:
         raise OptionsValidationError("grid_charge_max_kw")
     if not 0 < grid_charge_efficiency <= 1:
@@ -79,6 +90,7 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
 
     return {
         CONF_INTERVAL_MINUTES: interval_minutes,
+        CONF_HISTORY_CORRECTION_PERCENT: history_correction_percent,
         CONF_MIN_BASELINE_KWH_PER_HOUR: min_baseline,
         CONF_GRID_CHARGE_MAX_KW: grid_charge_max_kw,
         CONF_GRID_CHARGE_EFFICIENCY: grid_charge_efficiency,

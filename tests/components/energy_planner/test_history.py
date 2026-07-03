@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from custom_components.energy_planner.history import EnergyHistory, hour_key
+from custom_components.energy_planner.history import (
+    EnergyHistory,
+    HourlyCumulativeSample,
+    hour_key,
+)
 
 
 def test_hourly_aggregation_and_managed_subtraction():
@@ -106,6 +110,63 @@ def test_predicted_base_consumption_prefers_same_hour_history():
         )
         == 1.5
     )
+
+
+def test_predicted_base_consumption_falls_back_to_minimum_for_missing_hour():
+    now = datetime(2026, 7, 3, 12, 0)
+    target = datetime(2026, 7, 3, 18, 0)
+    history = EnergyHistory()
+    history.add_hourly_sample(now - timedelta(hours=1), home_kwh=10.0)
+
+    assert (
+        history.predicted_base_consumption_kwh_per_hour(
+            now=now,
+            target=target,
+            learning_days=3,
+            min_baseline_kwh_per_hour=0.2,
+        )
+        == 0.2
+    )
+
+
+def test_cumulative_history_samples_build_nodered_hourly_profile():
+    now = datetime(2026, 7, 3, 12, 0)
+    history = EnergyHistory.from_cumulative_history_samples(
+        home_samples=[
+            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 1.8),
+            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 2.0),
+            HourlyCumulativeSample(datetime(2026, 7, 2, 11, 0), 4.0),
+            HourlyCumulativeSample(datetime(2026, 7, 2, 12, 0), 10.0),
+        ],
+        managed_samples=[
+            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 0.5),
+            HourlyCumulativeSample(datetime(2026, 7, 2, 11, 0), 1.0),
+        ],
+    )
+
+    profile = history.hourly_base_consumption_profile(
+        now=now,
+        learning_days=3,
+        margin_percent=5,
+    )
+
+    assert history.base_consumption_for_hour("2026-07-01T11:00:00") == 1.5
+    assert history.base_consumption_for_hour("2026-07-02T11:00:00") == 3.0
+    assert profile[11] == 2.36
+    assert profile[12] == 10.5
+
+
+def test_managed_history_samples_are_capped_like_active_nodered_flow():
+    history = EnergyHistory.from_cumulative_history_samples(
+        home_samples=[
+            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 20.0),
+        ],
+        managed_samples=[
+            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 100.0),
+        ],
+    )
+
+    assert history.base_consumption_for_hour("2026-07-01T11:00:00") == 2.75
 
 
 def test_average_base_consumption_uses_learning_window_and_minimum():

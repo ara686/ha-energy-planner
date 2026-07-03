@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from custom_components.energy_planner.coordinator import (
+    _consumption_from_hourly_profile,
+)
 from custom_components.energy_planner.sources import (
     parse_float,
     parse_solcast_attributes,
@@ -97,3 +100,24 @@ def test_parse_solcast_attributes_supports_wh_fallback_and_skips_invalid_rows():
     assert len(points) == 1
     assert points[0].start == datetime.fromisoformat("2026-07-03T11:00:00+00:00")
     assert points[0].solar_kwh == 0.75
+
+
+def test_consumption_from_hourly_profile_uses_target_hour_and_correction():
+    assert (
+        _consumption_from_hourly_profile(
+            hourly_profile={11: 2.0},
+            target=datetime(2026, 7, 3, 11, 0),
+            min_baseline_kwh_per_hour=0.2,
+            history_correction_percent=3,
+        )
+        == 2.06
+    )
+    assert (
+        _consumption_from_hourly_profile(
+            hourly_profile={10: 5.0},
+            target=datetime(2026, 7, 3, 11, 0),
+            min_baseline_kwh_per_hour=0.2,
+            history_correction_percent=3,
+        )
+        == 0.2
+    )

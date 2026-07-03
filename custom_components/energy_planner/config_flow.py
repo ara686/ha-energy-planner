@@ -12,6 +12,7 @@ from .const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HOME_ENERGY_HOURLY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_HOURLY_ENTITY,
@@ -101,6 +102,10 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     CONF_INTERVAL_MINUTES,
                     default=options[CONF_INTERVAL_MINUTES],
                 ): int,
+                vol.Required(
+                    CONF_HISTORY_CORRECTION_PERCENT,
+                    default=options[CONF_HISTORY_CORRECTION_PERCENT],
+                ): float,
                 vol.Required(
                     CONF_MIN_BASELINE_KWH_PER_HOUR,
                     default=options[CONF_MIN_BASELINE_KWH_PER_HOUR],

@@ -24,6 +24,7 @@
         "description": "Configure planner behavior.",
         "data": {
           "interval_minutes": "Planning interval in minutes",
+          "history_correction_percent": "History correction percent",
           "min_baseline_kwh_per_hour": "Minimum baseline kWh per hour",
           "grid_charge_max_kw": "Grid charge max kW",
           "grid_charge_efficiency": "Grid charge efficiency",

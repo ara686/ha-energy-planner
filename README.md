@@ -45,14 +45,22 @@ Optional Home Assistant entities:
 Solcast data is read from Home Assistant entity attributes. The integration does
 not call Solcast directly.
 
-Runtime behavior is changed through the Options Flow: planning interval, baseline
-load, grid charge limits, NT windows, charge window and forecast horizon.
+Runtime behavior is changed through the Options Flow: planning interval, history
+correction, baseline load, grid charge limits, NT windows, charge window and
+forecast horizon.
 
 The home consumption source is expected to be an hourly utility-meter-like entity
-whose state is cumulative kWh for the current hour. Energy Planner stores its own
-hourly history from that entity after installation and uses that history to
-predict future consumption. It does not require Home Assistant recorder internals
-and it does not backfill old recorder data in v1.
+whose state is cumulative kWh for the current hour. When Home Assistant history
+is available, Energy Planner reads the last 3 days for the configured home and
+managed consumption sources, groups records by the hour from `last_reset`, keeps
+the maximum value per hour, subtracts managed consumption from home consumption,
+and builds a per-hour-of-day consumption profile. For example, the forecast for
+11:00 uses the average of previous 11:00 values, not the overall house average.
+
+The hourly profile is increased by the Node-RED-compatible 5% margin and then by
+the configurable `history_correction_percent`. If no value exists for a target
+hour, the planner uses `min_baseline_kwh_per_hour`. Energy Planner also stores
+its own hourly history as a fallback when Home Assistant history is unavailable.
 
 ## Main outputs
 
@@ -114,6 +122,7 @@ Important migration notes:
 - `charge_to_soc` is the optional grid-charge target for the configured charge window.
 - `free_capacity_kwh` means safely dischargeable energy above `safe_discharge_soc`.
 - The legacy flow adds 1 percentage point to the configured battery minimum SoC before using it as its effective floor; parity fixtures model that explicitly.
+- Consumption prediction follows the active flow's hourly profile: last 3 days of HA history, grouped by `last_reset`, managed consumption subtracted per hour, plus the 5% history margin.
 - The pure planner may expose cleaner timestamp formatting and compact forecast attributes while preserving the core planning outputs.
 
 See `SPECIFICATION.md` and `CODEX_IMPLEMENTATION_PROMPT.md`.

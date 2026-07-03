@@ -45,7 +45,14 @@ Assumptions:
 - The integration must not call Solcast, Victron, tariff provider or device APIs directly in v1.
 - `home_energy_hourly_entity` is an hourly utility-meter-like history source in kWh.
 - `managed_energy_hourly_entity` is an hourly utility-meter-like history source in kWh.
-- The integration stores its own hourly consumption history from those entities and uses that history to predict future consumption.
+- The active Node-RED-compatible consumption model reads the last 3 days of Home Assistant history for those hourly sources when available.
+- History records are grouped by `attributes.last_reset` rounded to the hour.
+- For each history hour, the maximum home value is used.
+- For each managed history hour, the maximum managed value is used and capped at `(3 * 25 * 230) / 1000` kWh.
+- Managed consumption is subtracted from home consumption per hour before the hourly profile is calculated.
+- Future consumption uses the average for the same hour of day. A forecast slot at 11:00 uses historical 11:00 values, not a global average.
+- The hourly profile includes the legacy 5% margin and then applies `history_correction_percent`.
+- If Home Assistant history is unavailable, the integration uses its own stored hourly history as a fallback.
 - Solcast PV forecast data is read from the configured Solcast Home Assistant forecast entities.
 - Battery capacity is kWh.
 - Battery SoC is percent.
@@ -115,7 +122,7 @@ Requirements:
 - include at least the next 24 hours
 - support a longer configurable horizon through `forecast_horizon_hours`
 - use Solcast forecast data from Home Assistant entities as PV input
-- use Energy Planner's internal history-derived baseline consumption as load input
+- use the Node-RED-compatible hourly history profile as load input
 - use current battery SoC, capacity and minimum SoC from Home Assistant entities
 - respect NT/VT windows, grid charge window and physical battery floor
 - expose a compact time series with timestamp, predicted SoC percent and predicted battery kWh

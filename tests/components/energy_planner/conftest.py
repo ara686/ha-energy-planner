@@ -15,6 +15,7 @@ from custom_components.energy_planner.const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HOME_ENERGY_HOURLY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_HOURLY_ENTITY,
@@ -59,6 +60,7 @@ def options_flow_input(**overrides: Any) -> dict[str, Any]:
     """Return options matching the options flow UI schema."""
     data: dict[str, Any] = {
         CONF_INTERVAL_MINUTES: 60,
+        CONF_HISTORY_CORRECTION_PERCENT: 5.0,
         CONF_MIN_BASELINE_KWH_PER_HOUR: 0.2,
         CONF_GRID_CHARGE_MAX_KW: 5.5,
         CONF_GRID_CHARGE_EFFICIENCY: 0.92,

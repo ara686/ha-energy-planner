@@ -7,6 +7,7 @@ from custom_components.energy_planner.const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_HISTORY_CORRECTION_PERCENT,
     CONF_INTERVAL_MINUTES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
@@ -27,6 +28,7 @@ from custom_components.energy_planner.options import (
 def _options(**overrides):
     values = {
         CONF_INTERVAL_MINUTES: 5,
+        CONF_HISTORY_CORRECTION_PERCENT: 5,
         CONF_MIN_BASELINE_KWH_PER_HOUR: 0.2,
         CONF_GRID_CHARGE_MAX_KW: 5.5,
         CONF_GRID_CHARGE_EFFICIENCY: 0.92,
@@ -63,6 +65,7 @@ def test_normalize_options_converts_ui_values_to_typed_options():
     normalized = normalize_options(_options())
 
     assert normalized[CONF_INTERVAL_MINUTES] == 5
+    assert normalized[CONF_HISTORY_CORRECTION_PERCENT] == 5
     assert normalized[CONF_FORECAST_HORIZON_HOURS] == 36
     assert normalized[CONF_NT_WINDOWS][1] == {"start": "22:00", "end": "04:00"}
     assert normalized[CONF_CHARGE_WINDOW] == {"start": "22:00", "end": "04:00"}
@@ -73,6 +76,7 @@ def test_normalize_options_converts_ui_values_to_typed_options():
     [
         (CONF_INTERVAL_MINUTES, 7),
         (CONF_FORECAST_HORIZON_HOURS, 23),
+        (CONF_HISTORY_CORRECTION_PERCENT, -100),
         (CONF_GRID_CHARGE_EFFICIENCY, 1.1),
         (CONF_NT_WINDOWS, "invalid"),
         (CONF_CHARGE_WINDOW, "25:00-26:00"),

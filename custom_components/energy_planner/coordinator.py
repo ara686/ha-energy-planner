@@ -17,6 +17,7 @@ from .const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HOME_ENERGY_HOURLY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_HOURLY_ENTITY,
@@ -31,7 +32,9 @@ from .const import (
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
+    DEFAULT_HISTORY_CORRECTION_PERCENT,
     DEFAULT_HISTORY_LEARNING_DAYS,
+    DEFAULT_HISTORY_PROFILE_MARGIN_PERCENT,
     DEFAULT_HISTORY_RETENTION_DAYS,
     DEFAULT_INTERVAL_MINUTES,
     DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
@@ -41,6 +44,7 @@ from .const import (
     DEFAULT_SUN_START_REQUIRED_MINUTES,
     DOMAIN,
 )
+from .ha_history import async_get_recorder_energy_history
 from .history import EnergyHistory, EnergyHistoryStore
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, generate_forecast_slots
@@ -72,7 +76,7 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
 
     async def _async_update_data(self) -> PlannerResult:
         """Fetch and calculate planner data."""
-        now = dt_util.utcnow()
+        now = dt_util.now()
         source_warnings: list[str] = []
         _record_consumption_history(
             self.hass,
@@ -85,12 +89,20 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             now=now,
             retention_days=DEFAULT_HISTORY_RETENTION_DAYS,
         )
+        planner_history = await _async_planner_history_from_ha(
+            self.hass,
+            self.entry,
+            now=now,
+            fallback_history=self.history,
+            warnings=source_warnings,
+        )
         result = build_planner_result(
             self.hass,
             self.entry,
-            history=self.history,
+            history=planner_history.history,
             now=now,
             source_warnings=source_warnings,
+            history_source=planner_history.source,
         )
         await self._history_store.async_save(self.history)
         if result.warnings:
@@ -108,13 +120,15 @@ def build_planner_result(
     history: EnergyHistory | None = None,
     now=None,
     source_warnings: list[str] | None = None,
+    history_source: str = "stored",
 ) -> PlannerResult:
     """Build a planner result from configured Home Assistant entities."""
-    now = now or dt_util.utcnow()
+    now = now or dt_util.now()
     history = history or EnergyHistory()
     history_status = history.status(
         now=now, learning_days=DEFAULT_HISTORY_LEARNING_DAYS
     )
+    history_status["source"] = history_source
     planner_input, warnings = _build_planner_input(hass, entry, history, now)
     warnings = [*(source_warnings or []), *warnings]
     if planner_input is None:
@@ -165,6 +179,16 @@ def _build_planner_input(
         CONF_MIN_BASELINE_KWH_PER_HOUR,
         DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
     )
+    history_correction_percent = _option(
+        entry,
+        CONF_HISTORY_CORRECTION_PERCENT,
+        DEFAULT_HISTORY_CORRECTION_PERCENT,
+    )
+    hourly_profile = history.hourly_base_consumption_profile(
+        now=now,
+        learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
+        margin_percent=DEFAULT_HISTORY_PROFILE_MARGIN_PERCENT,
+    )
     if not history.status(
         now=now,
         learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
@@ -172,6 +196,10 @@ def _build_planner_input(
         warnings.append(
             "Consumption history has no completed hourly bucket yet; "
             "using minimum baseline until history is collected."
+        )
+    elif not hourly_profile:
+        warnings.append(
+            "Consumption history has no usable hourly profile; using minimum baseline."
         )
 
     interval_minutes = _option(entry, CONF_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES)
@@ -186,13 +214,11 @@ def _build_planner_input(
         horizon_hours=max(24, horizon_hours),
         interval_minutes=interval_minutes,
         solar_forecast=solar_forecast,
-        consumption_kwh_per_hour=lambda slot_start: (
-            history.predicted_base_consumption_kwh_per_hour(
-                now=now,
-                target=slot_start,
-                learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
-                min_baseline_kwh_per_hour=min_baseline_kwh_per_hour,
-            )
+        consumption_kwh_per_hour=lambda slot_start: _consumption_from_hourly_profile(
+            hourly_profile=hourly_profile,
+            target=slot_start,
+            min_baseline_kwh_per_hour=min_baseline_kwh_per_hour,
+            history_correction_percent=history_correction_percent,
         ),
     )
 
@@ -311,6 +337,52 @@ def _record_consumption_history(
                 source="managed",
                 value=managed_value,
             )
+
+
+class _PlannerHistory:
+    def __init__(self, history: EnergyHistory, source: str) -> None:
+        self.history = history
+        self.source = source
+
+
+async def _async_planner_history_from_ha(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    now,
+    fallback_history: EnergyHistory,
+    warnings: list[str],
+) -> _PlannerHistory:
+    home_entity_id = entry.data.get(CONF_HOME_ENERGY_HOURLY_ENTITY)
+    if not home_entity_id:
+        return _PlannerHistory(fallback_history, "stored")
+
+    history = await async_get_recorder_energy_history(
+        hass,
+        home_entity_id=home_entity_id,
+        managed_entity_id=entry.data.get(CONF_MANAGED_ENERGY_HOURLY_ENTITY),
+        now=now,
+        learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
+    )
+    if history is None:
+        warnings.append(
+            "Home Assistant recorder history is not available; "
+            "using stored Energy Planner history."
+        )
+        return _PlannerHistory(fallback_history, "stored")
+    return _PlannerHistory(history, "ha_history")
+
+
+def _consumption_from_hourly_profile(
+    *,
+    hourly_profile: dict[int, float],
+    target,
+    min_baseline_kwh_per_hour: float,
+    history_correction_percent: float,
+) -> float:
+    value = hourly_profile.get(target.hour, 0.0)
+    value *= 1 + history_correction_percent / 100
+    return max(value, min_baseline_kwh_per_hour)
 
 
 def _solcast_forecast(
