@@ -30,7 +30,7 @@ class SolarForecastPoint:
 @dataclass(frozen=True)
 class SocForecastPoint:
     timestamp: datetime
-    soc_percent: float
+    soc_percent: int
     battery_kwh: float
     solar_kwh: float
     consumption_kwh: float

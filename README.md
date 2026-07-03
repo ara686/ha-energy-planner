@@ -183,6 +183,8 @@ Settings > Devices & services > Energy Planner > Entities.
 
 The SoC forecast includes at least 24 hours and can use a longer configured
 horizon when Home Assistant source data is available.
+Forecast `soc_percent` values are rounded to whole integer percentages because
+most PV and battery systems do not provide meaningful decimal SoC precision.
 
 ## Dashboard examples
 

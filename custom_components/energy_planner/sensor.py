@@ -271,9 +271,9 @@ def _datetime_value(value: Any) -> datetime | None:
         return None
 
 
-def _forecast_24h_soc(result: PlannerResult) -> float | None:
+def _forecast_24h_soc(result: PlannerResult) -> int | None:
     point = result.plan.get("soc_forecast_24h")
     if not isinstance(point, dict):
         return None
     value = point.get("soc_percent")
-    return value if isinstance(value, int | float) else None
+    return value if isinstance(value, int) else None

@@ -128,7 +128,8 @@ def test_soc_forecast_contains_24h_point_and_longer_horizon():
         _input(
             now=now,
             slots=_slots(now, 36, solar_kwh=0.0, consumption_kwh=0.2),
-            battery_soc=90,
+            battery_soc=90.4,
+            battery_capacity_kwh=13,
             forecast_horizon_hours=36,
         )
     )
@@ -139,6 +140,12 @@ def test_soc_forecast_contains_24h_point_and_longer_horizon():
         == (now + timedelta(hours=24)).isoformat()
     )
     assert len(result.plan["soc_forecast"]["points"]) == 36
+    assert isinstance(result.plan["soc_forecast_24h"]["soc_percent"], int)
+    assert isinstance(result.plan["soc_at_forecast_horizon"], int)
+    assert all(
+        isinstance(point["soc_percent"], int)
+        for point in result.plan["soc_forecast"]["points"]
+    )
     assert result.plan["soc_at_forecast_horizon"] < 90
 
 

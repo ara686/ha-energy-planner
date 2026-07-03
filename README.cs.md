@@ -183,6 +183,9 @@ ID zkontrolujte v Settings > Devices & services > Energy Planner > Entities.
 
 SoC predikce obsahuje alespoň 24 hodin a může použít delší nakonfigurovaný
 horizont, pokud jsou dostupná zdrojová data z Home Assistantu.
+Forecast hodnoty `soc_percent` jsou zaokrouhlené na celá procenta, protože
+většina FVE a bateriových systémů neposkytuje smysluplnou přesnost SoC na
+desetiny.
 
 ## Příklady dashboardu
 

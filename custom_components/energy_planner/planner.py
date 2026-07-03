@@ -226,8 +226,13 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
                 "points": points,
             },
             "soc_forecast_24h": soc_forecast_24h,
-            "soc_at_forecast_horizon": _round(
-                forecast_horizon.soc_percent if forecast_horizon else current_soc
+            "soc_at_forecast_horizon": (
+                forecast_horizon.soc_percent
+                if forecast_horizon
+                else _round_soc_percent(
+                    _soc_to_kwh(current_soc, data.battery_capacity_kwh),
+                    data.battery_capacity_kwh,
+                )
             ),
         },
         forecast={
@@ -355,7 +360,10 @@ def _empty_plan(
             "points": [],
         },
         "soc_forecast_24h": None,
-        "soc_at_forecast_horizon": _round(current_soc),
+        "soc_at_forecast_horizon": _round_soc_percent(
+            current_kwh,
+            data.battery_capacity_kwh,
+        ),
     }
 
 
@@ -433,7 +441,7 @@ def _simulate(
         points.append(
             SocForecastPoint(
                 timestamp=slot.start,
-                soc_percent=_round(_kwh_to_soc(battery_kwh, capacity)),
+                soc_percent=_round_soc_percent(battery_kwh, capacity),
                 battery_kwh=_round(battery_kwh),
                 solar_kwh=_round(solar_kwh),
                 consumption_kwh=_round(consumption_kwh),
