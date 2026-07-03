@@ -34,17 +34,20 @@ you in v1.
 
 ### Input entities
 
-| Setup field | Required | Expected entity | How to prepare it |
-|-------------|----------|-----------------|-------------------|
-| Battery state of charge | Yes | Numeric battery SoC sensor in `%`. | Use the SoC entity from your PV/battery inverter integration, for example Victron, GoodWe, Solax, Huawei, SolarEdge or another FVE/PV system integration. |
-| Battery capacity | Yes | Numeric battery capacity sensor in `kWh`. | Use an entity from the inverter/BMS if it exists. If the battery capacity is fixed and your system does not expose it, create a Home Assistant helper that provides the configured capacity value. |
-| Battery minimum state of charge | Yes | Numeric minimum SoC sensor in `%`. | Use the minimum/reserve SoC entity from the inverter/BMS. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
-| Home hourly consumption history | Yes | Hourly `utility_meter` sensor in `kWh`. | Create a Utility Meter helper with cycle `hourly` from the whole-home energy consumption sensor. This is the main historical house consumption input. |
-| Managed hourly consumption history | No | Hourly `utility_meter` sensor in `kWh`. | Create another Utility Meter helper with cycle `hourly` from the controlled/managed load energy sensor. This value is subtracted from home consumption per hour. |
-| Solcast forecast for today | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains today's PV forecast in its state or attributes, for example `sensor.solcast_pv_forecast_forecast_today`. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
-| Solcast forecast for tomorrow | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains tomorrow's PV forecast, for example `sensor.solcast_pv_forecast_forecast_tomorrow`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect this sibling entity. |
-| Additional Solcast forecast days | No | One or more Solcast forecast entities from Home Assistant. | Select longer-horizon daily forecast sensors, for example `sensor.solcast_pv_forecast_forecast_day_3` or `sensor.solcast_pv_forecast_forecast_day_4`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect `forecast_tomorrow` and `forecast_day_3` through `forecast_day_7` when those entities exist. |
-| Price or tariff | No | Numeric price/tariff sensor or tariff state entity. | Reserved for tariff-aware planning and diagnostics. The current v1 planner does not control devices from this input. |
+These values are selected in the setup UI. The `Key` column is the stored
+configuration key used in diagnostics and debug output.
+
+| Setup field | Key | Required | Expected input | Notes and examples |
+|-------------|-----|----------|----------------|--------------------|
+| Battery state of charge | `battery_soc_entity` | Required | Numeric battery SoC sensor in `%`. | Use the SoC entity from your PV/battery inverter integration, for example Victron, GoodWe, Solax, Huawei or SolarEdge. |
+| Battery capacity | `battery_capacity_entity` | Required | Numeric battery capacity sensor in `kWh`. | Use an inverter/BMS entity if it exists. If capacity is fixed and not exposed by the inverter, create a Home Assistant helper with the configured capacity value. |
+| Battery minimum state of charge | `battery_min_soc_entity` | Required | Numeric minimum/reserve SoC sensor in `%`. | Use the minimum SoC entity from the inverter/BMS. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
+| Home hourly consumption history | `home_energy_hourly_entity` | Required | Hourly `utility_meter` sensor in `kWh`. | Create a Utility Meter helper with cycle `hourly` from the whole-home energy consumption sensor. This is the main historical house consumption input. |
+| Managed hourly consumption history | `managed_energy_hourly_entity` | Optional | Hourly `utility_meter` sensor in `kWh`. | Create another hourly Utility Meter from intentionally controlled load energy, for example EV charging, boiler heating or water heating. This value is subtracted from home consumption per hour. |
+| Solcast forecast for today | `solcast_today_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_today`. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
+| Solcast forecast for tomorrow | `solcast_tomorrow_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_tomorrow`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect this sibling entity. |
+| Additional Solcast forecast days | `solcast_additional_entities` | Optional | One or more Solcast forecast sensors from Home Assistant. | Examples: `sensor.solcast_pv_forecast_forecast_day_3`, `sensor.solcast_pv_forecast_forecast_day_4`. Standard `forecast_day_3` through `forecast_day_7` siblings can be auto-detected when they exist. |
+| Price or tariff | `price_entity` | Optional | Numeric price/tariff sensor or tariff state entity. | Reserved for tariff-aware planning and diagnostics. The current v1 planner does not control devices from this input. |
 
 ### Preparing hourly consumption helpers
 
@@ -126,17 +129,41 @@ Runtime behavior is changed through the Options Flow: planning interval, history
 correction, baseline load, grid charge limits, NT windows, charge window and
 forecast horizon.
 
-## Main outputs
+## Output entities
 
-- `lock_soc`
-- `charge_to_soc`
-- `safe_discharge_soc`
-- `free_capacity_kwh`
-- `unused_surplus_kwh`
-- compact forecast object
+Energy Planner creates sensor entities only. It does not create switches,
+numbers, selects or any device-control entities in v1.
 
-The forecast includes at least 24 hours and can use a longer configured horizon
-when Home Assistant source data is available.
+Entity IDs below are the typical defaults for an integration instance named
+`Energy Planner`. Home Assistant may add suffixes or use renamed entity IDs if
+there are conflicts or if you rename entities manually. Check the actual IDs in
+Settings > Devices & services > Energy Planner > Entities.
+
+| Typical entity ID | Output key | Unit/type | Description |
+|-------------------|------------|-----------|-------------|
+| `sensor.energy_planner_state` | `state` | text | Planner state: `ok`, `warning` or `insufficient_data`. Attributes include warnings, slot count and compact history status. |
+| `sensor.energy_planner_lock_soc` | `lock_soc` | `%` | Minimum SoC the planner wants to protect for the low/high tariff planning window. |
+| `sensor.energy_planner_charge_to_soc` | `charge_to_soc` | `%` | Optional grid-charge target SoC needed to cover the forecasted high-tariff deficit from the configured charge window. |
+| `sensor.energy_planner_target_soc` | `target_soc` | `%` | Final target SoC used by the planner; currently the higher value of `lock_soc` and `charge_to_soc`. |
+| `sensor.energy_planner_safe_discharge_soc` | `safe_discharge_soc` | `%` | Lowest SoC the planner considers safe to discharge to while still preserving the future plan. |
+| `sensor.energy_planner_free_capacity_soc` | `free_capacity_soc` | `%` | Current SoC above `safe_discharge_soc`, expressed as battery percentage. |
+| `sensor.energy_planner_free_capacity` | `free_capacity_kwh` | `kWh` | Current energy above `safe_discharge_soc`, expressed as battery capacity. |
+| `sensor.energy_planner_unused_surplus_today` | `unused_surplus_today_kwh` | `kWh` | Forecasted PV surplus for today that cannot be stored or used by the simulated plan. |
+| `sensor.energy_planner_unused_surplus_total` | `unused_surplus_total_kwh` | `kWh` | Forecasted PV surplus across the configured forecast horizon that cannot be stored or used by the simulated plan. |
+| `sensor.energy_planner_first_full_time` | `first_full_time` | timestamp | First forecasted time when the battery reaches full SoC. |
+| `sensor.energy_planner_high_tariff_grid_import_at_target` | `vt_grid_import_kwh_at_target` | `kWh` | Forecasted high-tariff grid import remaining in the simulation when charging to `target_soc`. |
+| `sensor.energy_planner_charged_total_at_target` | `charged_kwh_total_at_target` | `kWh` | Total grid energy the simulation charges into the battery to reach `target_soc`. |
+| `sensor.energy_planner_soc_at_planner_start` | `soc_at_planner_start` | `%` | Predicted SoC at the start of the planning window. |
+| `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | `%` | Predicted SoC at the start of the lock/protection window. |
+| `sensor.energy_planner_soc_forecast` | `soc_forecast` | `%` | State is predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and the compact future `points` array for graph cards. |
+| `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | `%` | Predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
+| `sensor.energy_planner_solar_start` | `sun_start` | timestamp | Start of the next usable solar production period detected from forecast slots. |
+| `sensor.energy_planner_lock_start` | `lock_start` | timestamp | Start of the period where the calculated lock SoC is relevant. |
+| `sensor.energy_planner_updated` | `updated` | timestamp | Time of the last successful coordinator calculation. |
+| `sensor.energy_planner_history_status` | `history_status` | text | Compact status for the consumption history source and coverage used by the planner. |
+
+The SoC forecast includes at least 24 hours and can use a longer configured
+horizon when Home Assistant source data is available.
 
 ## Dashboard examples
 
