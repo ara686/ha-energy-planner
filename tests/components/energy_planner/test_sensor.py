@@ -3,6 +3,7 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
 
 from custom_components.energy_planner.const import DOMAIN
@@ -36,6 +37,34 @@ async def test_setup_entry_creates_all_sensors(hass, config_entry):
     assert "warnings" in planner_state.attributes
     assert "plan" not in planner_state.attributes
     assert "forecast" not in planner_state.attributes
+
+
+async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+    categories = {
+        entity.unique_id.removeprefix(
+            f"{config_entry.entry_id}_"
+        ): entity.entity_category
+        for entity in entities
+    }
+
+    assert categories["state"] is EntityCategory.DIAGNOSTIC
+    assert categories["soc_at_planner_start"] is EntityCategory.DIAGNOSTIC
+    assert categories["soc_at_lock_start"] is EntityCategory.DIAGNOSTIC
+    assert categories["sun_start"] is EntityCategory.DIAGNOSTIC
+    assert categories["lock_start"] is EntityCategory.DIAGNOSTIC
+    assert categories["updated"] is EntityCategory.DIAGNOSTIC
+    assert categories["history_status"] is EntityCategory.DIAGNOSTIC
+    assert categories["target_soc"] is None
+    assert categories["soc_forecast"] is None
+    assert categories["soc_forecast_24h"] is None
 
 
 async def test_sensors_are_unavailable_when_required_data_is_invalid(

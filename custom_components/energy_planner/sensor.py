@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 
 try:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -40,6 +41,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         key="state",
         translation_key="state",
         icon="mdi:calculator-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda result: result.state,
         attr_fn=lambda result: {
             "warnings": result.warnings,
@@ -139,6 +141,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         translation_key="soc_at_planner_start",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
+        entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda result: result.plan.get("soc_at_planner_start"),
     ),
@@ -147,6 +150,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         translation_key="soc_at_lock_start",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
+        entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda result: result.plan.get("soc_at_lock_start"),
     ),
@@ -172,18 +176,21 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         key="sun_start",
         translation_key="sun_start",
         device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda result: _datetime_value(result.plan.get("sun_start")),
     ),
     EnergyPlannerSensorDescription(
         key="lock_start",
         translation_key="lock_start",
         device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda result: _datetime_value(result.plan.get("lock_start")),
     ),
     EnergyPlannerSensorDescription(
         key="updated",
         translation_key="updated",
         device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda result: result.updated,
         always_available=True,
     ),
@@ -191,6 +198,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         key="history_status",
         translation_key="history_status",
         icon="mdi:history",
+        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda result: result.forecast.get("history_status", "unknown"),
     ),
 )
