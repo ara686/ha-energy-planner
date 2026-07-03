@@ -41,8 +41,9 @@ you in v1.
 | Battery minimum state of charge | Yes | Numeric minimum SoC sensor in `%`. | Use the minimum/reserve SoC entity from the inverter/BMS. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
 | Home hourly consumption history | Yes | Hourly `utility_meter` sensor in `kWh`. | Create a Utility Meter helper with cycle `hourly` from the whole-home energy consumption sensor. This is the main historical house consumption input. |
 | Managed hourly consumption history | No | Hourly `utility_meter` sensor in `kWh`. | Create another Utility Meter helper with cycle `hourly` from the controlled/managed load energy sensor. This value is subtracted from home consumption per hour. |
-| Solcast forecast for today | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains today's PV forecast in its state or attributes. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
-| Solcast forecast for tomorrow | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains tomorrow's PV forecast in its state or attributes. |
+| Solcast forecast for today | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains today's PV forecast in its state or attributes, for example `sensor.solcast_pv_forecast_forecast_today`. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
+| Solcast forecast for tomorrow | No | Solcast forecast entity from Home Assistant. | Select the Solcast entity that contains tomorrow's PV forecast, for example `sensor.solcast_pv_forecast_forecast_tomorrow`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect this sibling entity. |
+| Additional Solcast forecast days | No | One or more Solcast forecast entities from Home Assistant. | Select longer-horizon daily forecast sensors, for example `sensor.solcast_pv_forecast_forecast_day_3` or `sensor.solcast_pv_forecast_forecast_day_4`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect `forecast_tomorrow` and `forecast_day_3` through `forecast_day_7` when those entities exist. |
 | Price or tariff | No | Numeric price/tariff sensor or tariff state entity. | Reserved for tariff-aware planning and diagnostics. The current v1 planner does not control devices from this input. |
 
 ### Preparing hourly consumption helpers
@@ -94,6 +95,31 @@ the configurable `history_correction_percent`. If no value exists for a target
 hour, the planner uses `min_baseline_kwh_per_hour`. Energy Planner also stores
 its own hourly history as a fallback when Home Assistant history is unavailable.
 
+### Solcast forecast inputs
+
+Energy Planner consumes the detailed forecast attributes from Home Assistant
+Solcast forecast sensors. In a standard Solcast PV Forecast setup, useful entity
+IDs look like this:
+
+- `sensor.solcast_pv_forecast_forecast_today`
+- `sensor.solcast_pv_forecast_forecast_tomorrow`
+- `sensor.solcast_pv_forecast_forecast_day_3`
+- `sensor.solcast_pv_forecast_forecast_day_4`
+
+Day 5 through day 7 can be used the same way if your Solcast integration exposes
+and enables those entities.
+
+If you configure only `sensor.solcast_pv_forecast_forecast_today`, Energy
+Planner automatically looks for standard sibling entities named
+`forecast_tomorrow` and `forecast_day_3` through `forecast_day_7`. This is only a
+name-based convenience; it does not synthesize or extrapolate future solar data.
+If your Solcast entities use different names, select tomorrow and additional
+forecast days explicitly in the setup form.
+
+For a 24 hour forecast, today and tomorrow are usually enough. For longer
+horizons, or late in the evening when less of today remains, enable and select
+at least `forecast_day_3`.
+
 ### Runtime options
 
 Runtime behavior is changed through the Options Flow: planning interval, history
@@ -128,7 +154,7 @@ Install `apexcharts-card` through HACS, then add a manual card like this:
 
 ```yaml
 type: custom:apexcharts-card
-graph_span: 36h
+graph_span: 24h
 span:
   start: hour
 locale: cs
@@ -166,8 +192,9 @@ series:
 The important part is `entity.attributes.points`. Each point uses
 `timestamp` and `soc_percent`; do not use `entity.points`, `time` or `SoC`.
 
-Set `graph_span` to match the configured forecast horizon. The default Energy
-Planner horizon is 36 hours, while the minimum supported horizon is 24 hours.
+This example intentionally shows the next 24 hours. Increase `graph_span` to
+match a longer configured forecast horizon if you also provide longer Solcast
+forecast inputs.
 
 If the card is empty:
 

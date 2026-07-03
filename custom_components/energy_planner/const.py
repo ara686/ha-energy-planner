@@ -9,6 +9,7 @@ CONF_HOME_ENERGY_HOURLY_ENTITY = "home_energy_hourly_entity"
 CONF_MANAGED_ENERGY_HOURLY_ENTITY = "managed_energy_hourly_entity"
 CONF_SOLCAST_TODAY_ENTITY = "solcast_today_entity"
 CONF_SOLCAST_TOMORROW_ENTITY = "solcast_tomorrow_entity"
+CONF_SOLCAST_ADDITIONAL_ENTITIES = "solcast_additional_entities"
 CONF_PRICE_ENTITY = "price_entity"
 
 CONF_INTERVAL_MINUTES = "interval_minutes"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -25,6 +26,7 @@ from .const import (
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
+    CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -51,6 +53,9 @@ from .planner import calculate_plan, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
 
 _LOGGER = logging.getLogger(__name__)
+_SOLCAST_DAILY_ENTITY_RE = re.compile(
+    r"(?:^|_)(?:forecast_)?(today|tomorrow|day_[3-7])$"
+)
 
 
 class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
@@ -391,12 +396,12 @@ def _solcast_forecast(
     warnings: list[str],
 ) -> list[SolarForecastPoint]:
     points: list[SolarForecastPoint] = []
-    configured = False
-    for key in (CONF_SOLCAST_TODAY_ENTITY, CONF_SOLCAST_TOMORROW_ENTITY):
-        entity_id = entry.data.get(key)
-        if not entity_id:
-            continue
-        configured = True
+    configured = bool(
+        entry.data.get(CONF_SOLCAST_TODAY_ENTITY)
+        or entry.data.get(CONF_SOLCAST_TOMORROW_ENTITY)
+        or entry.data.get(CONF_SOLCAST_ADDITIONAL_ENTITIES)
+    )
+    for entity_id in _solcast_entity_ids(hass, entry):
         state = hass.states.get(entity_id)
         if state is None:
             warnings.append(f"Optional Solcast entity is missing: {entity_id}.")
@@ -411,6 +416,63 @@ def _solcast_forecast(
     if not configured:
         warnings.append("No Solcast forecast entities are configured.")
     return sorted(points, key=lambda point: point.start)
+
+
+def _solcast_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
+    entity_ids: list[str] = []
+    configured_daily_slots: set[str] = set()
+
+    def add(entity_id: Any) -> None:
+        if isinstance(entity_id, str) and entity_id and entity_id not in entity_ids:
+            entity_ids.append(entity_id)
+            if daily_slot := _solcast_daily_slot(entity_id):
+                configured_daily_slots.add(daily_slot)
+
+    today_entity_id = entry.data.get(CONF_SOLCAST_TODAY_ENTITY)
+    add(today_entity_id)
+    add(entry.data.get(CONF_SOLCAST_TOMORROW_ENTITY))
+    additional_entity_ids = entry.data.get(CONF_SOLCAST_ADDITIONAL_ENTITIES) or []
+    if isinstance(additional_entity_ids, str):
+        add(additional_entity_ids)
+    else:
+        for entity_id in additional_entity_ids:
+            add(entity_id)
+
+    for entity_id in _standard_solcast_daily_entities(
+        hass,
+        today_entity_id,
+        configured_daily_slots,
+    ):
+        add(entity_id)
+
+    return entity_ids
+
+
+def _standard_solcast_daily_entities(
+    hass: HomeAssistant,
+    today_entity_id: Any,
+    excluded_slots: set[str],
+) -> list[str]:
+    if not isinstance(today_entity_id, str) or not today_entity_id:
+        return []
+    if not today_entity_id.endswith("_forecast_today"):
+        return []
+
+    prefix = today_entity_id.removesuffix("_forecast_today")
+    candidates = {
+        "tomorrow": f"{prefix}_forecast_tomorrow",
+        **{f"day_{day}": f"{prefix}_forecast_day_{day}" for day in range(3, 8)},
+    }
+    return [
+        entity_id
+        for slot, entity_id in candidates.items()
+        if slot not in excluded_slots and hass.states.get(entity_id)
+    ]
+
+
+def _solcast_daily_slot(entity_id: str) -> str | None:
+    match = _SOLCAST_DAILY_ENTITY_RE.search(entity_id)
+    return match.group(1) if match else None
 
 
 def _option(entry: ConfigEntry, key: str, default: Any) -> Any:

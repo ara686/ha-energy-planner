@@ -13,6 +13,7 @@
           "managed_energy_hourly_entity": "Hodinová historie řízené spotřeby",
           "solcast_today_entity": "Předpověď Solcast na dnes",
           "solcast_tomorrow_entity": "Předpověď Solcast na zítřek",
+          "solcast_additional_entities": "Další dny předpovědi Solcast",
           "price_entity": "Cena nebo tarif"
         }
       }

@@ -23,6 +23,7 @@ from custom_components.energy_planner.const import (
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
+    CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -36,7 +37,7 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Enable custom integrations for Home Assistant integration tests."""
 
 
-def config_data(**overrides: str) -> dict[str, str]:
+def config_data(**overrides: Any) -> dict[str, Any]:
     """Return valid config flow data."""
     data = {
         CONF_BATTERY_SOC_ENTITY: "sensor.battery_soc",
@@ -46,6 +47,7 @@ def config_data(**overrides: str) -> dict[str, str]:
         CONF_MANAGED_ENERGY_HOURLY_ENTITY: "sensor.managed_energy_hourly",
         CONF_SOLCAST_TODAY_ENTITY: "sensor.solcast_today",
         CONF_SOLCAST_TOMORROW_ENTITY: "sensor.solcast_tomorrow",
+        CONF_SOLCAST_ADDITIONAL_ENTITIES: ["sensor.solcast_day_3"],
     }
     data.update(overrides)
     return data
@@ -106,6 +108,11 @@ def set_source_states(hass, *, invalid_required_state: bool = False) -> None:
         "sensor.solcast_tomorrow",
         "0",
         _forecast_attributes(hass, offset_hours=24),
+    )
+    hass.states.async_set(
+        "sensor.solcast_day_3",
+        "0",
+        _forecast_attributes(hass, offset_hours=48),
     )
 
 

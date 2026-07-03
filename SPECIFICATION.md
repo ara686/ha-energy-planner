@@ -35,6 +35,9 @@ managed_energy_hourly_entity: sensor.managed_power_utility_meter_hourly
 
 solcast_today_entity: sensor.solcast_pv_forecast_forecast_today
 solcast_tomorrow_entity: sensor.solcast_pv_forecast_forecast_tomorrow
+solcast_additional_entities:
+  - sensor.solcast_pv_forecast_forecast_day_3
+  - sensor.solcast_pv_forecast_forecast_day_4
 
 price_entity: sensor.final_current_fix_electricity_price_3
 ```
@@ -54,6 +57,8 @@ Assumptions:
 - The hourly profile includes the legacy 5% margin and then applies `history_correction_percent`.
 - If Home Assistant history is unavailable, the integration uses its own stored hourly history as a fallback.
 - Solcast PV forecast data is read from the configured Solcast Home Assistant forecast entities.
+- When the configured Solcast today entity uses the standard `_forecast_today` suffix, the integration may auto-detect existing standard sibling entities for tomorrow and day 3 through day 7.
+- Auto-detection only discovers existing Home Assistant entities; it must not synthesize, extrapolate or call Solcast for missing future days.
 - Battery capacity is kWh.
 - Battery SoC is percent.
 - Integration should build and maintain its own internal history.
@@ -73,6 +78,7 @@ Optional:
 - managed hourly consumption history source entity
 - Solcast today entity
 - Solcast tomorrow entity
+- additional Solcast forecast day entities
 - price entity
 
 ## Options

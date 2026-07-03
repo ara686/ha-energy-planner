@@ -21,6 +21,7 @@ from .const import (
     CONF_PRICE_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
+    CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -66,6 +67,9 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): selector.EntitySelector(),
                 vol.Optional(CONF_SOLCAST_TODAY_ENTITY): selector.EntitySelector(),
                 vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY): selector.EntitySelector(),
+                vol.Optional(CONF_SOLCAST_ADDITIONAL_ENTITIES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", multiple=True)
+                ),
                 vol.Optional(CONF_PRICE_ENTITY): selector.EntitySelector(),
             }
         )

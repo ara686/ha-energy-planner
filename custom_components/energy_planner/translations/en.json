@@ -13,6 +13,7 @@
           "managed_energy_hourly_entity": "Managed hourly consumption history",
           "solcast_today_entity": "Solcast forecast for today",
           "solcast_tomorrow_entity": "Solcast forecast for tomorrow",
+          "solcast_additional_entities": "Additional Solcast forecast days",
           "price_entity": "Price or tariff"
         }
       }
