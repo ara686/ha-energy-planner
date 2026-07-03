@@ -107,7 +107,7 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
     floor_soc = _clamp(data.battery_min_soc, 0.0, 100.0)
     floor_kwh = _soc_to_kwh(floor_soc, data.battery_capacity_kwh)
 
-    lock_start = _find_lock_start(data, slots)
+    lock_start = _find_lock_start(data)
     horizon_end = data.now + timedelta(hours=max(data.forecast_horizon_hours, 24))
     sun_start = _find_sun_start(data, slots, start=lock_start, end=horizon_end)
     sun_start = sun_start or horizon_end
@@ -589,24 +589,54 @@ def _find_sun_start(
     return None
 
 
-def _find_lock_start(data: PlannerInput, slots: list[ForecastSlot]) -> datetime:
-    for slot in slots:
-        if _is_in_windows(slot.start, data.nt_windows):
-            return slot.start
+def _find_lock_start(data: PlannerInput) -> datetime:
+    active_starts = [
+        _current_window_start(data.now, window)
+        for window in data.nt_windows
+        if _is_in_window(data.now, window)
+    ]
+    if active_starts:
+        return max(active_starts)
+    if data.nt_windows:
+        return min(_next_window_start(data.now, window) for window in data.nt_windows)
     return data.now
 
 
 def _find_next_window_start(timestamp: datetime, window: TimeWindow) -> datetime:
+    return _next_window_start(timestamp, window)
+
+
+def _current_window_start(timestamp: datetime, window: TimeWindow) -> datetime:
     start_minutes = _minutes_since_midnight(window.start)
-    candidate = timestamp.replace(
+    end_minutes = _minutes_since_midnight(window.end)
+    current_minutes = timestamp.hour * 60 + timestamp.minute
+    candidate = _window_start_on_date(timestamp, start_minutes)
+
+    if start_minutes == end_minutes:
+        if current_minutes < start_minutes:
+            candidate -= timedelta(days=1)
+        return candidate
+
+    if start_minutes > end_minutes and current_minutes < end_minutes:
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def _next_window_start(timestamp: datetime, window: TimeWindow) -> datetime:
+    start_minutes = _minutes_since_midnight(window.start)
+    candidate = _window_start_on_date(timestamp, start_minutes)
+    if candidate <= timestamp:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+def _window_start_on_date(timestamp: datetime, start_minutes: int) -> datetime:
+    return timestamp.replace(
         hour=start_minutes // 60,
         minute=start_minutes % 60,
         second=0,
         microsecond=0,
     )
-    if candidate <= timestamp:
-        candidate += timedelta(days=1)
-    return candidate
 
 
 def _predict_soc_at(

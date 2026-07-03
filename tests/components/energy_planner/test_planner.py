@@ -168,6 +168,69 @@ def test_nt_window_uses_grid_and_preserves_battery():
     assert first_point["battery_kwh"] == 5.0
 
 
+def test_lock_start_uses_current_nt_window_start_not_next_slot():
+    now = datetime(2026, 7, 3, 23, 16, 58)
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=_slots(
+                datetime(2026, 7, 3, 23, 20),
+                24,
+                solar_kwh=0.0,
+                consumption_kwh=0.2,
+                step_minutes=5,
+            ),
+            nt_windows=[TimeWindow(start="22:00", end="04:00")],
+            interval_minutes=5,
+            forecast_horizon_hours=24,
+        )
+    )
+
+    assert result.plan["lock_start"] == datetime(2026, 7, 3, 22, 0).isoformat()
+
+
+def test_lock_start_uses_next_nt_window_start_when_outside_window():
+    now = datetime(2026, 7, 3, 21, 16, 58)
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=_slots(
+                datetime(2026, 7, 3, 21, 20),
+                24,
+                solar_kwh=0.0,
+                consumption_kwh=0.2,
+                step_minutes=5,
+            ),
+            nt_windows=[TimeWindow(start="22:00", end="04:00")],
+            interval_minutes=5,
+            forecast_horizon_hours=24,
+        )
+    )
+
+    assert result.plan["lock_start"] == datetime(2026, 7, 3, 22, 0).isoformat()
+
+
+def test_lock_start_uses_previous_day_start_after_midnight_in_crossing_window():
+    now = datetime(2026, 7, 4, 2, 16, 58)
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=_slots(
+                datetime(2026, 7, 4, 2, 20),
+                24,
+                solar_kwh=0.0,
+                consumption_kwh=0.2,
+                step_minutes=5,
+            ),
+            nt_windows=[TimeWindow(start="22:00", end="04:00")],
+            interval_minutes=5,
+            forecast_horizon_hours=24,
+        )
+    )
+
+    assert result.plan["lock_start"] == datetime(2026, 7, 3, 22, 0).isoformat()
+
+
 def test_charge_to_soc_covers_future_vt_deficit_from_charge_window():
     now = datetime(2026, 7, 3, 22, 0)
     slots = [
