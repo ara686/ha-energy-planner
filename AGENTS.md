@@ -56,15 +56,18 @@ You are working on a Home Assistant custom integration named `energy_planner`.
 - Validate release candidates with pytest, Ruff, Hassfest and the HACS Action for category `integration`.
 - Publish a full GitHub release for HACS releases; a tag alone is not enough.
 - Keep `main` as the public stable release branch. HACS can validate pushed branches, but installs without releases use the default branch, so merge `develop` to `main` only for release-ready code.
+- Main-branch releases must publish release notes. The CI release job creates a `v<manifest version>` tag and GitHub release after the Validate workflow succeeds on `main`.
+- If a `v<manifest version>` tag already exists on a different commit, stop and bump the version before merging to `main`; do not overwrite published tags or releases.
 
 ## Development workflow
 
 - `develop` is the development integration branch.
 - Create a dedicated branch for each development task.
 - Base development branches on `develop`.
-- Merge development branches back into `develop` only after successful testing.
+- Merge development branches back into `develop` automatically after successful local validation unless the user explicitly asks not to.
 - Do not merge unfinished or untested work into `develop`.
-- Keep `main` for stable release-ready code.
+- Keep `main` for stable release-ready code and merge to `main` only on the user's explicit instruction.
+- A merge to `main` is a release action: make sure release versions are aligned in `custom_components/energy_planner/manifest.json` and `pyproject.toml`, then let CI create the tag and GitHub release notes.
 - Before merging or pushing release candidates, run the local quality gate in `TESTING.md` and verify the remote Validate workflow.
 
 ## Coding style

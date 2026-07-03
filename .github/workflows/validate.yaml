@@ -61,3 +61,90 @@ jobs:
 
       - name: Pytest
         run: pytest -q
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - hacs
+      - hassfest
+      - unit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Read release version
+        id: version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import tomllib
+          from pathlib import Path
+
+          manifest = json.loads(
+              Path("custom_components/energy_planner/manifest.json").read_text()
+          )
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+
+          manifest_version = manifest["version"]
+          project_version = pyproject["project"]["version"]
+          if manifest_version != project_version:
+              raise SystemExit(
+                  "manifest.json version "
+                  f"{manifest_version!r} does not match pyproject.toml "
+                  f"version {project_version!r}"
+              )
+
+          print(f"version={manifest_version}")
+          print(f"tag=v{manifest_version}")
+          PY
+
+      - name: Check release tag and release state
+        id: release_state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --tags --force origin
+
+          tag="${{ steps.version.outputs.tag }}"
+          tag_exists=false
+          release_exists=false
+
+          if git rev-parse --verify --quiet "${tag}" >/dev/null; then
+            tag_exists=true
+            tag_commit="$(git rev-list -n 1 "${tag}")"
+            if [ "${tag_commit}" != "${GITHUB_SHA}" ]; then
+              echo "::error::${tag} already points to ${tag_commit}, not ${GITHUB_SHA}. Bump the integration version before merging to main."
+              exit 1
+            fi
+          fi
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            release_exists=true
+          fi
+
+          echo "tag_exists=${tag_exists}" >> "$GITHUB_OUTPUT"
+          echo "release_exists=${release_exists}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: steps.release_state.outputs.release_exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(
+            release create "${{ steps.version.outputs.tag }}"
+            --title "Energy Planner ${{ steps.version.outputs.tag }}"
+            --generate-notes
+            --latest
+          )
+
+          if [ "${{ steps.release_state.outputs.tag_exists }}" != "true" ]; then
+            args+=(--target "${GITHUB_SHA}")
+          fi
+
+          gh "${args[@]}"

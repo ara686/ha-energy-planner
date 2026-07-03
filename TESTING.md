@@ -16,13 +16,26 @@ Home Assistant test helpers.
 
 ## Remote Quality Gate
 
-The GitHub Validate workflow must pass on `develop` and release branches:
+The GitHub Validate workflow must pass on `develop` and `main`:
 
 - Ruff check
 - Ruff format check
 - pytest with Home Assistant test dependencies
 - Hassfest
 - HACS Action with category `integration`
+
+## Release Gate
+
+Merging to `main` is allowed only on explicit user instruction. After the
+Validate workflow succeeds on `main`, CI creates a GitHub release from the
+integration version:
+
+- `custom_components/energy_planner/manifest.json` and `pyproject.toml` must use
+  the same version.
+- The release tag is `v<version>`, for example `v0.0.4`.
+- If that tag already exists on a different commit, CI must fail and the version
+  must be bumped before retrying.
+- CI uses GitHub generated release notes for the release body.
 
 ## Required Test Coverage
 
