@@ -19,6 +19,7 @@ Reference documentation:
 ## Required Home Assistant Practices
 
 - UI setup through Config Flow only.
+- Config entry only schema when YAML setup is unsupported.
 - Runtime options through Options Flow.
 - One planner instance only, declared through `single_config_entry`.
 - Shared polling through `DataUpdateCoordinator`.

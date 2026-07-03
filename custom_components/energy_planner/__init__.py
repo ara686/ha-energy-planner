@@ -7,11 +7,13 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
+import homeassistant.helpers.config_validation as cv
 from homeassistant.exceptions import ServiceValidationError
 
 from .const import DOMAIN
 
 PLATFORMS = ["sensor"]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 
 

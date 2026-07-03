@@ -24,6 +24,7 @@ You are working on a Home Assistant custom integration named `energy_planner`.
 ## Home Assistant development rules
 
 - Keep setup UI-based through config entries; do not add YAML setup in v1.
+- Declare `CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)` when `async_setup` exists only for services and YAML setup is unsupported.
 - Keep `manifest.json` accurate, including `domain`, `name`, `documentation`, `issue_tracker`, `codeowners`, `config_flow`, `iot_class`, `requirements` and `version`.
 - If only one planner instance is supported, declare `single_config_entry` and test duplicate setup behavior.
 - Use `ConfigEntry.data` for persistent setup data and `ConfigEntry.options` for runtime-tunable options.
