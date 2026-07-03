@@ -1,5 +1,7 @@
 # ha-energy-planner
 
+English | [Česky](README.cs.md)
+
 Home Assistant custom integration for PV, battery, tariff and EV planning.
 
 > [!WARNING]
