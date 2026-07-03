@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers import selector
@@ -35,6 +37,26 @@ from .options import (
     serialize_window,
     serialize_windows,
 )
+
+
+def _number_selector(
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    step: float | str = "any",
+    unit_of_measurement: str | None = None,
+) -> selector.NumberSelector:
+    config: dict[str, Any] = {
+        "mode": selector.NumberSelectorMode.BOX,
+        "step": step,
+    }
+    if minimum is not None:
+        config["min"] = minimum
+    if maximum is not None:
+        config["max"] = maximum
+    if unit_of_measurement is not None:
+        config["unit_of_measurement"] = unit_of_measurement
+    return selector.NumberSelector(selector.NumberSelectorConfig(**config))
 
 
 class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -105,31 +127,56 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_INTERVAL_MINUTES,
                     default=options[CONF_INTERVAL_MINUTES],
-                ): int,
+                ): _number_selector(
+                    minimum=1,
+                    maximum=60,
+                    step=1,
+                    unit_of_measurement="min",
+                ),
                 vol.Required(
                     CONF_HISTORY_CORRECTION_PERCENT,
                     default=options[CONF_HISTORY_CORRECTION_PERCENT],
-                ): float,
+                ): _number_selector(
+                    minimum=-99.999,
+                    maximum=500,
+                    unit_of_measurement="%",
+                ),
                 vol.Required(
                     CONF_MIN_BASELINE_KWH_PER_HOUR,
                     default=options[CONF_MIN_BASELINE_KWH_PER_HOUR],
-                ): float,
+                ): _number_selector(
+                    minimum=0,
+                    unit_of_measurement="kWh",
+                ),
                 vol.Required(
                     CONF_GRID_CHARGE_MAX_KW,
                     default=options[CONF_GRID_CHARGE_MAX_KW],
-                ): float,
+                ): _number_selector(
+                    minimum=0,
+                    unit_of_measurement="kW",
+                ),
                 vol.Required(
                     CONF_GRID_CHARGE_EFFICIENCY,
                     default=options[CONF_GRID_CHARGE_EFFICIENCY],
-                ): float,
+                ): _number_selector(
+                    minimum=0,
+                    maximum=1,
+                ),
                 vol.Required(
                     CONF_SOC_RESERVE_PERCENT,
                     default=options[CONF_SOC_RESERVE_PERCENT],
-                ): float,
+                ): _number_selector(
+                    minimum=0,
+                    maximum=100,
+                    unit_of_measurement="%",
+                ),
                 vol.Required(
                     CONF_SOC_EPS_KWH,
                     default=options[CONF_SOC_EPS_KWH],
-                ): float,
+                ): _number_selector(
+                    minimum=0,
+                    unit_of_measurement="kWh",
+                ),
                 vol.Required(
                     CONF_NT_WINDOWS,
                     default=serialize_windows(options[CONF_NT_WINDOWS]),
@@ -141,11 +188,19 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_SUN_START_REQUIRED_MINUTES,
                     default=options[CONF_SUN_START_REQUIRED_MINUTES],
-                ): int,
+                ): _number_selector(
+                    minimum=1,
+                    step=1,
+                    unit_of_measurement="min",
+                ),
                 vol.Required(
                     CONF_FORECAST_HORIZON_HOURS,
                     default=options[CONF_FORECAST_HORIZON_HOURS],
-                ): int,
+                ): _number_selector(
+                    minimum=24,
+                    step=1,
+                    unit_of_measurement="h",
+                ),
             }
         )
 
