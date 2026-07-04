@@ -4,6 +4,8 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
 from .const import (
@@ -39,6 +41,11 @@ from .options import (
     serialize_window,
     serialize_windows,
 )
+from .sources import parse_float
+
+ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
+ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
+ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
 
 
 def _number_selector(
@@ -76,33 +83,15 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            await self.async_set_unique_id(DOMAIN)
-            self._abort_if_unique_id_configured()
-            return self.async_create_entry(title=DEFAULT_NAME, data=user_input)
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_BATTERY_SOC_ENTITY): selector.EntitySelector(),
-                vol.Required(CONF_BATTERY_CAPACITY_ENTITY): selector.EntitySelector(),
-                vol.Required(CONF_BATTERY_MIN_SOC_ENTITY): selector.EntitySelector(),
-                vol.Required(CONF_HOME_ENERGY_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(CONF_MANAGED_ENERGY_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", multiple=True)
-                ),
-                vol.Optional(CONF_SOLCAST_TODAY_ENTITY): selector.EntitySelector(),
-                vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY): selector.EntitySelector(),
-                vol.Optional(CONF_SOLCAST_ADDITIONAL_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", multiple=True)
-                ),
-                vol.Optional(CONF_PRICE_ENTITY): selector.EntitySelector(),
-            }
-        )
+            errors = _validate_config_input(self.hass, user_input)
+            if not errors:
+                await self.async_set_unique_id(DOMAIN)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(title=DEFAULT_NAME, data=user_input)
 
         return self.async_show_form(
             step_id="user",
-            data_schema=schema,
+            data_schema=_user_schema(),
             errors=errors,
         )
 
@@ -229,3 +218,69 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
             data_schema=schema,
             errors=errors,
         )
+
+
+def _user_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_BATTERY_SOC_ENTITY): selector.EntitySelector(),
+            vol.Required(CONF_BATTERY_CAPACITY_ENTITY): selector.EntitySelector(),
+            vol.Required(CONF_BATTERY_MIN_SOC_ENTITY): selector.EntitySelector(),
+            vol.Required(CONF_HOME_ENERGY_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(CONF_MANAGED_ENERGY_ENTITIES): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", multiple=True)
+            ),
+            vol.Optional(CONF_SOLCAST_TODAY_ENTITY): selector.EntitySelector(),
+            vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY): selector.EntitySelector(),
+            vol.Optional(CONF_SOLCAST_ADDITIONAL_ENTITIES): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", multiple=True)
+            ),
+            vol.Optional(CONF_PRICE_ENTITY): selector.EntitySelector(),
+        }
+    )
+
+
+def _validate_config_input(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    _validate_numeric_entity(hass, user_input, CONF_BATTERY_SOC_ENTITY, errors)
+    capacity = _validate_numeric_entity(
+        hass, user_input, CONF_BATTERY_CAPACITY_ENTITY, errors
+    )
+    if capacity is not None:
+        if not _is_kwh_entity(hass, user_input[CONF_BATTERY_CAPACITY_ENTITY]):
+            errors[CONF_BATTERY_CAPACITY_ENTITY] = ERR_BATTERY_CAPACITY_UNIT
+        elif capacity <= 0:
+            errors[CONF_BATTERY_CAPACITY_ENTITY] = ERR_BATTERY_CAPACITY_POSITIVE
+    _validate_numeric_entity(hass, user_input, CONF_BATTERY_MIN_SOC_ENTITY, errors)
+    _validate_numeric_entity(hass, user_input, CONF_HOME_ENERGY_ENTITY, errors)
+    return errors
+
+
+def _validate_numeric_entity(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+    key: str,
+    errors: dict[str, str],
+) -> float | None:
+    state = hass.states.get(user_input[key])
+    value = parse_float(state.state if state else None)
+    if value is None:
+        errors[key] = ERR_INVALID_NUMERIC_ENTITY
+    return value
+
+
+def _is_kwh_entity(hass: HomeAssistant, entity_id: str) -> bool:
+    state = hass.states.get(entity_id)
+    if state is None:
+        return False
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+    return _normalize_unit(unit) == _normalize_unit(UnitOfEnergy.KILO_WATT_HOUR)
+
+
+def _normalize_unit(unit: Any) -> str:
+    return str(unit or "").replace(" ", "").casefold()

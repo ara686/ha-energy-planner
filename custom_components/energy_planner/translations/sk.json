@@ -21,6 +21,11 @@
     "abort": {
       "already_configured": "Energy Planner už je nastavený.",
       "single_instance_allowed": "Je povolená iba jedna inštancia Energy Planneru."
+    },
+    "error": {
+      "invalid_numeric_entity": "Vybraná entita musí mať aktuálne číselný stav.",
+      "battery_capacity_unit": "Kapacita batérie musí byť entita v kWh.",
+      "battery_capacity_positive": "Kapacita batérie musí byť väčšia ako 0 kWh."
     }
   },
   "options": {

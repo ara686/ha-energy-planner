@@ -21,6 +21,11 @@
     "abort": {
       "already_configured": "Energy Planner is already configured.",
       "single_instance_allowed": "Only one Energy Planner instance is allowed."
+    },
+    "error": {
+      "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
+      "battery_capacity_unit": "Battery capacity must be an entity in kWh.",
+      "battery_capacity_positive": "Battery capacity must be greater than 0 kWh."
     }
   },
   "options": {

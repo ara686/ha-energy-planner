@@ -335,6 +335,10 @@ The services do not control devices.
 
 - `insufficient_data` means a required source entity is missing, unavailable or
   not numeric.
+- `error` with `Battery capacity must be greater than zero` means the configured
+  `battery_capacity_entity` is not a positive battery capacity in `kWh`. Do not
+  use current or installed-capacity-in-`Ah` entities; use a `kWh` capacity entity
+  or a Home Assistant helper with the fixed battery capacity.
 - `warning` usually means optional data, such as Solcast forecast, is missing or
   malformed.
 - Use diagnostics from the integration page to inspect configured entities, last

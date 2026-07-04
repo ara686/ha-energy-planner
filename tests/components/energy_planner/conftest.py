@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -101,12 +102,33 @@ def set_source_states(hass, *, invalid_required_state: bool = False) -> None:
     hass.states.async_set(
         "sensor.battery_soc",
         "unknown" if invalid_required_state else "55",
+        {"unit_of_measurement": PERCENTAGE},
     )
-    hass.states.async_set("sensor.battery_capacity", "20")
-    hass.states.async_set("sensor.battery_min_soc", "20")
-    hass.states.async_set("sensor.home_energy_total", "1000")
-    hass.states.async_set("sensor.ev_energy_total", "200")
-    hass.states.async_set("sensor.water_heater_energy_total", "50")
+    hass.states.async_set(
+        "sensor.battery_capacity",
+        "20",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    hass.states.async_set(
+        "sensor.battery_min_soc",
+        "20",
+        {"unit_of_measurement": PERCENTAGE},
+    )
+    hass.states.async_set(
+        "sensor.home_energy_total",
+        "1000",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    hass.states.async_set(
+        "sensor.ev_energy_total",
+        "200",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    hass.states.async_set(
+        "sensor.water_heater_energy_total",
+        "50",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
     hass.states.async_set(
         "sensor.solcast_today",
         "0",

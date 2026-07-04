@@ -333,6 +333,10 @@ Služby neovládají zařízení.
 ## Řešení problémů
 
 - `insufficient_data` znamená, že povinná zdrojová entita chybí, je unavailable nebo není číselná.
+- `error` s `Battery capacity must be greater than zero` znamená, že nastavená
+  `battery_capacity_entity` není kladná kapacita baterie v `kWh`. Nepoužívejte
+  entity proudu ani instalované kapacity v `Ah`; použijte entitu kapacity v
+  `kWh` nebo Home Assistant helper s pevnou kapacitou baterie.
 - `warning` obvykle znamená, že volitelná data, například Solcast forecast, chybí nebo mají chybný formát.
 - Diagnostiku z integrační stránky použijte pro kontrolu nakonfigurovaných entit, posledního stavu planneru, warnings a shrnutí plánu.
 - Debug payloady nedávejte do běžných stavových atributů; použijte diagnostiku nebo `energy_planner.export_debug`.

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from homeassistant import config_entries
+from homeassistant.const import UnitOfEnergy
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.const import (
+    CONF_BATTERY_CAPACITY_ENTITY,
     CONF_CHARGE_WINDOW,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
@@ -23,10 +25,12 @@ from custom_components.energy_planner.const import (
     DOMAIN,
 )
 
-from .conftest import config_data, options_flow_input
+from .conftest import config_data, options_flow_input, set_source_states
 
 
 async def test_user_flow_creates_entry(hass):
+    set_source_states(hass)
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": config_entries.SOURCE_USER},
@@ -46,6 +50,7 @@ async def test_user_flow_creates_entry(hass):
 
 
 async def test_user_flow_allows_no_managed_energy_sources(hass):
+    set_source_states(hass)
     user_input = config_data()
     user_input.pop(CONF_MANAGED_ENERGY_ENTITIES)
 
@@ -60,6 +65,51 @@ async def test_user_flow_allows_no_managed_energy_sources(hass):
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert CONF_MANAGED_ENERGY_ENTITIES not in result["data"]
+
+
+async def test_user_flow_rejects_battery_capacity_with_current_unit(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.victron_battery_capacity",
+        "0.0",
+        {"unit_of_measurement": "A"},
+    )
+    user_input = config_data(
+        **{CONF_BATTERY_CAPACITY_ENTITY: "sensor.victron_battery_capacity"}
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_BATTERY_CAPACITY_ENTITY] == "battery_capacity_unit"
+
+
+async def test_user_flow_rejects_zero_battery_capacity(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.battery_capacity",
+        "0",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=config_data(),
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_BATTERY_CAPACITY_ENTITY] == "battery_capacity_positive"
 
 
 async def test_user_flow_blocks_duplicate_entry(hass):
