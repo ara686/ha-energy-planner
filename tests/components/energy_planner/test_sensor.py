@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.helpers import entity_registry as er
@@ -117,6 +118,31 @@ async def test_only_soc_forecast_uses_battery_device_class(hass, config_entry):
         assert state.attributes["unit_of_measurement"] == "%"
         assert state.attributes.get("device_class") != "battery"
         assert "state_class" not in state.attributes
+
+
+async def test_selected_soc_sensors_suggest_whole_number_display(
+    hass,
+    config_entry,
+):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+    entity_ids = {entity.unique_id: entity.entity_id for entity in entities}
+
+    for key in ("safe_discharge_soc", "free_capacity_soc"):
+        entity_id = entity_ids[f"{config_entry.entry_id}_{key}"]
+        state = hass.states.get(entity_id)
+        registry_entry = registry.async_get(entity_id)
+
+        assert state is not None
+        assert state.attributes["unit_of_measurement"] == "%"
+        assert registry_entry is not None
+        assert registry_entry.options[SENSOR_DOMAIN]["suggested_display_precision"] == 0
 
 
 async def test_runtime_options_are_exposed_as_diagnostic_sensors(hass, config_entry):

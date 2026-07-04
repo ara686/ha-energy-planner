@@ -136,12 +136,14 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         key="safe_discharge_soc",
         translation_key="safe_discharge_soc",
         native_unit_of_measurement=PERCENTAGE,
+        suggested_display_precision=0,
         value_fn=lambda result: result.plan.get("safe_discharge_soc"),
     ),
     EnergyPlannerSensorDescription(
         key="free_capacity_soc",
         translation_key="free_capacity_soc",
         native_unit_of_measurement=PERCENTAGE,
+        suggested_display_precision=0,
         value_fn=lambda result: result.plan.get("free_capacity_soc"),
     ),
     EnergyPlannerSensorDescription(
