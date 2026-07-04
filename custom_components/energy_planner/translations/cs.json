@@ -145,6 +145,9 @@
       "history_status": {
         "name": "Stav historie"
       },
+      "consumption_history": {
+        "name": "Historie spotřeby"
+      },
       "update_interval_minutes": {
         "name": "Interval přepočtu"
       },

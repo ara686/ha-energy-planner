@@ -22,6 +22,47 @@ def test_hourly_aggregation_and_managed_subtraction():
     assert history.base_consumption_for_hour(key) == 1.6
 
 
+def test_hourly_points_export_home_managed_and_base_consumption():
+    now = datetime(2026, 7, 3, 12, 0)
+    history = EnergyHistory()
+    history.add_hourly_sample(now - timedelta(hours=2), home_kwh=2.0, managed_kwh=0.5)
+    history.add_hourly_sample(now - timedelta(hours=1), home_kwh=1.25)
+    history.add_hourly_sample(now - timedelta(days=5), home_kwh=9.0)
+
+    points, truncated = history.hourly_points(
+        now=now,
+        learning_days=3,
+        point_limit=10,
+    )
+
+    assert not truncated
+    assert points == [
+        {
+            "timestamp": "2026-07-03T10:00:00",
+            "home_kwh": 2.0,
+            "managed_kwh": 0.5,
+            "base_kwh": 1.5,
+            "is_current_hour": False,
+        },
+        {
+            "timestamp": "2026-07-03T11:00:00",
+            "home_kwh": 1.25,
+            "managed_kwh": 0.0,
+            "base_kwh": 1.25,
+            "is_current_hour": False,
+        },
+    ]
+
+    limited_points, limited_truncated = history.hourly_points(
+        now=now,
+        learning_days=3,
+        point_limit=1,
+    )
+
+    assert limited_truncated
+    assert limited_points == [points[-1]]
+
+
 def test_managed_subtraction_never_returns_negative_base_consumption():
     history = EnergyHistory()
     timestamp = datetime(2026, 7, 3, 10, 0)

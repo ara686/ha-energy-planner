@@ -81,6 +81,25 @@ def _history_status_attributes(result: PlannerResult) -> dict[str, Any]:
     return dict(status) if isinstance(status, dict) else {}
 
 
+def _consumption_history_value(result: PlannerResult) -> float | None:
+    history = result.forecast.get("consumption_history")
+    if not isinstance(history, dict):
+        return None
+    points = history.get("points")
+    if not isinstance(points, list) or not points:
+        return None
+    latest = points[-1]
+    if not isinstance(latest, dict):
+        return None
+    value = latest.get("base_kwh")
+    return value if isinstance(value, (int, float)) else None
+
+
+def _consumption_history_attributes(result: PlannerResult) -> dict[str, Any]:
+    history = result.forecast.get("consumption_history")
+    return dict(history) if isinstance(history, dict) else {}
+
+
 SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
     EnergyPlannerSensorDescription(
         key="state",
@@ -230,6 +249,16 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=_history_status_value,
         attr_fn=lambda result: _history_status_attributes(result),
+        always_available=True,
+    ),
+    EnergyPlannerSensorDescription(
+        key="consumption_history",
+        translation_key="consumption_history",
+        icon="mdi:chart-bar",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=_consumption_history_value,
+        attr_fn=_consumption_history_attributes,
         always_available=True,
     ),
     EnergyPlannerSensorDescription(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
@@ -73,6 +73,7 @@ async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
     assert categories["lock_start"] is EntityCategory.DIAGNOSTIC
     assert categories["updated"] is EntityCategory.DIAGNOSTIC
     assert categories["history_status"] is EntityCategory.DIAGNOSTIC
+    assert categories["consumption_history"] is EntityCategory.DIAGNOSTIC
     assert categories[CONF_UPDATE_INTERVAL_MINUTES] is EntityCategory.DIAGNOSTIC
     assert categories[CONF_HISTORY_LEARNING_DAYS] is EntityCategory.DIAGNOSTIC
     assert categories[CONF_NT_WINDOWS] is EntityCategory.DIAGNOSTIC
@@ -166,6 +167,47 @@ async def test_history_status_sensor_is_disabled_by_default(hass, config_entry):
 
     assert registry_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
     assert hass.states.get(entity) is None
+
+
+async def test_consumption_history_sensor_exposes_hourly_points(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    hass.states.async_set("sensor.home_energy_total", "1001")
+    hass.states.async_set("sensor.ev_energy_total", "200.4")
+    hass.states.async_set("sensor.water_heater_energy_total", "50.1")
+    await hass.async_block_till_done()
+
+    await config_entry.runtime_data.async_request_refresh()
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        "sensor",
+        DOMAIN,
+        f"{config_entry.entry_id}_consumption_history",
+    )
+    state = hass.states.get(entity_id)
+
+    assert state is not None
+    assert state.attributes["unit_of_measurement"] == "kWh"
+    assert round(float(state.state), 6) == 0.5
+    assert state.attributes["point_count"] == 1
+    assert state.attributes["truncated"] is False
+    point = dict(state.attributes["points"][0])
+    timestamp = datetime.fromisoformat(point.pop("timestamp"))
+    assert timestamp.minute == 0
+    assert timestamp.second == 0
+    assert point == {
+        "home_kwh": 1.0,
+        "managed_kwh": 0.5,
+        "base_kwh": 0.5,
+        "is_current_hour": True,
+    }
 
 
 async def test_sensors_are_unavailable_when_required_data_is_invalid(

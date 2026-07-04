@@ -56,6 +56,7 @@ from .planner import calculate_plan, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
 
 _LOGGER = logging.getLogger(__name__)
+_MAX_CONSUMPTION_HISTORY_SENSOR_POINTS = 24 * 7
 _SOLCAST_DAILY_ENTITY_RE = re.compile(
     r"(?:^|_)(?:forecast_)?(today|tomorrow|day_[3-7])$"
 )
@@ -160,6 +161,13 @@ def build_planner_result(
     history_days = _history_days(entry)
     history_status = history.status(now=now, learning_days=history_days)
     history_status["source"] = history_source
+    consumption_history = _consumption_history_payload(
+        history,
+        now=now,
+        learning_days=history_days,
+        source=history_source,
+        status=history_status,
+    )
     planner_input, warnings = _build_planner_input(
         hass,
         entry,
@@ -173,17 +181,46 @@ def build_planner_result(
             state="insufficient_data",
             updated=now,
             warnings=warnings,
-            forecast={"history_status": history_status},
+            forecast={
+                "history_status": history_status,
+                "consumption_history": consumption_history,
+            },
         )
 
     result = calculate_plan(planner_input)
     result.forecast["history_status"] = history_status
+    result.forecast["consumption_history"] = consumption_history
     result.debug["history_status"] = history_status
     if warnings:
         result.warnings = warnings + result.warnings
         if result.state == "ok":
             result.state = "warning"
     return result
+
+
+def _consumption_history_payload(
+    history: EnergyHistory,
+    *,
+    now,
+    learning_days: int,
+    source: str,
+    status: dict[str, Any],
+) -> dict[str, Any]:
+    points, truncated = history.hourly_points(
+        now=now,
+        learning_days=learning_days,
+        point_limit=_MAX_CONSUMPTION_HISTORY_SENSOR_POINTS,
+    )
+    return {
+        "source": source,
+        "learning_days": learning_days,
+        "bucket_count": status["bucket_count"],
+        "usable_bucket_count": status["usable_bucket_count"],
+        "point_count": len(points),
+        "point_limit": _MAX_CONSUMPTION_HISTORY_SENSOR_POINTS,
+        "truncated": truncated,
+        "points": points,
+    }
 
 
 def _build_planner_input(

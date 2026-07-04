@@ -192,6 +192,7 @@ Settings > Devices & services > Energy Planner > Entities.
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
+| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh` and `base_kwh` values for graph cards. |
 
 Only `sensor.energy_planner_soc_forecast` uses Home Assistant's `battery`
 device class. The other SoC outputs are planning setpoints, limits or future
@@ -344,6 +345,65 @@ This sensor is a normal numeric entity, so built-in `tile`, `gauge`,
 That history shows how the predicted 24 hour SoC changes over time; it is not
 the full future forecast curve. Use the ApexCharts attribute example above for
 the complete future curve.
+
+### Consumption history with ApexCharts
+
+The `sensor.energy_planner_consumption_history` state is the latest hourly base
+consumption bucket in `kWh`. Its `points` attribute contains the hourly history
+used by the planner. Each point contains:
+
+- `home_kwh`: whole-home consumption in the hour.
+- `managed_kwh`: intentionally managed consumption in the hour.
+- `base_kwh`: `home_kwh - managed_kwh`, clamped to zero.
+
+The sensor exposes the newest 168 hourly points at most. If the configured
+history window is longer, the `truncated` attribute is `true`.
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 3d
+span:
+  end: hour
+locale: en
+header:
+  title: Consumption history
+  show: true
+yaxis:
+  - min: 0
+    decimals: 2
+series:
+  - entity: sensor.energy_planner_consumption_history
+    name: Home
+    type: column
+    unit: kWh
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.home_kwh ?? 0),
+      ]);
+  - entity: sensor.energy_planner_consumption_history
+    name: Managed
+    type: column
+    unit: kWh
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.managed_kwh ?? 0),
+      ]);
+  - entity: sensor.energy_planner_consumption_history
+    name: Base
+    type: line
+    unit: kWh
+    stroke_width: 2
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.base_kwh ?? 0),
+      ]);
+```
 
 ## Services
 

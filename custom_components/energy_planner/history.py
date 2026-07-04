@@ -86,6 +86,31 @@ class EnergyHistory:
         bucket = self.buckets.get(key)
         return bucket.base_kwh if bucket else 0.0
 
+    def hourly_points(
+        self,
+        *,
+        now: datetime,
+        learning_days: int,
+        point_limit: int | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Return compact hourly history points for visualization."""
+        cutoff = now - timedelta(days=max(1, learning_days))
+        current_key = hour_key(now)
+        points = [
+            {
+                "timestamp": bucket.hour_start,
+                "home_kwh": round(bucket.home_kwh, 6),
+                "managed_kwh": round(bucket.managed_kwh, 6),
+                "base_kwh": round(bucket.base_kwh, 6),
+                "is_current_hour": bucket.hour_start == current_key,
+            }
+            for key, bucket in sorted(self.buckets.items())
+            if datetime.fromisoformat(key) >= cutoff
+        ]
+        if point_limit is None or len(points) <= point_limit:
+            return points, False
+        return points[-point_limit:], True
+
     @classmethod
     def from_cumulative_energy_samples(
         cls,

@@ -145,6 +145,9 @@
       "history_status": {
         "name": "History status"
       },
+      "consumption_history": {
+        "name": "Consumption history"
+      },
       "update_interval_minutes": {
         "name": "Recalculation interval"
       },

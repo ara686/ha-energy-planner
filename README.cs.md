@@ -195,6 +195,7 @@ ID zkontrolujte v Settings > Devices & services > Energy Planner > Entities.
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostika | timestamp | Začátek období, pro které je relevantní vypočtené lock SoC. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostika | timestamp | Čas posledního úspěšného výpočtu coordinatoru. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostika, vypnuto ve výchozím stavu | text | Kompaktní stav zdroje historie spotřeby a pokrytí použitého plannerem. Detail je dostupný také v diagnostice integrace. |
+| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostika | `kWh` | Poslední hodinový bucket základní spotřeby použitý plannerem. Atributy obsahují kompaktní hodinové `points` s hodnotami `home_kwh`, `managed_kwh` a `base_kwh` pro grafové karty. |
 
 Pouze `sensor.energy_planner_soc_forecast` používá v Home Assistantu `battery`
 device class. Ostatní SoC výstupy jsou plánovací cíle, limity nebo pomocné
@@ -346,6 +347,65 @@ Tento senzor je běžná číselná entita, takže vestavěné karty `tile`, `ga
 historie ukazuje, jak se predikované 24hodinové SoC mění v čase; není to celá
 budoucí forecast křivka. Pro kompletní budoucí křivku použijte výše uvedený
 příklad s atributy pro ApexCharts.
+
+### Historie spotřeby přes ApexCharts
+
+Stav `sensor.energy_planner_consumption_history` je poslední hodinový bucket
+základní spotřeby v `kWh`. Atribut `points` obsahuje hodinovou historii, kterou
+planner používá. Každý bod obsahuje:
+
+- `home_kwh`: celkovou spotřebu domu v dané hodině.
+- `managed_kwh`: záměrně řízenou spotřebu v dané hodině.
+- `base_kwh`: `home_kwh - managed_kwh`, nejméně nula.
+
+Senzor vystavuje nejvýše posledních 168 hodinových bodů. Pokud je nakonfigurované
+okno historie delší, atribut `truncated` bude `true`.
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 3d
+span:
+  end: hour
+locale: cs
+header:
+  title: Historie spotřeby
+  show: true
+yaxis:
+  - min: 0
+    decimals: 2
+series:
+  - entity: sensor.energy_planner_consumption_history
+    name: Dům
+    type: column
+    unit: kWh
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.home_kwh ?? 0),
+      ]);
+  - entity: sensor.energy_planner_consumption_history
+    name: Řízená spotřeba
+    type: column
+    unit: kWh
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.managed_kwh ?? 0),
+      ]);
+  - entity: sensor.energy_planner_consumption_history
+    name: Základ
+    type: line
+    unit: kWh
+    stroke_width: 2
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.base_kwh ?? 0),
+      ]);
+```
 
 ## Služby
 
