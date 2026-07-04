@@ -196,6 +196,11 @@ ID zkontrolujte v Settings > Devices & services > Energy Planner > Entities.
 | `sensor.energy_planner_updated` | `updated` | Diagnostika | timestamp | Čas posledního úspěšného výpočtu coordinatoru. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostika, vypnuto ve výchozím stavu | text | Kompaktní stav zdroje historie spotřeby a pokrytí použitého plannerem. Detail je dostupný také v diagnostice integrace. |
 
+Pouze `sensor.energy_planner_soc_forecast` používá v Home Assistantu `battery`
+device class. Ostatní SoC výstupy jsou plánovací cíle, limity nebo pomocné
+budoucí hodnoty, takže zůstávají obyčejnými procentními senzory a nejsou
+vystavené jako senzory úrovně baterie.
+
 SoC predikce obsahuje alespoň 24 hodin a může použít delší nakonfigurovaný
 horizont, pokud jsou dostupná zdrojová data z Home Assistantu.
 Forecast hodnoty `soc_percent` jsou zaokrouhlené na celá procenta, protože

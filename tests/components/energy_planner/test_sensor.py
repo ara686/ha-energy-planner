@@ -83,6 +83,41 @@ async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
     assert categories["soc_forecast_24h"] is None
 
 
+async def test_only_soc_forecast_uses_battery_device_class(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+    entity_ids = {entity.unique_id: entity.entity_id for entity in entities}
+
+    soc_forecast = hass.states.get(entity_ids[f"{config_entry.entry_id}_soc_forecast"])
+    assert soc_forecast is not None
+    assert soc_forecast.attributes["device_class"] == "battery"
+    assert soc_forecast.attributes["unit_of_measurement"] == "%"
+    assert "state_class" not in soc_forecast.attributes
+
+    non_battery_soc_keys = (
+        "lock_soc",
+        "charge_to_soc",
+        "target_soc",
+        "safe_discharge_soc",
+        "free_capacity_soc",
+        "soc_at_planner_start",
+        "soc_at_lock_start",
+        "soc_forecast_24h",
+    )
+    for key in non_battery_soc_keys:
+        state = hass.states.get(entity_ids[f"{config_entry.entry_id}_{key}"])
+        assert state is not None
+        assert state.attributes["unit_of_measurement"] == "%"
+        assert state.attributes.get("device_class") != "battery"
+        assert "state_class" not in state.attributes
+
+
 async def test_runtime_options_are_exposed_as_diagnostic_sensors(hass, config_entry):
     set_source_states(hass)
     config_entry.add_to_hass(hass)

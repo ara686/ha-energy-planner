@@ -193,6 +193,11 @@ Settings > Devices & services > Energy Planner > Entities.
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
 
+Only `sensor.energy_planner_soc_forecast` uses Home Assistant's `battery`
+device class. The other SoC outputs are planning setpoints, limits or future
+helper values, so they remain plain percentage sensors and are not exposed as
+battery-level sensors.
+
 The SoC forecast includes at least 24 hours and can use a longer configured
 horizon when Home Assistant source data is available.
 Forecast `soc_percent` values are rounded to whole integer percentages because
