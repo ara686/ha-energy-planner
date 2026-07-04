@@ -405,6 +405,83 @@ series:
       ]);
 ```
 
+### Home and managed power history with ApexCharts
+
+If you want to compare whole-home consumption with managed consumption in one
+power chart, use the same `points` attribute and convert each hourly energy
+bucket to average power. For hourly buckets, `kWh / 1 h` is the average `kW`.
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 3d
+span:
+  end: hour
+locale: en
+header:
+  title: Home vs managed power history
+  show: true
+yaxis:
+  - min: 0
+    decimals: 2
+series:
+  - entity: sensor.energy_planner_consumption_history
+    name: Home power
+    type: column
+    unit: kW
+    data_generator: |
+      const points = entity.attributes.points || [];
+
+      const intervalHours = (index) => {
+        const current = new Date(points[index]?.timestamp).getTime();
+        const next = new Date(points[index + 1]?.timestamp).getTime();
+        const previous = new Date(points[index - 1]?.timestamp).getTime();
+        if (Number.isFinite(current) && Number.isFinite(next) && next > current) {
+          return (next - current) / 3600000;
+        }
+        if (Number.isFinite(previous) && Number.isFinite(current) && current > previous) {
+          return (current - previous) / 3600000;
+        }
+        return 1;
+      };
+
+      return points.map((point, index) => {
+        const timestamp = new Date(point.timestamp).getTime();
+        const hours = intervalHours(index);
+        return [
+          timestamp,
+          Number(point.home_kwh ?? 0) / hours,
+        ];
+      });
+  - entity: sensor.energy_planner_consumption_history
+    name: Managed power
+    type: column
+    unit: kW
+    data_generator: |
+      const points = entity.attributes.points || [];
+
+      const intervalHours = (index) => {
+        const current = new Date(points[index]?.timestamp).getTime();
+        const next = new Date(points[index + 1]?.timestamp).getTime();
+        const previous = new Date(points[index - 1]?.timestamp).getTime();
+        if (Number.isFinite(current) && Number.isFinite(next) && next > current) {
+          return (next - current) / 3600000;
+        }
+        if (Number.isFinite(previous) && Number.isFinite(current) && current > previous) {
+          return (current - previous) / 3600000;
+        }
+        return 1;
+      };
+
+      return points.map((point, index) => {
+        const timestamp = new Date(point.timestamp).getTime();
+        const hours = intervalHours(index);
+        return [
+          timestamp,
+          Number(point.managed_kwh ?? 0) / hours,
+        ];
+      });
+```
+
 ## Services
 
 - `energy_planner.recalculate` refreshes planner data for loaded entries.

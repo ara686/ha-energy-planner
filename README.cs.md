@@ -407,6 +407,84 @@ series:
       ]);
 ```
 
+### Historie home power a managed power přes ApexCharts
+
+Pokud chcete v jednom výkonovém grafu porovnat celkovou spotřebu domu a řízenou
+spotřebu, použijte stejný atribut `points` a převeďte každý hodinový energetický
+bucket na průměrný výkon. Pro hodinové buckety platí, že `kWh / 1 h` je průměrný
+výkon v `kW`.
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 3d
+span:
+  end: hour
+locale: cs
+header:
+  title: Historie výkonu domu a řízené spotřeby
+  show: true
+yaxis:
+  - min: 0
+    decimals: 2
+series:
+  - entity: sensor.energy_planner_consumption_history
+    name: Výkon domu
+    type: column
+    unit: kW
+    data_generator: |
+      const points = entity.attributes.points || [];
+
+      const intervalHours = (index) => {
+        const current = new Date(points[index]?.timestamp).getTime();
+        const next = new Date(points[index + 1]?.timestamp).getTime();
+        const previous = new Date(points[index - 1]?.timestamp).getTime();
+        if (Number.isFinite(current) && Number.isFinite(next) && next > current) {
+          return (next - current) / 3600000;
+        }
+        if (Number.isFinite(previous) && Number.isFinite(current) && current > previous) {
+          return (current - previous) / 3600000;
+        }
+        return 1;
+      };
+
+      return points.map((point, index) => {
+        const timestamp = new Date(point.timestamp).getTime();
+        const hours = intervalHours(index);
+        return [
+          timestamp,
+          Number(point.home_kwh ?? 0) / hours,
+        ];
+      });
+  - entity: sensor.energy_planner_consumption_history
+    name: Výkon řízené spotřeby
+    type: column
+    unit: kW
+    data_generator: |
+      const points = entity.attributes.points || [];
+
+      const intervalHours = (index) => {
+        const current = new Date(points[index]?.timestamp).getTime();
+        const next = new Date(points[index + 1]?.timestamp).getTime();
+        const previous = new Date(points[index - 1]?.timestamp).getTime();
+        if (Number.isFinite(current) && Number.isFinite(next) && next > current) {
+          return (next - current) / 3600000;
+        }
+        if (Number.isFinite(previous) && Number.isFinite(current) && current > previous) {
+          return (current - previous) / 3600000;
+        }
+        return 1;
+      };
+
+      return points.map((point, index) => {
+        const timestamp = new Date(point.timestamp).getTime();
+        const hours = intervalHours(index);
+        return [
+          timestamp,
+          Number(point.managed_kwh ?? 0) / hours,
+        ];
+      });
+```
+
 ## Služby
 
 - `energy_planner.recalculate` obnoví planner data pro načtené config entry.
