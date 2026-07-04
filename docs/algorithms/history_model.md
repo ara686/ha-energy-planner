@@ -1,8 +1,7 @@
 # History Model
 
-The history model intentionally mirrors the active `Energy Prediction 2`
-Node-RED flow's hour-of-day profile, but Energy Planner builds the hourly energy
-buckets internally.
+The history model uses an hour-of-day consumption profile built from internally
+maintained hourly energy buckets.
 
 ## Inputs
 

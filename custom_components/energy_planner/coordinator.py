@@ -475,11 +475,6 @@ def _solcast_forecast(
     warnings: list[str],
 ) -> list[SolarForecastPoint]:
     points: list[SolarForecastPoint] = []
-    configured = bool(
-        entry.data.get(CONF_SOLCAST_TODAY_ENTITY)
-        or entry.data.get(CONF_SOLCAST_TOMORROW_ENTITY)
-        or entry.data.get(CONF_SOLCAST_ADDITIONAL_ENTITIES)
-    )
     for entity_id in _solcast_entity_ids(hass, entry):
         state = hass.states.get(entity_id)
         if state is None:
@@ -492,8 +487,6 @@ def _solcast_forecast(
             )
         points.extend(parsed)
 
-    if not configured:
-        warnings.append("No Solcast forecast entities are configured.")
     return sorted(points, key=lambda point: point.start)
 
 
