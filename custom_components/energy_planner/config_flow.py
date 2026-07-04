@@ -359,8 +359,6 @@ def _entity_selector(
         "filter": filters,
         "multiple": multiple,
     }
-    if multiple:
-        config["reorder"] = True
     return selector.EntitySelector(selector.EntitySelectorConfig(**config))
 
 

@@ -175,6 +175,7 @@ async def test_user_schema_filters_entity_choices_by_expected_type():
     )
     home_energy_filter = _plain_filter(fields[CONF_HOME_ENERGY_ENTITY].config["filter"])
     battery_soc_filter = _plain_filter(fields[CONF_BATTERY_SOC_ENTITY].config["filter"])
+    managed_energy_config = fields[CONF_MANAGED_ENERGY_ENTITIES].config
 
     assert {
         "domain": ["sensor"],
@@ -195,6 +196,7 @@ async def test_user_schema_filters_entity_choices_by_expected_type():
         "domain": ["number"],
         "device_class": ["battery"],
     } in battery_soc_filter
+    assert managed_energy_config["multiple"] is True
 
 
 def _plain_filter(items):
