@@ -81,6 +81,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove stored data for a config entry."""
+    from .history import EnergyHistoryStore
+
+    await EnergyHistoryStore(hass, entry.entry_id).async_remove()
+
+
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Apply updated options to the loaded coordinator."""
     coordinator = getattr(entry, "runtime_data", None)

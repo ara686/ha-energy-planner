@@ -312,6 +312,9 @@ class EnergyHistoryStore:
     async def async_save(self, history: EnergyHistory) -> None:
         await self._store.async_save(history.as_dict())
 
+    async def async_remove(self) -> None:
+        await self._store.async_remove()
+
 
 def hour_key(timestamp: datetime) -> str:
     return timestamp.replace(minute=0, second=0, microsecond=0).isoformat()

@@ -18,7 +18,11 @@ from custom_components.energy_planner.const import (
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
-from custom_components.energy_planner.history import hour_key
+from custom_components.energy_planner.history import (
+    EnergyHistory,
+    EnergyHistoryStore,
+    hour_key,
+)
 from custom_components.energy_planner.sensor import SENSOR_DESCRIPTIONS
 
 from .conftest import set_source_states
@@ -358,3 +362,25 @@ async def test_setup_entry_can_be_unloaded(hass, config_entry):
 
     assert config_entry.state is ConfigEntryState.NOT_LOADED
     assert getattr(config_entry, "runtime_data", None) is None
+
+
+async def test_remove_entry_removes_internal_history(hass, config_entry):
+    history = EnergyHistory()
+    history.add_hourly_sample(dt_util.now(), home_kwh=1.0)
+    store = EnergyHistoryStore(hass, config_entry.entry_id)
+    await store.async_save(history)
+    assert (await store.async_load()).buckets
+
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    await hass.config_entries.async_remove(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert not (
+        await EnergyHistoryStore(hass, config_entry.entry_id).async_load()
+    ).buckets

@@ -62,6 +62,21 @@ Manual installation:
 
 YAML setup is intentionally not supported in v1.
 
+## Removal
+
+To remove Energy Planner:
+
+1. Open Settings > Devices & services > Energy Planner.
+2. Select the integration entry menu and choose Delete.
+3. Remove Energy Planner from HACS if it was installed through HACS.
+4. Restart Home Assistant if Home Assistant asks for a restart after removing
+   the custom integration files.
+
+Removing the integration entry also removes Energy Planner's internally stored
+consumption history for that entry. It does not remove your original source
+entities, helpers, dashboards or automations that reference Energy Planner
+sensors.
+
 ## Configuration
 
 Energy Planner is configured only through the Home Assistant UI. It expects
@@ -516,13 +531,21 @@ series:
       });
 ```
 
-## Services
+## Actions and services
+
+Energy Planner provides these Home Assistant service actions:
 
 - `energy_planner.recalculate` refreshes planner data for loaded entries.
 - `energy_planner.export_debug` writes compact debug data to the log and fires an
   `energy_planner_debug_exported` event.
 
 The services do not control devices.
+
+## Triggers and conditions
+
+Energy Planner does not provide automation triggers or automation conditions in
+v1. Use standard Home Assistant state, numeric state, time or template triggers
+with Energy Planner sensor entities when building automations.
 
 ## Troubleshooting
 

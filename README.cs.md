@@ -63,6 +63,21 @@ Ruční instalace:
 
 YAML konfigurace není ve verzi v1 záměrně podporovaná.
 
+## Odstranění
+
+Energy Planner odstraníte takto:
+
+1. Otevřete Settings > Devices & services > Energy Planner.
+2. V menu integrační položky zvolte Delete.
+3. Pokud byla integrace nainstalovaná přes HACS, odstraňte Energy Planner také z
+   HACS.
+4. Restartujte Home Assistant, pokud si Home Assistant po odstranění souborů
+   vlastní integrace vyžádá restart.
+
+Odstranění integrační položky smaže také interně uloženou historii spotřeby
+Energy Planneru pro danou položku. Neodstraní původní zdrojové entity, helpery,
+dashboardy ani automatizace, které odkazují na senzory Energy Planneru.
+
 ## Konfigurace
 
 Energy Planner se konfiguruje pouze přes UI Home Assistantu. Očekává už
@@ -519,13 +534,21 @@ series:
       });
 ```
 
-## Služby
+## Akce a služby
+
+Energy Planner poskytuje tyto Home Assistant service actions:
 
 - `energy_planner.recalculate` obnoví planner data pro načtené config entry.
 - `energy_planner.export_debug` zapíše kompaktní debug data do logu a vystřelí
   event `energy_planner_debug_exported`.
 
 Služby neovládají zařízení.
+
+## Triggery a conditions
+
+Energy Planner ve verzi v1 neposkytuje automation triggers ani automation
+conditions. Pro automatizace použijte standardní Home Assistant state, numeric
+state, time nebo template triggery nad senzory Energy Planneru.
 
 ## Řešení problémů
 
