@@ -1,3 +1,44 @@
 # Entities
 
-See `SPECIFICATION.md` for the required output entities.
+Energy Planner creates sensor and binary sensor entities only. It does not
+create switches, numbers, selects or any device-control entities in v1.
+
+Entity IDs below are the typical defaults for an integration instance named
+`Energy Planner`. Home Assistant may add suffixes or use renamed entity IDs.
+Check the actual IDs in **Settings > Devices & services > Energy Planner >
+Entities**.
+
+## Output Entities
+
+| Typical entity ID | Output key | Category | Unit/type | Description |
+|-------------------|------------|----------|-----------|-------------|
+| `sensor.energy_planner_state` | `state` | Diagnostic | text | Planner state: `ok`, `warning` or `insufficient_data`. Attributes include warnings, slot count and compact history status. |
+| `binary_sensor.energy_planner_charge_now` | `charge_now` | Standard | binary | On when current planner-start SoC is below `charge_to_soc`. Use it to start or allow grid charging without comparing SoC values in automations. |
+| `binary_sensor.energy_planner_discharge_allowed` | `discharge_allowed` | Standard | binary | On when current planner-start SoC is above `safe_discharge_soc`. Use it to allow battery discharge without comparing SoC values in automations. |
+| `sensor.energy_planner_lock_soc` | `lock_soc` | Standard | `%` | Minimum SoC the planner wants to protect for the low/high tariff planning window. |
+| `sensor.energy_planner_charge_to_soc` | `charge_to_soc` | Standard | `%` | Optional grid-charge target SoC needed to cover the forecasted high-tariff deficit from the configured charge window. |
+| `sensor.energy_planner_target_soc` | `target_soc` | Standard | `%` | Final target SoC used by the planner; currently the higher value of `lock_soc` and `charge_to_soc`. |
+| `sensor.energy_planner_safe_discharge_soc` | `safe_discharge_soc` | Standard | `%` | Lowest SoC the planner considers safe to discharge to while still preserving the future plan. |
+| `sensor.energy_planner_free_capacity_soc` | `free_capacity_soc` | Standard | `%` | Current SoC above `safe_discharge_soc`, expressed as battery percentage. |
+| `sensor.energy_planner_free_capacity` | `free_capacity_kwh` | Standard | `kWh` | Current energy above `safe_discharge_soc`, expressed as battery capacity. |
+| `sensor.energy_planner_unused_surplus_today` | `unused_surplus_today_kwh` | Standard | `kWh` | Forecasted PV surplus for today that cannot be stored or used by the simulated plan. |
+| `sensor.energy_planner_unused_surplus_total` | `unused_surplus_total_kwh` | Standard | `kWh` | Forecasted PV surplus across the configured forecast horizon that cannot be stored or used by the simulated plan. |
+| `sensor.energy_planner_first_full_time` | `first_full_time` | Standard | timestamp | First forecasted time when the battery reaches full SoC. |
+| `sensor.energy_planner_high_tariff_grid_import_at_target` | `vt_grid_import_kwh_at_target` | Standard | `kWh` | Forecasted high-tariff grid import remaining in the simulation when charging to `target_soc`. |
+| `sensor.energy_planner_charged_total_at_target` | `charged_kwh_total_at_target` | Standard | `kWh` | Total grid energy the simulation charges into the battery to reach `target_soc`. |
+| `sensor.energy_planner_soc_at_planner_start` | `soc_at_planner_start` | Diagnostic | `%` | Predicted SoC at the start of the planning window. |
+| `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | Diagnostic | `%` | Predicted SoC at the start of the lock/protection window. |
+| `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and the compact future `points` array for graph cards. |
+| `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
+| `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
+| `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
+| `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
+| `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
+| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh` and `base_kwh` values for graph cards. |
+
+Only `sensor.energy_planner_soc_forecast` uses Home Assistant's `battery`
+device class. The other SoC outputs are planning setpoints, limits or future
+helper values, so they remain plain percentage sensors.
+
+Forecast `soc_percent` values are rounded to whole integer percentages because
+most PV and battery systems do not provide meaningful decimal SoC precision.
