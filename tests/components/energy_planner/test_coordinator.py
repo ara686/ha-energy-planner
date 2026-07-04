@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -55,6 +56,19 @@ def test_coordinator_update_interval_is_independent_from_planning_interval(hass)
     coordinator = EnergyPlannerCoordinator(hass, entry)
 
     assert coordinator.update_interval == timedelta(minutes=45)
+
+
+async def test_coordinator_saves_internal_history_only_when_dirty(hass):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    coordinator = EnergyPlannerCoordinator(hass, entry)
+    coordinator._history_store.async_save = AsyncMock()
+
+    await coordinator._async_save_history_if_changed()
+    coordinator._history_store.async_save.assert_not_awaited()
+
+    coordinator.history.dirty = True
+    await coordinator._async_save_history_if_changed()
+    coordinator._history_store.async_save.assert_awaited_once_with(coordinator.history)
 
 
 def test_parse_solcast_detailed_forecast_attributes():

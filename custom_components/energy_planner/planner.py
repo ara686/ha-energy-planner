@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from math import ceil
 
 from .models import (
@@ -13,6 +13,7 @@ from .models import (
     SolarForecastPoint,
     TimeWindow,
 )
+from .periods import infer_period_minutes
 
 
 def generate_forecast_slots(
@@ -114,7 +115,7 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
     planner_start = (
         data.now
         if _is_in_window(data.now, data.charge_window)
-        else _find_next_window_start(data.now, data.charge_window)
+        else _next_window_start(data.now, data.charge_window)
     )
     deficit_until_sun = _vt_deficit_kwh(
         slots=slots,
@@ -283,19 +284,17 @@ def _solar_periods(
     default_period_minutes: int,
 ) -> list[tuple[datetime, datetime, float]]:
     sorted_points = sorted(solar_forecast, key=lambda point: point.start)
+    starts = [point.start for point in sorted_points]
     periods: list[tuple[datetime, datetime, float]] = []
     for index, point in enumerate(sorted_points):
-        if point.period_minutes and point.period_minutes > 0:
-            period_minutes = point.period_minutes
-        elif index + 1 < len(sorted_points):
-            period_minutes = max(
-                1,
-                int(
-                    (sorted_points[index + 1].start - point.start).total_seconds() // 60
-                ),
-            )
-        else:
-            period_minutes = default_period_minutes
+        period_minutes = infer_period_minutes(
+            starts,
+            index,
+            explicit_period_minutes=point.period_minutes,
+            default_period_minutes=default_period_minutes,
+        )
+        if period_minutes is None:
+            continue
         periods.append(
             (
                 point.start,
@@ -602,10 +601,6 @@ def _find_lock_start(data: PlannerInput) -> datetime:
     return data.now
 
 
-def _find_next_window_start(timestamp: datetime, window: TimeWindow) -> datetime:
-    return _next_window_start(timestamp, window)
-
-
 def _current_window_start(timestamp: datetime, window: TimeWindow) -> datetime:
     start_minutes = _minutes_since_midnight(window.start)
     end_minutes = _minutes_since_midnight(window.end)
@@ -631,12 +626,18 @@ def _next_window_start(timestamp: datetime, window: TimeWindow) -> datetime:
 
 
 def _window_start_on_date(timestamp: datetime, start_minutes: int) -> datetime:
-    return timestamp.replace(
-        hour=start_minutes // 60,
-        minute=start_minutes % 60,
-        second=0,
-        microsecond=0,
+    candidate = datetime.combine(
+        timestamp.date(),
+        time(start_minutes // 60, start_minutes % 60),
+        tzinfo=timestamp.tzinfo,
     )
+    return _normalize_existing_local_time(candidate)
+
+
+def _normalize_existing_local_time(candidate: datetime) -> datetime:
+    if candidate.tzinfo is None:
+        return candidate
+    return candidate.astimezone(UTC).astimezone(candidate.tzinfo)
 
 
 def _predict_soc_at(
@@ -699,19 +700,6 @@ def _point_at_or_project_end(
     return None
 
 
-def _soc_at_or_before(
-    points: list[SocForecastPoint],
-    timestamp: datetime,
-    fallback_soc: float,
-) -> float:
-    soc = fallback_soc
-    for point in points:
-        if point.timestamp > timestamp:
-            break
-        soc = point.soc_percent
-    return soc
-
-
 def _is_in_windows(timestamp: datetime, windows: list[TimeWindow]) -> bool:
     return any(_is_in_window(timestamp, window) for window in windows)
 
@@ -721,7 +709,7 @@ def _is_in_window(timestamp: datetime, window: TimeWindow) -> bool:
     end = _minutes_since_midnight(window.end)
     current = timestamp.hour * 60 + timestamp.minute
     if start == end:
-        return True
+        return False
     if start < end:
         return start <= current < end
     return current >= start or current < end

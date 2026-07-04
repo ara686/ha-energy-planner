@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
@@ -262,7 +263,15 @@ async def test_sensors_are_unavailable_when_required_data_is_invalid(
     assert target_state.state == STATE_UNAVAILABLE
 
 
-async def test_battery_soc_change_requests_planner_refresh(hass, config_entry):
+async def test_battery_soc_change_requests_debounced_planner_refresh(
+    hass,
+    config_entry,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "custom_components.energy_planner.SOC_REFRESH_DEBOUNCE_SECONDS",
+        0,
+    )
     set_source_states(hass)
     config_entry.add_to_hass(hass)
 
@@ -283,6 +292,8 @@ async def test_battery_soc_change_requests_planner_refresh(hass, config_entry):
     assert refresh_calls == 0
 
     hass.states.async_set("sensor.battery_soc", "56")
+    hass.states.async_set("sensor.battery_soc", "57")
+    await asyncio.sleep(0)
     await hass.async_block_till_done()
     assert refresh_calls == 1
 

@@ -59,8 +59,12 @@
           "grid_charge_efficiency": "Grid charging efficiency",
           "soc_reserve_percent": "SoC reserve percent",
           "soc_eps_kwh": "SoC tolerance in kWh",
-          "nt_windows": "Low-tariff windows",
-          "charge_window": "Charging window",
+          "nt_window_1_start": "Low-tariff window 1 start",
+          "nt_window_1_end": "Low-tariff window 1 end",
+          "nt_window_2_start": "Low-tariff window 2 start",
+          "nt_window_2_end": "Low-tariff window 2 end",
+          "charge_window_start": "Charging window start",
+          "charge_window_end": "Charging window end",
           "sun_start_required_minutes": "Minimum solar start duration in minutes",
           "forecast_horizon_hours": "Forecast horizon in hours"
         }
@@ -78,8 +82,8 @@
       "soc_reserve_percent": "SoC reserve must be between 0 and 100%.",
       "soc_eps_kwh": "SoC tolerance must not be negative.",
       "sun_start_required_minutes": "Minimum solar start duration must be greater than 0 minutes.",
-      "window": "Time window must use HH:MM-HH:MM format.",
-      "windows": "Windows must contain at least one valid HH:MM-HH:MM window.",
+      "window": "Time window must have a different start and end time.",
+      "windows": "Windows must contain at least one valid time window.",
       "invalid_options": "Options are invalid."
     }
   },

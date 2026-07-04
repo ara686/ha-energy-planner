@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from .const import DOMAIN
@@ -69,6 +69,7 @@ class EnergyHistory:
     cumulative_readings: dict[str, CumulativeHourlyReading] = field(
         default_factory=dict
     )
+    dirty: bool = False
 
     def add_hourly_sample(
         self,
@@ -77,10 +78,15 @@ class EnergyHistory:
         home_kwh: float,
         managed_kwh: float = 0.0,
     ) -> None:
+        home_delta = max(home_kwh, 0.0)
+        managed_delta = max(managed_kwh, 0.0)
+        if home_delta == 0 and managed_delta == 0:
+            return
         key = hour_key(timestamp)
         bucket = self.buckets.setdefault(key, HourlyEnergyBucket(hour_start=key))
-        bucket.home_kwh += max(home_kwh, 0.0)
-        bucket.managed_kwh += max(managed_kwh, 0.0)
+        bucket.home_kwh += home_delta
+        bucket.managed_kwh += managed_delta
+        self.dirty = True
 
     def base_consumption_for_hour(self, key: str) -> float:
         bucket = self.buckets.get(key)
@@ -104,8 +110,11 @@ class EnergyHistory:
                 "base_kwh": round(bucket.base_kwh, 6),
                 "is_current_hour": bucket.hour_start == current_key,
             }
-            for key, bucket in sorted(self.buckets.items())
-            if datetime.fromisoformat(key) >= cutoff
+            for key, bucket in sorted(
+                self.buckets.items(),
+                key=lambda item: _datetime_sort_value(item[0]),
+            )
+            if _datetime_sort_value(key) >= _datetime_value(cutoff)
         ]
         if point_limit is None or len(points) <= point_limit:
             return points, False
@@ -155,10 +164,12 @@ class EnergyHistory:
             if delta < 0:
                 delta = 0.0
 
-        self.cumulative_readings[source_id] = CumulativeHourlyReading(
-            hour_start=key,
-            value=value,
-        )
+        if previous is None or previous.value != value:
+            self.cumulative_readings[source_id] = CumulativeHourlyReading(
+                hour_start=key,
+                value=value,
+            )
+            self.dirty = True
 
         if delta <= 0:
             return
@@ -166,26 +177,6 @@ class EnergyHistory:
             self.add_hourly_sample(timestamp, home_kwh=delta)
         elif source_type == "managed":
             self.add_hourly_sample(timestamp, home_kwh=0.0, managed_kwh=delta)
-
-    def average_base_consumption_kwh_per_hour(
-        self,
-        *,
-        now: datetime,
-        learning_days: int,
-        min_baseline_kwh_per_hour: float,
-        include_current_hour: bool = True,
-    ) -> float:
-        cutoff = now - timedelta(days=max(1, learning_days))
-        current_key = hour_key(now)
-        values = [
-            bucket.base_kwh
-            for key, bucket in self.buckets.items()
-            if datetime.fromisoformat(key) >= cutoff
-            and (include_current_hour or key != current_key)
-        ]
-        if not values:
-            return min_baseline_kwh_per_hour
-        return max(sum(values) / len(values), min_baseline_kwh_per_hour)
 
     def hourly_base_consumption_profile(
         self,
@@ -201,7 +192,7 @@ class EnergyHistory:
         grouped: dict[int, list[float]] = {}
         for key, bucket in self.buckets.items():
             bucket_time = datetime.fromisoformat(key)
-            if bucket_time < cutoff:
+            if _datetime_value(bucket_time) < _datetime_value(cutoff):
                 continue
             if not include_current_hour and key == current_key:
                 continue
@@ -214,38 +205,23 @@ class EnergyHistory:
             if values
         }
 
-    def predicted_base_consumption_kwh_per_hour(
-        self,
-        *,
-        now: datetime,
-        target: datetime,
-        learning_days: int,
-        min_baseline_kwh_per_hour: float,
-        margin_percent: float = 0.0,
-        correction_percent: float = 0.0,
-    ) -> float:
-        """Predict consumption for a future hour from stored history."""
-        profile = self.hourly_base_consumption_profile(
-            now=now,
-            learning_days=learning_days,
-            margin_percent=margin_percent,
-        )
-        value = profile.get(target.hour, 0.0)
-        value *= 1 + correction_percent / 100
-        return max(value, min_baseline_kwh_per_hour)
-
     def cleanup(self, *, now: datetime, retention_days: int) -> None:
         cutoff = now - timedelta(days=max(1, retention_days))
-        self.buckets = {
+        retained = {
             key: bucket
             for key, bucket in self.buckets.items()
-            if datetime.fromisoformat(key) >= cutoff
+            if _datetime_sort_value(key) >= _datetime_value(cutoff)
         }
+        if retained.keys() != self.buckets.keys():
+            self.buckets = retained
+            self.dirty = True
 
     def status(self, *, now: datetime, learning_days: int) -> dict[str, Any]:
         cutoff = now - timedelta(days=max(1, learning_days))
         usable_bucket_count = sum(
-            1 for key in self.buckets if datetime.fromisoformat(key) >= cutoff
+            1
+            for key in self.buckets
+            if _datetime_sort_value(key) >= _datetime_value(cutoff)
         )
         return {
             "bucket_count": len(self.buckets),
@@ -260,7 +236,7 @@ class EnergyHistory:
                 bucket.as_dict()
                 for bucket in sorted(
                     self.buckets.values(),
-                    key=lambda item: item.hour_start,
+                    key=lambda item: _datetime_sort_value(item.hour_start),
                 )
             ],
             "cumulative_readings": {
@@ -311,6 +287,7 @@ class EnergyHistoryStore:
 
     async def async_save(self, history: EnergyHistory) -> None:
         await self._store.async_save(history.as_dict())
+        history.dirty = False
 
     async def async_remove(self) -> None:
         await self._store.async_remove()
@@ -318,6 +295,16 @@ class EnergyHistoryStore:
 
 def hour_key(timestamp: datetime) -> str:
     return timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
+
+
+def _datetime_sort_value(value: str) -> float:
+    return _datetime_value(datetime.fromisoformat(value))
+
+
+def _datetime_value(value: datetime) -> float:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.timestamp()
 
 
 def _positive_deltas_by_hour(

@@ -195,7 +195,7 @@ Assistant if your backend language, conflicts or manual renames changed them.
 
 | UI field | Key | Diagnostic entity | Default | Accepted value | Description |
 |----------|-----|-------------------|---------|----------------|-------------|
-| Recalculation interval in minutes | `update_interval_minutes` | `sensor.energy_planner_recalculation_interval` | `60` | Positive number. | Automatic planner polling interval. A battery SoC state change also triggers an immediate recalculation, so the planner can react before the next periodic update. |
+| Recalculation interval in minutes | `update_interval_minutes` | `sensor.energy_planner_recalculation_interval` | `60` | Positive number. | Automatic planner polling interval. Battery SoC changes also trigger a debounced recalculation before the next periodic update. |
 | Consumption history days | `history_learning_days` | `sensor.energy_planner_consumption_history_days` | `3` | Positive whole number. | Number of days of Home Assistant history used to build the hourly consumption profile. |
 | Planning interval in minutes | `interval_minutes` | `sensor.energy_planner_planning_interval` | `5` | Positive number that divides 60 exactly. | Time step used for the planner simulation and forecast slots. Common values are `5`, `10`, `15`, `30` or `60`. |
 | History correction percent | `history_correction_percent` | `sensor.energy_planner_history_correction` | `5.0` | Greater than `-100` and at most `500`. | Extra percentage applied after the hourly consumption profile is calculated. Use this to tune the learned consumption profile. |
@@ -204,8 +204,8 @@ Assistant if your backend language, conflicts or manual renames changed them.
 | Grid charging efficiency | `grid_charge_efficiency` | `sensor.energy_planner_grid_charging_efficiency` | `0.92` | Greater than `0` and at most `1`. | Battery charging efficiency used when converting grid energy into stored battery energy. |
 | SoC reserve percent | `soc_reserve_percent` | `sensor.energy_planner_soc_reserve` | `1` | From `0` to `100`. | Extra SoC margin added to calculated lock/target values. |
 | SoC tolerance in kWh | `soc_eps_kwh` | `sensor.energy_planner_soc_tolerance` | `0.02` | `0` or higher. | Small battery-energy tolerance used by the planner to avoid unstable decisions around exact thresholds. |
-| Low-tariff windows | `nt_windows` | `sensor.energy_planner_low_tariff_windows` | `17:00-19:00,22:00-04:00` | One or more `HH:MM-HH:MM` windows separated by commas. | Windows where low/high tariff protection is evaluated. Windows may cross midnight. |
-| Charging window | `charge_window` | `sensor.energy_planner_charging_window` | `22:00-04:00` | One `HH:MM-HH:MM` window. | Window where simulated grid charging may be planned. The window may cross midnight. |
+| Low-tariff windows | `nt_windows` | `sensor.energy_planner_low_tariff_windows` | `17:00-19:00,22:00-04:00` | Two start/end time selector pairs in the UI. | Windows where low/high tariff protection is evaluated. Windows may cross midnight. Start and end must differ; equal times are rejected as an empty window. |
+| Charging window | `charge_window` | `sensor.energy_planner_charging_window` | `22:00-04:00` | One start/end time selector pair in the UI. | Window where simulated grid charging may be planned. The window may cross midnight. Start and end must differ; equal times are rejected as an empty window. |
 | Minimum solar start duration in minutes | `sun_start_required_minutes` | `sensor.energy_planner_minimum_solar_start_duration` | `30` | Greater than `0`. | Minimum continuous forecasted solar period before the planner treats solar production as started. |
 | Forecast horizon in hours | `forecast_horizon_hours` | `sensor.energy_planner_forecast_horizon` | `36` | At least `24`. | Future horizon used for SoC forecast and planning. Longer horizons require matching future Solcast data. |
 

@@ -5,6 +5,8 @@ from typing import Any
 
 from .const import (
     CONF_CHARGE_WINDOW,
+    CONF_CHARGE_WINDOW_END,
+    CONF_CHARGE_WINDOW_START,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -12,6 +14,10 @@ from .const import (
     CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_NT_WINDOW_1_END,
+    CONF_NT_WINDOW_1_START,
+    CONF_NT_WINDOW_2_END,
+    CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
@@ -38,6 +44,10 @@ WINDOW_RE = re.compile(r"^(?P<start>\d{2}:\d{2})-(?P<end>\d{2}:\d{2})$")
 class OptionsValidationError(ValueError):
     """Raised when user options cannot be normalized."""
 
+    def __init__(self, error_key: str = "invalid_options") -> None:
+        self.error_key = error_key
+        super().__init__(error_key)
+
 
 def default_options() -> dict[str, Any]:
     return {
@@ -58,34 +68,33 @@ def default_options() -> dict[str, Any]:
 
 
 def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
-    update_interval_minutes = int(values[CONF_UPDATE_INTERVAL_MINUTES])
+    update_interval_minutes = _int_value(values, CONF_UPDATE_INTERVAL_MINUTES)
     if update_interval_minutes <= 0:
         raise OptionsValidationError("update_interval_minutes")
 
-    history_learning_days = int(values[CONF_HISTORY_LEARNING_DAYS])
+    history_learning_days = _int_value(values, CONF_HISTORY_LEARNING_DAYS)
     if history_learning_days <= 0:
         raise OptionsValidationError("history_learning_days")
 
-    interval_minutes = int(values[CONF_INTERVAL_MINUTES])
+    interval_minutes = _int_value(values, CONF_INTERVAL_MINUTES)
     if interval_minutes <= 0 or 60 % interval_minutes != 0:
         raise OptionsValidationError("interval_minutes")
 
-    horizon_hours = int(values[CONF_FORECAST_HORIZON_HOURS])
+    horizon_hours = _int_value(values, CONF_FORECAST_HORIZON_HOURS)
     if horizon_hours < 24:
         raise OptionsValidationError("forecast_horizon_hours")
 
-    min_baseline = float(values[CONF_MIN_BASELINE_KWH_PER_HOUR])
-    history_correction_percent = float(
-        values.get(
-            CONF_HISTORY_CORRECTION_PERCENT,
-            DEFAULT_HISTORY_CORRECTION_PERCENT,
-        )
+    min_baseline = _float_value(values, CONF_MIN_BASELINE_KWH_PER_HOUR)
+    history_correction_percent = _float_value(
+        values,
+        CONF_HISTORY_CORRECTION_PERCENT,
+        default=DEFAULT_HISTORY_CORRECTION_PERCENT,
     )
-    grid_charge_max_kw = float(values[CONF_GRID_CHARGE_MAX_KW])
-    grid_charge_efficiency = float(values[CONF_GRID_CHARGE_EFFICIENCY])
-    soc_reserve_percent = float(values[CONF_SOC_RESERVE_PERCENT])
-    soc_eps_kwh = float(values[CONF_SOC_EPS_KWH])
-    sun_start_required_minutes = int(values[CONF_SUN_START_REQUIRED_MINUTES])
+    grid_charge_max_kw = _float_value(values, CONF_GRID_CHARGE_MAX_KW)
+    grid_charge_efficiency = _float_value(values, CONF_GRID_CHARGE_EFFICIENCY)
+    soc_reserve_percent = _float_value(values, CONF_SOC_RESERVE_PERCENT)
+    soc_eps_kwh = _float_value(values, CONF_SOC_EPS_KWH)
+    sun_start_required_minutes = _int_value(values, CONF_SUN_START_REQUIRED_MINUTES)
 
     if min_baseline < 0:
         raise OptionsValidationError("min_baseline_kwh_per_hour")
@@ -112,8 +121,8 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
         CONF_GRID_CHARGE_EFFICIENCY: grid_charge_efficiency,
         CONF_SOC_RESERVE_PERCENT: soc_reserve_percent,
         CONF_SOC_EPS_KWH: soc_eps_kwh,
-        CONF_NT_WINDOWS: parse_windows(values[CONF_NT_WINDOWS]),
-        CONF_CHARGE_WINDOW: parse_window(values[CONF_CHARGE_WINDOW]),
+        CONF_NT_WINDOWS: _nt_windows_from_values(values),
+        CONF_CHARGE_WINDOW: _charge_window_from_values(values),
         CONF_SUN_START_REQUIRED_MINUTES: sun_start_required_minutes,
         CONF_FORECAST_HORIZON_HOURS: horizon_hours,
     }
@@ -149,6 +158,8 @@ def parse_window(value: Any) -> dict[str, str]:
 
     if not _valid_hhmm(start) or not _valid_hhmm(end):
         raise OptionsValidationError("window")
+    if start == end:
+        raise OptionsValidationError("window")
     return {"start": start, "end": end}
 
 
@@ -164,6 +175,81 @@ def merged_options(existing: dict[str, Any]) -> dict[str, Any]:
     options = default_options()
     options.update(existing)
     return options
+
+
+def _nt_windows_from_values(values: dict[str, Any]) -> list[dict[str, str]]:
+    if {
+        CONF_NT_WINDOW_1_START,
+        CONF_NT_WINDOW_1_END,
+        CONF_NT_WINDOW_2_START,
+        CONF_NT_WINDOW_2_END,
+    }.issubset(values):
+        return [
+            parse_window(
+                {
+                    "start": values.get(CONF_NT_WINDOW_1_START),
+                    "end": values.get(CONF_NT_WINDOW_1_END),
+                }
+            ),
+            parse_window(
+                {
+                    "start": values.get(CONF_NT_WINDOW_2_START),
+                    "end": values.get(CONF_NT_WINDOW_2_END),
+                }
+            ),
+        ]
+    if CONF_NT_WINDOWS in values:
+        return parse_windows(values[CONF_NT_WINDOWS])
+    raise OptionsValidationError("windows")
+
+
+def _charge_window_from_values(values: dict[str, Any]) -> dict[str, str]:
+    if {CONF_CHARGE_WINDOW_START, CONF_CHARGE_WINDOW_END}.issubset(values):
+        return parse_window(
+            {
+                "start": values.get(CONF_CHARGE_WINDOW_START),
+                "end": values.get(CONF_CHARGE_WINDOW_END),
+            }
+        )
+    if CONF_CHARGE_WINDOW in values:
+        return parse_window(values[CONF_CHARGE_WINDOW])
+    raise OptionsValidationError("window")
+
+
+def _int_value(
+    values: dict[str, Any],
+    key: str,
+    *,
+    default: int | None = None,
+) -> int:
+    try:
+        raw_value = values[key]
+    except KeyError as err:
+        if default is None:
+            raise OptionsValidationError(key) from err
+        raw_value = default
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError) as err:
+        raise OptionsValidationError(key) from err
+
+
+def _float_value(
+    values: dict[str, Any],
+    key: str,
+    *,
+    default: float | None = None,
+) -> float:
+    try:
+        raw_value = values[key]
+    except KeyError as err:
+        if default is None:
+            raise OptionsValidationError(key) from err
+        raw_value = default
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError) as err:
+        raise OptionsValidationError(key) from err
 
 
 def _valid_hhmm(value: str) -> bool:

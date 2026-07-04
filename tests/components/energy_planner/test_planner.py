@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
+from custom_components.energy_planner import planner as planner_module
 from custom_components.energy_planner.models import (
     ForecastSlot,
     PlannerInput,
@@ -166,6 +168,31 @@ def test_nt_window_uses_grid_and_preserves_battery():
     assert first_point["is_nt"] is True
     assert first_point["grid_import_kwh"] == 1.0
     assert first_point["battery_kwh"] == 5.0
+
+
+def test_equal_start_end_window_is_empty():
+    now = datetime(2026, 7, 3, 22, 0)
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=_slots(now, 2, solar_kwh=0.0, consumption_kwh=1.0),
+            nt_windows=[TimeWindow(start="22:00", end="22:00")],
+            charge_window=TimeWindow(start="23:00", end="23:30"),
+            forecast_horizon_hours=24,
+        )
+    )
+
+    assert result.plan["soc_forecast"]["points"][0]["is_nt"] is False
+
+
+def test_window_start_normalizes_nonexistent_dst_time():
+    timezone = ZoneInfo("Europe/Prague")
+    timestamp = datetime(2026, 3, 29, 1, 30, tzinfo=timezone)
+
+    assert planner_module._next_window_start(
+        timestamp,
+        TimeWindow(start="02:30", end="04:00"),
+    ) == datetime(2026, 3, 29, 3, 30, tzinfo=timezone)
 
 
 def test_lock_start_uses_current_nt_window_start_not_next_slot():

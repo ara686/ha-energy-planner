@@ -198,7 +198,7 @@ pokud je změnil jazyk backendu, konflikt názvů nebo ruční přejmenování.
 
 | Položka v UI | Key | Diagnostická entita | Default | Povolená hodnota | Popis |
 |--------------|-----|---------------------|---------|------------------|-------|
-| Interval přepočtu v minutách | `update_interval_minutes` | `sensor.energy_planner_interval_prepoctu` | `60` | Kladné číslo. | Automatický polling planneru. Změna stavu baterie SoC zároveň spustí okamžitý přepočet, takže planner může reagovat ještě před dalším periodickým během. |
+| Interval přepočtu v minutách | `update_interval_minutes` | `sensor.energy_planner_interval_prepoctu` | `60` | Kladné číslo. | Automatický polling planneru. Změny stavu baterie SoC zároveň spouští debounced přepočet ještě před dalším periodickým během. |
 | Počet dní historie spotřeby | `history_learning_days` | `sensor.energy_planner_pocet_dni_historie_spotreby` | `3` | Kladné celé číslo. | Počet dní historie Home Assistantu použitých pro sestavení hodinového profilu spotřeby. |
 | Interval plánování v minutách | `interval_minutes` | `sensor.energy_planner_interval_planovani` | `5` | Kladné číslo, které beze zbytku dělí 60. | Časový krok používaný pro simulaci planneru a forecast sloty. Běžné hodnoty jsou `5`, `10`, `15`, `30` nebo `60`. |
 | Korekce historie v procentech | `history_correction_percent` | `sensor.energy_planner_korekce_historie` | `5.0` | Větší než `-100` a nejvýše `500`. | Dodatečné procento aplikované po výpočtu hodinového profilu spotřeby. Použijte pro doladění naučeného profilu spotřeby. |
@@ -207,8 +207,8 @@ pokud je změnil jazyk backendu, konflikt názvů nebo ruční přejmenování.
 | Účinnost nabíjení ze sítě | `grid_charge_efficiency` | `sensor.energy_planner_ucinnost_nabijeni_ze_site` | `0.92` | Větší než `0` a nejvýše `1`. | Účinnost nabíjení baterie použitá při převodu energie ze sítě na uloženou energii v baterii. |
 | Rezerva SoC v procentech | `soc_reserve_percent` | `sensor.energy_planner_rezerva_soc` | `1` | Od `0` do `100`. | Dodatečná SoC rezerva přičtená k vypočteným hodnotám lock/target. |
 | Tolerance SoC v kWh | `soc_eps_kwh` | `sensor.energy_planner_tolerance_soc` | `0.02` | `0` nebo vyšší. | Malá energetická tolerance baterie používaná plannerem, aby rozhodování nebylo nestabilní kolem přesných prahů. |
-| Okna nízkého tarifu | `nt_windows` | `sensor.energy_planner_okna_nizkeho_tarifu` | `17:00-19:00,22:00-04:00` | Jedno nebo více oken `HH:MM-HH:MM` oddělených čárkou. | Okna, ve kterých se vyhodnocuje ochrana pro nízký/vysoký tarif. Okna mohou přecházet přes půlnoc. |
-| Nabíjecí okno | `charge_window` | `sensor.energy_planner_okno_pro_nabijeni` | `22:00-04:00` | Jedno okno `HH:MM-HH:MM`. | Okno, ve kterém může být v simulaci plánované nabíjení ze sítě. Okno může přecházet přes půlnoc. |
+| Okna nízkého tarifu | `nt_windows` | `sensor.energy_planner_okna_nizkeho_tarifu` | `17:00-19:00,22:00-04:00` | Dva páry časových polí začátek/konec v UI. | Okna, ve kterých se vyhodnocuje ochrana pro nízký/vysoký tarif. Okna mohou přecházet přes půlnoc. Začátek a konec se musí lišit; stejné časy jsou odmítnuté jako prázdné okno. |
+| Nabíjecí okno | `charge_window` | `sensor.energy_planner_okno_pro_nabijeni` | `22:00-04:00` | Jeden pár časových polí začátek/konec v UI. | Okno, ve kterém může být v simulaci plánované nabíjení ze sítě. Okno může přecházet přes půlnoc. Začátek a konec se musí lišit; stejné časy jsou odmítnuté jako prázdné okno. |
 | Minimální trvání začátku solární výroby v minutách | `sun_start_required_minutes` | `sensor.energy_planner_minimalni_delka_solarniho_startu` | `30` | Větší než `0`. | Minimální souvislá forecastovaná solární perioda, než planner považuje solární výrobu za zahájenou. |
 | Horizont predikce v hodinách | `forecast_horizon_hours` | `sensor.energy_planner_horizont_predikce` | `36` | Alespoň `24`. | Budoucí horizont používaný pro SoC predikci a plánování. Delší horizonty vyžadují odpovídající budoucí Solcast data. |
 
