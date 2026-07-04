@@ -15,6 +15,8 @@ from .const import (
     CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
     CONF_CHARGE_WINDOW,
+    CONF_CHARGE_WINDOW_END,
+    CONF_CHARGE_WINDOW_START,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -24,6 +26,10 @@ from .const import (
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_NT_WINDOW_1_END,
+    CONF_NT_WINDOW_1_START,
+    CONF_NT_WINDOW_2_END,
+    CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
     CONF_PRICE_ENTITY,
     CONF_SOC_EPS_KWH,
@@ -34,14 +40,13 @@ from .const import (
     CONF_SUN_START_REQUIRED_MINUTES,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_NAME,
+    DEFAULT_NT_WINDOWS,
     DOMAIN,
 )
 from .options import (
     OptionsValidationError,
     merged_options,
     normalize_options,
-    serialize_window,
-    serialize_windows,
 )
 from .sources import parse_float
 
@@ -130,7 +135,7 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry,
     ) -> EnergyPlannerOptionsFlow:
-        return EnergyPlannerOptionsFlow(config_entry)
+        return EnergyPlannerOptionsFlow()
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
@@ -173,9 +178,6 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
     """Handle Energy Planner options."""
 
-    def __init__(self, config_entry) -> None:
-        self._config_entry = config_entry
-
     async def async_step_init(self, user_input=None):
         errors: dict[str, str] = {}
 
@@ -186,9 +188,13 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     data=normalize_options(user_input),
                 )
             except OptionsValidationError as err:
-                errors["base"] = str(err) or "invalid_options"
+                errors["base"] = err.error_key
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_options"
 
-        options = merged_options(dict(self._config_entry.options))
+        options = merged_options(dict(self.config_entry.options))
+        nt_windows = _nt_window_defaults(options)
+        charge_window = options[CONF_CHARGE_WINDOW]
         schema = vol.Schema(
             {
                 vol.Required(
@@ -261,13 +267,29 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     unit_of_measurement="kWh",
                 ),
                 vol.Required(
-                    CONF_NT_WINDOWS,
-                    default=serialize_windows(options[CONF_NT_WINDOWS]),
-                ): str,
+                    CONF_NT_WINDOW_1_START,
+                    default=nt_windows[0]["start"],
+                ): _time_selector(),
                 vol.Required(
-                    CONF_CHARGE_WINDOW,
-                    default=serialize_window(options[CONF_CHARGE_WINDOW]),
-                ): str,
+                    CONF_NT_WINDOW_1_END,
+                    default=nt_windows[0]["end"],
+                ): _time_selector(),
+                vol.Required(
+                    CONF_NT_WINDOW_2_START,
+                    default=nt_windows[1]["start"],
+                ): _time_selector(),
+                vol.Required(
+                    CONF_NT_WINDOW_2_END,
+                    default=nt_windows[1]["end"],
+                ): _time_selector(),
+                vol.Required(
+                    CONF_CHARGE_WINDOW_START,
+                    default=charge_window["start"],
+                ): _time_selector(),
+                vol.Required(
+                    CONF_CHARGE_WINDOW_END,
+                    default=charge_window["end"],
+                ): _time_selector(),
                 vol.Required(
                     CONF_SUN_START_REQUIRED_MINUTES,
                     default=options[CONF_SUN_START_REQUIRED_MINUTES],
@@ -335,6 +357,18 @@ def _user_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             ),
         }
     )
+
+
+def _time_selector() -> selector.TimeSelector:
+    return selector.TimeSelector(selector.TimeSelectorConfig())
+
+
+def _nt_window_defaults(options: dict[str, Any]) -> list[dict[str, str]]:
+    windows = options.get(CONF_NT_WINDOWS) or []
+    return [
+        windows[index] if index < len(windows) else DEFAULT_NT_WINDOWS[index]
+        for index in range(2)
+    ]
 
 
 def _required(key: str, defaults: dict[str, Any]) -> vol.Required:

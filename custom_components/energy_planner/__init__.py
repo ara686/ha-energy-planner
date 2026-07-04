@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 import homeassistant.helpers.config_validation as cv
 from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
@@ -22,6 +23,7 @@ from .const import (
 PLATFORMS = ["sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
+SOC_REFRESH_DEBOUNCE_SECONDS = 60
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -107,6 +109,18 @@ def _register_battery_soc_refresh(
     if not entity_id:
         return
 
+    async def _request_refresh() -> None:
+        await coordinator.async_request_refresh()
+
+    debouncer = Debouncer(
+        hass,
+        _LOGGER,
+        cooldown=SOC_REFRESH_DEBOUNCE_SECONDS,
+        immediate=False,
+        function=_request_refresh,
+    )
+    entry.async_on_unload(debouncer.async_cancel)
+
     @callback
     def _handle_battery_soc_change(event) -> None:
         old_state = event.data.get("old_state")
@@ -116,7 +130,7 @@ def _register_battery_soc_refresh(
         if old_state is not None and old_state.state == new_state.state:
             return
         _LOGGER.debug("Battery SoC changed; scheduling Energy Planner refresh")
-        hass.async_create_task(coordinator.async_request_refresh())
+        hass.async_create_task(debouncer.async_call())
 
     entry.async_on_unload(
         async_track_state_change_event(

@@ -4,6 +4,8 @@ import pytest
 
 from custom_components.energy_planner.const import (
     CONF_CHARGE_WINDOW,
+    CONF_CHARGE_WINDOW_END,
+    CONF_CHARGE_WINDOW_START,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -11,6 +13,10 @@ from custom_components.energy_planner.const import (
     CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_NT_WINDOW_1_END,
+    CONF_NT_WINDOW_1_START,
+    CONF_NT_WINDOW_2_END,
+    CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
@@ -78,6 +84,29 @@ def test_normalize_options_converts_ui_values_to_typed_options():
     assert normalized[CONF_CHARGE_WINDOW] == {"start": "22:00", "end": "04:00"}
 
 
+def test_normalize_options_accepts_time_selector_fields():
+    normalized = normalize_options(
+        _options(
+            **{
+                CONF_NT_WINDOWS: None,
+                CONF_CHARGE_WINDOW: None,
+                CONF_NT_WINDOW_1_START: "17:00",
+                CONF_NT_WINDOW_1_END: "19:00",
+                CONF_NT_WINDOW_2_START: "22:00",
+                CONF_NT_WINDOW_2_END: "04:00",
+                CONF_CHARGE_WINDOW_START: "22:00",
+                CONF_CHARGE_WINDOW_END: "04:00",
+            }
+        )
+    )
+
+    assert normalized[CONF_NT_WINDOWS] == [
+        {"start": "17:00", "end": "19:00"},
+        {"start": "22:00", "end": "04:00"},
+    ]
+    assert normalized[CONF_CHARGE_WINDOW] == {"start": "22:00", "end": "04:00"}
+
+
 @pytest.mark.parametrize(
     ("key", "value"),
     [
@@ -89,8 +118,17 @@ def test_normalize_options_converts_ui_values_to_typed_options():
         (CONF_GRID_CHARGE_EFFICIENCY, 1.1),
         (CONF_NT_WINDOWS, "invalid"),
         (CONF_CHARGE_WINDOW, "25:00-26:00"),
+        (CONF_CHARGE_WINDOW, "22:00-22:00"),
+        (CONF_HISTORY_CORRECTION_PERCENT, "not-a-number"),
     ],
 )
 def test_normalize_options_rejects_invalid_values(key, value):
-    with pytest.raises(OptionsValidationError):
+    with pytest.raises(OptionsValidationError) as exc_info:
         normalize_options(_options(**{key: value}))
+
+    assert exc_info.value.error_key in {
+        key,
+        "window",
+        "windows",
+        "history_correction_percent",
+    }

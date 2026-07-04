@@ -137,13 +137,18 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             source_warnings=source_warnings,
             history_source=planner_history.source,
         )
-        await self._history_store.async_save(self.history)
+        await self._async_save_history_if_changed()
         if result.warnings:
             _LOGGER.warning(
                 "Energy Planner update completed with warnings: %s",
                 result.warnings,
             )
         return result
+
+    async def _async_save_history_if_changed(self) -> None:
+        """Persist internal history only when it changed."""
+        if self.history.dirty:
+            await self._history_store.async_save(self.history)
 
 
 def build_planner_result(

@@ -59,8 +59,12 @@
           "grid_charge_efficiency": "Účinnost nabíjení ze sítě",
           "soc_reserve_percent": "Rezerva SoC v procentech",
           "soc_eps_kwh": "Tolerance SoC v kWh",
-          "nt_windows": "Okna nízkého tarifu",
-          "charge_window": "Okno pro nabíjení",
+          "nt_window_1_start": "Začátek okna nízkého tarifu 1",
+          "nt_window_1_end": "Konec okna nízkého tarifu 1",
+          "nt_window_2_start": "Začátek okna nízkého tarifu 2",
+          "nt_window_2_end": "Konec okna nízkého tarifu 2",
+          "charge_window_start": "Začátek nabíjecího okna",
+          "charge_window_end": "Konec nabíjecího okna",
           "sun_start_required_minutes": "Minimální délka solárního startu v minutách",
           "forecast_horizon_hours": "Horizont predikce v hodinách"
         }
@@ -78,8 +82,8 @@
       "soc_reserve_percent": "Rezerva SoC musí být mezi 0 a 100 %.",
       "soc_eps_kwh": "Tolerance SoC nesmí být záporná.",
       "sun_start_required_minutes": "Minimální délka solárního startu musí být větší než 0 minut.",
-      "window": "Časové okno musí používat formát HH:MM-HH:MM.",
-      "windows": "Okna musí obsahovat alespoň jedno platné okno ve formátu HH:MM-HH:MM.",
+      "window": "Časové okno musí mít rozdílný začátek a konec.",
+      "windows": "Okna musí obsahovat alespoň jedno platné časové okno.",
       "invalid_options": "Možnosti nejsou platné."
     }
   },

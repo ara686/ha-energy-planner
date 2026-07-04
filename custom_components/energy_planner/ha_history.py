@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Any
 
 from homeassistant.core import HomeAssistant, State
@@ -30,17 +31,19 @@ async def async_get_recorder_energy_history(
     start = now - timedelta(days=max(1, learning_days))
     try:
         states_by_entity = await get_instance(hass).async_add_executor_job(
-            recorder_history.get_significant_states,
-            hass,
-            start,
-            now,
-            entity_ids,
-            None,
-            True,
-            False,
-            False,
-            False,
-            False,
+            partial(
+                recorder_history.get_significant_states,
+                hass,
+                start_time=start,
+                end_time=now,
+                entity_ids=entity_ids,
+                filters=None,
+                include_start_time_state=True,
+                significant_changes_only=False,
+                minimal_response=False,
+                no_attributes=False,
+                compressed_state_format=False,
+            )
         )
     except (KeyError, RuntimeError, ValueError):
         return None

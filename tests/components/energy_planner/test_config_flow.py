@@ -9,7 +9,8 @@ from custom_components.energy_planner.config_flow import _user_schema
 from custom_components.energy_planner.const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
-    CONF_CHARGE_WINDOW,
+    CONF_CHARGE_WINDOW_END,
+    CONF_CHARGE_WINDOW_START,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -19,7 +20,10 @@ from custom_components.energy_planner.const import (
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
-    CONF_NT_WINDOWS,
+    CONF_NT_WINDOW_1_END,
+    CONF_NT_WINDOW_1_START,
+    CONF_NT_WINDOW_2_END,
+    CONF_NT_WINDOW_2_START,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -308,8 +312,12 @@ async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):
         CONF_GRID_CHARGE_EFFICIENCY: "0.92",
         CONF_SOC_RESERVE_PERCENT: 1,
         CONF_SOC_EPS_KWH: "0.02",
-        CONF_NT_WINDOWS: "17:00-19:00,22:00-04:00",
-        CONF_CHARGE_WINDOW: "22:00-04:00",
+        CONF_NT_WINDOW_1_START: "17:00",
+        CONF_NT_WINDOW_1_END: "19:00",
+        CONF_NT_WINDOW_2_START: "22:00",
+        CONF_NT_WINDOW_2_END: "04:00",
+        CONF_CHARGE_WINDOW_START: "22:00",
+        CONF_CHARGE_WINDOW_END: "04:00",
         CONF_SUN_START_REQUIRED_MINUTES: "30",
         CONF_FORECAST_HORIZON_HOURS: "48",
     }
@@ -321,6 +329,7 @@ async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):
     assert validated[CONF_SOC_RESERVE_PERCENT] == 1.0
     assert validated[CONF_HISTORY_CORRECTION_PERCENT] == 5.0
     assert validated[CONF_INTERVAL_MINUTES] == 30.0
+    assert validated[CONF_NT_WINDOW_1_START] == "17:00"
 
 
 async def test_options_flow_rejects_invalid_values(hass, config_entry):
