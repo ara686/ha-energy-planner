@@ -74,15 +74,23 @@ be part of the home consumption total; Energy Planner subtracts it per hour to
 learn the uncontrollable baseline. Do not use a net-after-managed house sensor,
 otherwise managed consumption would be subtracted twice.
 
-If you only have a power sensor in `W` or `kW`, create an Integration (Riemann
-sum integral) helper first to convert power to energy in `kWh`, then select that
-energy sensor in Energy Planner. For loads that switch on and off and hold a
-stable power value, the `left` integration method is usually the right choice.
+If you only have a power sensor, for example `sensor.home_power` in `W`, create
+a Home Assistant Integral helper first to convert power to energy in `kWh`, then
+select that new energy sensor in Energy Planner. In Home Assistant, create an
+Integration (Riemann sum integral) helper from the power sensor, set the output
+unit to `kWh`, and use the resulting cumulative energy sensor as
+`home_energy_entity`. Do this only when you do not already have a suitable `kWh`
+energy sensor. Do not integrate an entity that is already cumulative energy in
+`kWh`. For loads that switch on and off and hold a stable power value, the
+`left` integration method is usually the right choice.
 
 Energy Planner builds hourly buckets internally from positive deltas of the
 selected cumulative energy sensors. The first reading is only a baseline; useful
 history starts once the source changes or once Home Assistant recorder history
-is available.
+is available. On a fresh setup without existing recorder history for the
+selected sources, the first reasonable results usually appear after roughly 24
+hours. The profile becomes noticeably more accurate after roughly 48 hours
+because the planner has seen at least two samples for the same hour of day.
 
 ### Consumption history model
 
@@ -212,9 +220,6 @@ header:
   show: true
   show_states: true
   colorize_states: true
-now:
-  show: true
-  label: Now
 yaxis:
   - min: 0
     max: 100
