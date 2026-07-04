@@ -1,8 +1,7 @@
 # History
 
-Energy Planner follows the active Node-RED flow's hour-of-day consumption model,
-but it builds the hourly buckets internally from cumulative energy source
-sensors.
+Energy Planner uses an hour-of-day consumption model built internally from
+cumulative energy source sensors.
 
 The configured home consumption source is expected to be a cumulative kWh sensor
 for whole-home consumption. Optional managed consumption sources use the same
@@ -18,7 +17,7 @@ When Home Assistant history is available, the planner reads the configured
 5. Sum managed deltas from all managed sources for each hour.
 6. Subtract managed kWh from home kWh for the same hour key.
 7. Group the resulting base consumption by hour of day.
-8. Average each hour-of-day group and apply the legacy 5% margin.
+8. Average each hour-of-day group and apply the built-in 5% history margin.
 
 Forecast slots use that hour-of-day profile. A forecast slot at 11:00 uses the
 average of historical 11:00 values from the learning window. It does not use a
@@ -26,8 +25,7 @@ global average of all historical consumption. If there is no sample for the
 target hour, the slot uses `min_baseline_kwh_per_hour`.
 
 The Options Flow `history_correction_percent` is applied after the hourly profile
-is calculated, matching the active Node-RED flow's `input_number.history_correction`
-behavior.
+is calculated.
 
 Energy Planner also keeps its own storage-backed hourly history as a fallback.
 State changes of the configured energy source sensors are recorded as positive

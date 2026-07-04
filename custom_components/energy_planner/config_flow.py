@@ -6,7 +6,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
@@ -53,6 +53,8 @@ ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
 ERR_ENERGY_SENSOR_REQUIRED = "energy_sensor_required"
 ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
+ERR_PERCENTAGE_ENTITY_REQUIRED = "percentage_entity_required"
+ERR_PERCENTAGE_RANGE = "percentage_range"
 ENERGY_STATE_CLASSES = {
     "total",
     "total_increasing",
@@ -162,6 +164,10 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_mismatch()
+                if _history_sources_changed(entry.data, user_input):
+                    from .history import EnergyHistoryStore
+
+                    await EnergyHistoryStore(self.hass, entry.entry_id).async_remove()
                 return self.async_update_reload_and_abort(
                     entry,
                     data=user_input,
@@ -397,7 +403,7 @@ def _validate_config_input(
     user_input: dict[str, Any],
 ) -> dict[str, str]:
     errors: dict[str, str] = {}
-    _validate_numeric_entity(hass, user_input, CONF_BATTERY_SOC_ENTITY, errors)
+    _validate_percentage_entity(hass, user_input, CONF_BATTERY_SOC_ENTITY, errors)
     capacity = _validate_numeric_entity(
         hass, user_input, CONF_BATTERY_CAPACITY_ENTITY, errors
     )
@@ -406,7 +412,7 @@ def _validate_config_input(
             errors[CONF_BATTERY_CAPACITY_ENTITY] = ERR_BATTERY_CAPACITY_UNIT
         elif capacity <= 0:
             errors[CONF_BATTERY_CAPACITY_ENTITY] = ERR_BATTERY_CAPACITY_POSITIVE
-    _validate_numeric_entity(hass, user_input, CONF_BATTERY_MIN_SOC_ENTITY, errors)
+    _validate_percentage_entity(hass, user_input, CONF_BATTERY_MIN_SOC_ENTITY, errors)
     _validate_energy_sensor_entity(
         hass,
         user_input[CONF_HOME_ENERGY_ENTITY],
@@ -421,6 +427,26 @@ def _validate_config_input(
             errors,
         )
     return errors
+
+
+def _validate_percentage_entity(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+    key: str,
+    errors: dict[str, str],
+) -> float | None:
+    value = _validate_numeric_entity(hass, user_input, key, errors)
+    if value is None:
+        return None
+    if not 0 <= value <= 100:
+        errors[key] = ERR_PERCENTAGE_RANGE
+        return value
+
+    state = hass.states.get(user_input[key])
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) if state else None
+    if unit and _normalize_unit(unit) != _normalize_unit(PERCENTAGE):
+        errors[key] = ERR_PERCENTAGE_ENTITY_REQUIRED
+    return value
 
 
 def _validate_numeric_entity(
@@ -474,6 +500,25 @@ def _as_entity_list(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value]
     return [str(item) for item in value]
+
+
+def _history_sources_changed(
+    old_data: dict[str, Any],
+    new_data: dict[str, Any],
+) -> bool:
+    old_home = _source_entity(old_data.get(CONF_HOME_ENERGY_ENTITY))
+    new_home = _source_entity(new_data.get(CONF_HOME_ENERGY_ENTITY))
+    old_managed = _source_entities(old_data.get(CONF_MANAGED_ENERGY_ENTITIES))
+    new_managed = _source_entities(new_data.get(CONF_MANAGED_ENERGY_ENTITIES))
+    return old_home != new_home or old_managed != new_managed
+
+
+def _source_entity(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _source_entities(value: Any) -> tuple[str, ...]:
+    return tuple(sorted(entity_id for entity_id in _as_entity_list(value) if entity_id))
 
 
 def _normalize_unit(unit: Any) -> str:

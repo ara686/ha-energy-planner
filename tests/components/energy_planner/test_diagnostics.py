@@ -27,4 +27,5 @@ async def test_config_entry_diagnostics_include_compact_summary(hass, config_ent
     assert diagnostics["history"]["bucket_count"] >= 0
     assert diagnostics["history"]["learning_days"] == 3
     assert len(diagnostics["entities"]) > 0
+    assert "binary_sensor.energy_planner_charge_now" in diagnostics["entities"]
     assert "target_soc" in diagnostics["last_plan"]

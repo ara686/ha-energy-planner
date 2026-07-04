@@ -558,7 +558,7 @@ state, time nebo template triggery nad senzory Energy Planneru.
   `battery_capacity_entity` není kladná kapacita baterie v `kWh`. Nepoužívejte
   entity proudu ani instalované kapacity v `Ah`; použijte entitu kapacity v
   `kWh` nebo Home Assistant helper s pevnou kapacitou baterie.
-- `warning` obvykle znamená, že volitelná data, například Solcast forecast, chybí nebo mají chybný formát.
+- `warning` obvykle znamená, že nakonfigurovaná volitelná data, například vybraná Solcast forecast entita, chybí nebo mají chybný formát.
 - Diagnostiku z integrační stránky použijte pro kontrolu nakonfigurovaných entit, posledního stavu planneru, warnings a shrnutí plánu.
 - Debug payloady nedávejte do běžných stavových atributů; použijte diagnostiku nebo `energy_planner.export_debug`.
 

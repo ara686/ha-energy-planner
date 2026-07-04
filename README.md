@@ -556,8 +556,8 @@ with Energy Planner sensor entities when building automations.
   `battery_capacity_entity` is not a positive battery capacity in `kWh`. Do not
   use current or installed-capacity-in-`Ah` entities; use a `kWh` capacity entity
   or a Home Assistant helper with the fixed battery capacity.
-- `warning` usually means optional data, such as Solcast forecast, is missing or
-  malformed.
+- `warning` usually means configured optional data, such as a selected Solcast
+  forecast entity, is missing or malformed.
 - Use diagnostics from the integration page to inspect configured entities, last
   planner state, warnings and plan summary.
 - Keep debug payloads out of regular state attributes; use diagnostics or

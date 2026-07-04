@@ -18,7 +18,7 @@ async def async_get_config_entry_diagnostics(
     entities = [
         entity.entity_id
         for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-        if entity.domain == "sensor"
+        if entity.domain in {"binary_sensor", "sensor"}
     ]
 
     return {
