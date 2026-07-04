@@ -86,6 +86,14 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "charge_now": {
+        "name": "Charge now"
+      },
+      "discharge_allowed": {
+        "name": "Discharge allowed"
+      }
+    },
     "sensor": {
       "state": {
         "name": "State"

@@ -210,8 +210,8 @@ Assistant if your backend language, conflicts or manual renames changed them.
 
 ## Output entities
 
-Energy Planner creates sensor entities only. It does not create switches,
-numbers, selects or any device-control entities in v1.
+Energy Planner creates sensor and binary sensor entities only. It does not
+create switches, numbers, selects or any device-control entities in v1.
 
 Entity IDs below are the typical defaults for an integration instance named
 `Energy Planner`. Home Assistant may add suffixes or use renamed entity IDs if
@@ -221,6 +221,8 @@ Settings > Devices & services > Energy Planner > Entities.
 | Typical entity ID | Output key | Category | Unit/type | Description |
 |-------------------|------------|----------|-----------|-------------|
 | `sensor.energy_planner_state` | `state` | Diagnostic | text | Planner state: `ok`, `warning` or `insufficient_data`. Attributes include warnings, slot count and compact history status. |
+| `binary_sensor.energy_planner_charge_now` | `charge_now` | Standard | binary | On when current planner-start SoC is below `charge_to_soc`. Use it to start or allow grid charging without comparing SoC values in automations. |
+| `binary_sensor.energy_planner_discharge_allowed` | `discharge_allowed` | Standard | binary | On when current planner-start SoC is above `safe_discharge_soc`. Use it to allow battery discharge without comparing SoC values in automations. |
 | `sensor.energy_planner_lock_soc` | `lock_soc` | Standard | `%` | Minimum SoC the planner wants to protect for the low/high tariff planning window. |
 | `sensor.energy_planner_charge_to_soc` | `charge_to_soc` | Standard | `%` | Optional grid-charge target SoC needed to cover the forecasted high-tariff deficit from the configured charge window. |
 | `sensor.energy_planner_target_soc` | `target_soc` | Standard | `%` | Final target SoC used by the planner; currently the higher value of `lock_soc` and `charge_to_soc`. |

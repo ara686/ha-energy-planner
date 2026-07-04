@@ -86,6 +86,14 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "charge_now": {
+        "name": "Nabíjať teraz"
+      },
+      "discharge_allowed": {
+        "name": "Vybíjanie povolené"
+      }
+    },
     "sensor": {
       "state": {
         "name": "Stav"

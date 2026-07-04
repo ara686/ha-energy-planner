@@ -154,6 +154,29 @@ async def test_home_assistant_loads_supported_options_flow_translations(hass) ->
         )
 
 
+async def test_home_assistant_loads_supported_binary_sensor_translations(
+    hass,
+) -> None:
+    expected_charge_now_labels = {
+        "en": "Charge now",
+        "cs": "Nabíjet nyní",
+        "sk": "Nabíjať teraz",
+    }
+
+    for language, expected_label in expected_charge_now_labels.items():
+        translations = await async_get_translations(
+            hass,
+            language,
+            "entity",
+            {DOMAIN},
+        )
+
+        assert (
+            translations[f"component.{DOMAIN}.entity.binary_sensor.charge_now.name"]
+            == expected_label
+        )
+
+
 async def test_home_assistant_loads_supported_service_translations(hass) -> None:
     expected_recalculate_labels = {
         "en": "Recalculate",
