@@ -11,6 +11,40 @@ The integration calculates energy planning outputs only. It does **not** control
 If you use its sensors in automations, you are responsible for validating the
 automation behavior and all consequences of those automations.
 
+## Purpose and operating model
+
+Energy Planner estimates how battery state of charge will evolve from learned
+hourly household consumption and expected solar production. It uses Home
+Assistant history to learn the consumption profile by hour of day, subtracts
+configured managed loads from the normal household baseline, and combines that
+with Solcast forecast data already available in Home Assistant.
+
+The integration publishes graph-friendly forecast data and helper sensors that
+can be used by separate automations. The SoC forecast can show how the battery
+is expected to develop over the next 24 hours or longer. The lock SoC output
+indicates how much battery should be preserved so the configured high-tariff
+period can be bridged without importing from the grid. The charge-to SoC output
+indicates how far the battery would need to be charged during the low-tariff
+window to bridge a later high-tariff period.
+
+Energy Planner also estimates unused solar surplus. That surplus can be used by
+your own automations to decide when to run flexible loads such as domestic hot
+water heating, pool technology or EV charging. These flexible loads should be
+configured as managed energy sources so their consumption is not learned as
+normal household baseline consumption.
+
+In v1, Energy Planner does not switch or control anything directly. It prepares
+data and entities for dashboards and for user-owned Home Assistant automations.
+
+### Typical D25d tariff strategy
+
+In a Czech D25d tariff setup with eight hours of low tariff, a typical summer
+strategy is to estimate daily solar surplus and use it for flexible loads such
+as a boiler, pool or EV charging. In winter and shoulder seasons, the strategy
+usually shifts toward maximizing low-tariff usage and bridging high-tariff
+periods. Depending on the forecast, this can include charging the battery during
+low tariff so that high tariff can be skipped with minimal or no grid import.
+
 ## Installation
 
 HACS custom repository:
