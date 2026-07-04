@@ -13,8 +13,7 @@
           "managed_energy_entities": "Zdroje riadenej spotreby",
           "solcast_today_entity": "Predpoveď Solcast na dnes",
           "solcast_tomorrow_entity": "Predpoveď Solcast na zajtra",
-          "solcast_additional_entities": "Ďalšie dni predpovede Solcast",
-          "price_entity": "Cena alebo tarifa"
+          "solcast_additional_entities": "Ďalšie dni predpovede Solcast"
         }
       },
       "reconfigure": {
@@ -28,8 +27,7 @@
           "managed_energy_entities": "Zdroje riadenej spotreby",
           "solcast_today_entity": "Predpoveď Solcast na dnes",
           "solcast_tomorrow_entity": "Predpoveď Solcast na zajtra",
-          "solcast_additional_entities": "Ďalšie dni predpovede Solcast",
-          "price_entity": "Cena alebo tarifa"
+          "solcast_additional_entities": "Ďalšie dni predpovede Solcast"
         }
       }
     },

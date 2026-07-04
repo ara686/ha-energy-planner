@@ -10,7 +10,6 @@ CONF_MANAGED_ENERGY_ENTITIES = "managed_energy_entities"
 CONF_SOLCAST_TODAY_ENTITY = "solcast_today_entity"
 CONF_SOLCAST_TOMORROW_ENTITY = "solcast_tomorrow_entity"
 CONF_SOLCAST_ADDITIONAL_ENTITIES = "solcast_additional_entities"
-CONF_PRICE_ENTITY = "price_entity"
 
 CONF_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
 CONF_HISTORY_LEARNING_DAYS = "history_learning_days"

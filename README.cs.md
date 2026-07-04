@@ -109,7 +109,6 @@ používaný v diagnostice a debug výstupech.
 | Solcast predikce pro dnešek | `solcast_today_entity` | Volitelné | Solcast forecast senzor z Home Assistantu. | Příklad: `sensor.solcast_pv_forecast_forecast_today`. Energy Planner čte pouze data z Home Assistantu a nevolá Solcast přímo. |
 | Solcast predikce pro zítřek | `solcast_tomorrow_entity` | Volitelné | Solcast forecast senzor z Home Assistantu. | Příklad: `sensor.solcast_pv_forecast_forecast_tomorrow`. Pokud entita pro dnešek používá standardní Solcast naming pattern, Energy Planner umí tuto sourozeneckou entitu najít automaticky. |
 | Další dny Solcast predikce | `solcast_additional_entities` | Volitelné | Jedna nebo více Solcast forecast entit z Home Assistantu. | Příklady: `sensor.solcast_pv_forecast_forecast_day_3`, `sensor.solcast_pv_forecast_forecast_day_4`. Standardní sourozenci `forecast_day_3` až `forecast_day_7` mohou být automaticky nalezeni, pokud existují. |
-| Cena nebo tarif | `price_entity` | Volitelné | Číselný senzor ceny/tarifu nebo stavová entita tarifu. | Rezervováno pro plánování a diagnostiku podle tarifů. Aktuální v1 planner z tohoto vstupu neovládá zařízení. |
 
 ### Energetické zdroje spotřeby
 

@@ -31,7 +31,6 @@ from .const import (
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
-    CONF_PRICE_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
@@ -352,9 +351,6 @@ def _user_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 CONF_SOLCAST_ADDITIONAL_ENTITIES,
                 defaults,
             ): _entity_selector(SENSOR_ENTITY_FILTERS, multiple=True),
-            _optional(CONF_PRICE_ENTITY, defaults): selector.EntitySelector(
-                selector.EntitySelectorConfig(filter={"domain": "sensor"})
-            ),
         }
     )
 
