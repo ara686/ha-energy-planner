@@ -268,11 +268,7 @@ locale: cs
 header:
   title: Forecast unused PV surplus
   show: true
-  show_states: true
   colorize_states: true
-now:
-  show: true
-  label: Now
 yaxis:
   - min: 0
     decimals: 2
@@ -284,7 +280,6 @@ series:
     stroke_width: 2
     unit: kW
     show:
-      in_header: raw
       extremas: true
     data_generator: |
       const points = entity.attributes.points || [];
