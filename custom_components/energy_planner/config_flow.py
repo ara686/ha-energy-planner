@@ -4,7 +4,9 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
+from homeassistant.components.number import NumberDeviceClass
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
@@ -45,7 +47,42 @@ from .sources import parse_float
 
 ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
+ERR_ENERGY_SENSOR_REQUIRED = "energy_sensor_required"
 ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
+ENERGY_STATE_CLASSES = {
+    "total",
+    "total_increasing",
+}
+
+PERCENTAGE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.BATTERY,
+        "unit_of_measurement": PERCENTAGE,
+    },
+    {
+        "domain": "number",
+        "device_class": NumberDeviceClass.BATTERY,
+        "unit_of_measurement": PERCENTAGE,
+    },
+    {
+        "domain": "input_number",
+        "unit_of_measurement": PERCENTAGE,
+    },
+]
+BATTERY_CAPACITY_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": ["sensor", "number", "input_number"],
+        "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+    },
+]
+ENERGY_SENSOR_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.ENERGY,
+        "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+    },
+]
 
 
 def _number_selector(
@@ -92,6 +129,27 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=_user_schema(),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(self, user_input=None):
+        """Handle reconfiguration of existing Energy Planner inputs."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            errors = _validate_config_input(self.hass, user_input)
+            if not errors:
+                await self.async_set_unique_id(DOMAIN)
+                self._abort_if_unique_id_mismatch()
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data=user_input,
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_user_schema(dict(entry.data)),
             errors=errors,
         )
 
@@ -220,26 +278,74 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
         )
 
 
-def _user_schema() -> vol.Schema:
+def _user_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    defaults = defaults or {}
     return vol.Schema(
         {
-            vol.Required(CONF_BATTERY_SOC_ENTITY): selector.EntitySelector(),
-            vol.Required(CONF_BATTERY_CAPACITY_ENTITY): selector.EntitySelector(),
-            vol.Required(CONF_BATTERY_MIN_SOC_ENTITY): selector.EntitySelector(),
-            vol.Required(CONF_HOME_ENERGY_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
+            _required(
+                CONF_BATTERY_SOC_ENTITY,
+                defaults,
+            ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
+            _required(
+                CONF_BATTERY_CAPACITY_ENTITY,
+                defaults,
+            ): _entity_selector(BATTERY_CAPACITY_ENTITY_FILTERS),
+            _required(
+                CONF_BATTERY_MIN_SOC_ENTITY,
+                defaults,
+            ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
+            _required(
+                CONF_HOME_ENERGY_ENTITY,
+                defaults,
+            ): _entity_selector(ENERGY_SENSOR_FILTERS),
+            _optional(
+                CONF_MANAGED_ENERGY_ENTITIES,
+                defaults,
+            ): _entity_selector(ENERGY_SENSOR_FILTERS, multiple=True),
+            _optional(
+                CONF_SOLCAST_TODAY_ENTITY,
+                defaults,
+            ): _entity_selector(ENERGY_SENSOR_FILTERS),
+            _optional(
+                CONF_SOLCAST_TOMORROW_ENTITY,
+                defaults,
+            ): _entity_selector(ENERGY_SENSOR_FILTERS),
+            _optional(
+                CONF_SOLCAST_ADDITIONAL_ENTITIES,
+                defaults,
+            ): _entity_selector(ENERGY_SENSOR_FILTERS, multiple=True),
+            _optional(CONF_PRICE_ENTITY, defaults): selector.EntitySelector(
+                selector.EntitySelectorConfig(filter={"domain": "sensor"})
             ),
-            vol.Optional(CONF_MANAGED_ENERGY_ENTITIES): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", multiple=True)
-            ),
-            vol.Optional(CONF_SOLCAST_TODAY_ENTITY): selector.EntitySelector(),
-            vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY): selector.EntitySelector(),
-            vol.Optional(CONF_SOLCAST_ADDITIONAL_ENTITIES): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", multiple=True)
-            ),
-            vol.Optional(CONF_PRICE_ENTITY): selector.EntitySelector(),
         }
     )
+
+
+def _required(key: str, defaults: dict[str, Any]) -> vol.Required:
+    if key in defaults:
+        return vol.Required(key, default=defaults[key])
+    return vol.Required(key)
+
+
+def _optional(key: str, defaults: dict[str, Any]) -> vol.Optional:
+    if key in defaults:
+        return vol.Optional(key, default=defaults[key])
+    return vol.Optional(key)
+
+
+def _entity_selector(
+    filters: selector.EntityFilterSelectorConfig
+    | list[selector.EntityFilterSelectorConfig],
+    *,
+    multiple: bool = False,
+) -> selector.EntitySelector:
+    config: selector.EntitySelectorConfig = {
+        "filter": filters,
+        "multiple": multiple,
+    }
+    if multiple:
+        config["reorder"] = True
+    return selector.EntitySelector(selector.EntitySelectorConfig(**config))
 
 
 def _validate_config_input(
@@ -257,7 +363,19 @@ def _validate_config_input(
         elif capacity <= 0:
             errors[CONF_BATTERY_CAPACITY_ENTITY] = ERR_BATTERY_CAPACITY_POSITIVE
     _validate_numeric_entity(hass, user_input, CONF_BATTERY_MIN_SOC_ENTITY, errors)
-    _validate_numeric_entity(hass, user_input, CONF_HOME_ENERGY_ENTITY, errors)
+    _validate_energy_sensor_entity(
+        hass,
+        user_input[CONF_HOME_ENERGY_ENTITY],
+        CONF_HOME_ENERGY_ENTITY,
+        errors,
+    )
+    for entity_id in _as_entity_list(user_input.get(CONF_MANAGED_ENERGY_ENTITIES)):
+        _validate_energy_sensor_entity(
+            hass,
+            entity_id,
+            CONF_MANAGED_ENERGY_ENTITIES,
+            errors,
+        )
     return errors
 
 
@@ -280,6 +398,38 @@ def _is_kwh_entity(hass: HomeAssistant, entity_id: str) -> bool:
         return False
     unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
     return _normalize_unit(unit) == _normalize_unit(UnitOfEnergy.KILO_WATT_HOUR)
+
+
+def _validate_energy_sensor_entity(
+    hass: HomeAssistant,
+    entity_id: str,
+    key: str,
+    errors: dict[str, str],
+) -> None:
+    state = hass.states.get(entity_id)
+    value = parse_float(state.state if state else None)
+    if value is None:
+        errors[key] = ERR_INVALID_NUMERIC_ENTITY
+        return
+    if not state or state.domain != "sensor":
+        errors[key] = ERR_ENERGY_SENSOR_REQUIRED
+        return
+    attributes = state.attributes
+    if (
+        _normalize_unit(attributes.get(ATTR_UNIT_OF_MEASUREMENT))
+        != _normalize_unit(UnitOfEnergy.KILO_WATT_HOUR)
+        or attributes.get("device_class") != SensorDeviceClass.ENERGY
+        or attributes.get("state_class") not in ENERGY_STATE_CLASSES
+    ):
+        errors[key] = ERR_ENERGY_SENSOR_REQUIRED
+
+
+def _as_entity_list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [str(item) for item in value]
 
 
 def _normalize_unit(unit: Any) -> str:

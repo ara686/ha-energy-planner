@@ -16,6 +16,21 @@
           "solcast_additional_entities": "Další dny předpovědi Solcast",
           "price_entity": "Cena nebo tarif"
         }
+      },
+      "reconfigure": {
+        "title": "Energy Planner",
+        "description": "Upravte entity z Home Assistantu, které plánovač použije jako vstupy.",
+        "data": {
+          "battery_soc_entity": "Stav nabití baterie",
+          "battery_capacity_entity": "Kapacita baterie",
+          "battery_min_soc_entity": "Minimální stav nabití baterie",
+          "home_energy_entity": "Zdroj energie spotřeby domu",
+          "managed_energy_entities": "Zdroje řízené spotřeby",
+          "solcast_today_entity": "Předpověď Solcast na dnes",
+          "solcast_tomorrow_entity": "Předpověď Solcast na zítřek",
+          "solcast_additional_entities": "Další dny předpovědi Solcast",
+          "price_entity": "Cena nebo tarif"
+        }
       }
     },
     "abort": {
@@ -25,7 +40,8 @@
     "error": {
       "invalid_numeric_entity": "Vybraná entita musí mít aktuálně číselný stav.",
       "battery_capacity_unit": "Kapacita baterie musí být entita v kWh.",
-      "battery_capacity_positive": "Kapacita baterie musí být větší než 0 kWh."
+      "battery_capacity_positive": "Kapacita baterie musí být větší než 0 kWh.",
+      "energy_sensor_required": "Vybraná entita spotřeby musí být kumulativní energetický senzor v kWh."
     }
   },
   "options": {

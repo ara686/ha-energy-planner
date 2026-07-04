@@ -35,6 +35,15 @@ Energy Planner se konfiguruje pouze přes UI Home Assistantu. Očekává už
 existující zdrojové entity v Home Assistantu a vlastní hodinovou historii
 spotřeby si vede interně; Utility Meter helpery už vytvářet nemusíte.
 
+Formuláře pro setup a reconfigure filtrují výběr entit podle očekávané domény,
+device class a jednotky, pokud tato metadata Home Assistant u entity poskytuje.
+Například kapacita baterie musí být kladná entita v `kWh`, zatímco spotřeba domu
+a řízené spotřeby jsou kumulativní energetické senzory v `kWh`.
+
+Po nastavení použijte **Nastavení > Zařízení a služby > Energy Planner >
+Reconfigure** pro změnu vstupních entit bez mazání a opětovného přidání
+integrace.
+
 ### Vstupní entity
 
 Tyto hodnoty se vybírají v setup UI. Sloupec `Key` je uložený konfigurační klíč

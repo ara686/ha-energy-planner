@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -117,17 +118,29 @@ def set_source_states(hass, *, invalid_required_state: bool = False) -> None:
     hass.states.async_set(
         "sensor.home_energy_total",
         "1000",
-        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+        {
+            "device_class": SensorDeviceClass.ENERGY,
+            "state_class": SensorStateClass.TOTAL,
+            "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+        },
     )
     hass.states.async_set(
         "sensor.ev_energy_total",
         "200",
-        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+        {
+            "device_class": SensorDeviceClass.ENERGY,
+            "state_class": SensorStateClass.TOTAL_INCREASING,
+            "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+        },
     )
     hass.states.async_set(
         "sensor.water_heater_energy_total",
         "50",
-        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+        {
+            "device_class": SensorDeviceClass.ENERGY,
+            "state_class": SensorStateClass.TOTAL_INCREASING,
+            "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+        },
     )
     hass.states.async_set(
         "sensor.solcast_today",

@@ -16,6 +16,21 @@
           "solcast_additional_entities": "Additional Solcast forecast days",
           "price_entity": "Price or tariff"
         }
+      },
+      "reconfigure": {
+        "title": "Energy Planner",
+        "description": "Update the Home Assistant entities used as planner inputs.",
+        "data": {
+          "battery_soc_entity": "Battery state of charge",
+          "battery_capacity_entity": "Battery capacity",
+          "battery_min_soc_entity": "Battery minimum state of charge",
+          "home_energy_entity": "Home energy source",
+          "managed_energy_entities": "Managed energy sources",
+          "solcast_today_entity": "Solcast forecast for today",
+          "solcast_tomorrow_entity": "Solcast forecast for tomorrow",
+          "solcast_additional_entities": "Additional Solcast forecast days",
+          "price_entity": "Price or tariff"
+        }
       }
     },
     "abort": {
@@ -25,7 +40,8 @@
     "error": {
       "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
       "battery_capacity_unit": "Battery capacity must be an entity in kWh.",
-      "battery_capacity_positive": "Battery capacity must be greater than 0 kWh."
+      "battery_capacity_positive": "Battery capacity must be greater than 0 kWh.",
+      "energy_sensor_required": "Selected consumption entity must be a cumulative energy sensor in kWh."
     }
   },
   "options": {

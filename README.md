@@ -34,6 +34,14 @@ Energy Planner is configured only through the Home Assistant UI. It expects
 already existing Home Assistant source entities and maintains its own internal
 hourly consumption history; you do not need to create Utility Meter helpers.
 
+The setup and reconfigure forms filter entity pickers by expected domain,
+device class and unit where Home Assistant exposes that metadata. For example,
+battery capacity must be a positive `kWh` entity, while house and managed
+consumption inputs are cumulative energy sensors in `kWh`.
+
+After setup, use **Settings > Devices & services > Energy Planner > Reconfigure**
+to change input entities without deleting and adding the integration again.
+
 ### Input entities
 
 These values are selected in the setup UI. The `Key` column is the stored
