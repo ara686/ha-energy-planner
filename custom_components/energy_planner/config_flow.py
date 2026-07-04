@@ -164,10 +164,6 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_mismatch()
-                if _history_sources_changed(entry.data, user_input):
-                    from .history import EnergyHistoryStore
-
-                    await EnergyHistoryStore(self.hass, entry.entry_id).async_remove()
                 return self.async_update_reload_and_abort(
                     entry,
                     data=user_input,
@@ -500,25 +496,6 @@ def _as_entity_list(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value]
     return [str(item) for item in value]
-
-
-def _history_sources_changed(
-    old_data: dict[str, Any],
-    new_data: dict[str, Any],
-) -> bool:
-    old_home = _source_entity(old_data.get(CONF_HOME_ENERGY_ENTITY))
-    new_home = _source_entity(new_data.get(CONF_HOME_ENERGY_ENTITY))
-    old_managed = _source_entities(old_data.get(CONF_MANAGED_ENERGY_ENTITIES))
-    new_managed = _source_entities(new_data.get(CONF_MANAGED_ENERGY_ENTITIES))
-    return old_home != new_home or old_managed != new_managed
-
-
-def _source_entity(value: Any) -> str:
-    return value if isinstance(value, str) else ""
-
-
-def _source_entities(value: Any) -> tuple[str, ...]:
-    return tuple(sorted(entity_id for entity_id in _as_entity_list(value) if entity_id))
 
 
 def _normalize_unit(unit: Any) -> str:

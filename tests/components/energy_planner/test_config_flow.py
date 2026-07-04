@@ -297,7 +297,7 @@ async def test_reconfigure_updates_config_entry_entities(hass, config_entry):
     )
 
 
-async def test_reconfigure_clears_history_when_energy_sources_change(
+async def test_reconfigure_preserves_history_when_energy_sources_change(
     hass,
     config_entry,
 ):
@@ -334,10 +334,7 @@ async def test_reconfigure_clears_history_when_energy_sources_change(
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
-    await hass.async_block_till_done()
-    assert not (
-        await EnergyHistoryStore(hass, config_entry.entry_id).async_load()
-    ).buckets
+    assert (await EnergyHistoryStore(hass, config_entry.entry_id).async_load()).buckets
 
 
 async def test_user_flow_blocks_duplicate_entry(hass):
