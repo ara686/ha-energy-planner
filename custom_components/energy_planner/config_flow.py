@@ -6,7 +6,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, PERCENTAGE, UnitOfEnergy
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
@@ -58,29 +58,45 @@ PERCENTAGE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {
         "domain": "sensor",
         "device_class": SensorDeviceClass.BATTERY,
-        "unit_of_measurement": PERCENTAGE,
     },
     {
         "domain": "number",
         "device_class": NumberDeviceClass.BATTERY,
-        "unit_of_measurement": PERCENTAGE,
     },
     {
         "domain": "input_number",
-        "unit_of_measurement": PERCENTAGE,
     },
 ]
 BATTERY_CAPACITY_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {
-        "domain": ["sensor", "number", "input_number"],
-        "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.ENERGY_STORAGE,
+    },
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.ENERGY,
+    },
+    {
+        "domain": "number",
+        "device_class": NumberDeviceClass.ENERGY_STORAGE,
+    },
+    {
+        "domain": "number",
+        "device_class": NumberDeviceClass.ENERGY,
+    },
+    {
+        "domain": "input_number",
     },
 ]
 ENERGY_SENSOR_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {
         "domain": "sensor",
         "device_class": SensorDeviceClass.ENERGY,
-        "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+    },
+]
+SENSOR_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": "sensor",
     },
 ]
 
@@ -305,15 +321,15 @@ def _user_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             _optional(
                 CONF_SOLCAST_TODAY_ENTITY,
                 defaults,
-            ): _entity_selector(ENERGY_SENSOR_FILTERS),
+            ): _entity_selector(SENSOR_ENTITY_FILTERS),
             _optional(
                 CONF_SOLCAST_TOMORROW_ENTITY,
                 defaults,
-            ): _entity_selector(ENERGY_SENSOR_FILTERS),
+            ): _entity_selector(SENSOR_ENTITY_FILTERS),
             _optional(
                 CONF_SOLCAST_ADDITIONAL_ENTITIES,
                 defaults,
-            ): _entity_selector(ENERGY_SENSOR_FILTERS, multiple=True),
+            ): _entity_selector(SENSOR_ENTITY_FILTERS, multiple=True),
             _optional(CONF_PRICE_ENTITY, defaults): selector.EntitySelector(
                 selector.EntitySelectorConfig(filter={"domain": "sensor"})
             ),

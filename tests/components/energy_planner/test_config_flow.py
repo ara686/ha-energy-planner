@@ -170,24 +170,43 @@ async def test_user_schema_filters_entity_choices_by_expected_type():
     schema = _user_schema()
     fields = {marker.schema: value for marker, value in schema.schema.items()}
 
-    battery_capacity_filter = fields[CONF_BATTERY_CAPACITY_ENTITY].config["filter"]
-    home_energy_filter = fields[CONF_HOME_ENERGY_ENTITY].config["filter"]
-    battery_soc_filter = fields[CONF_BATTERY_SOC_ENTITY].config["filter"]
+    battery_capacity_filter = _plain_filter(
+        fields[CONF_BATTERY_CAPACITY_ENTITY].config["filter"]
+    )
+    home_energy_filter = _plain_filter(fields[CONF_HOME_ENERGY_ENTITY].config["filter"])
+    battery_soc_filter = _plain_filter(fields[CONF_BATTERY_SOC_ENTITY].config["filter"])
 
-    assert battery_capacity_filter == [
+    assert {
+        "domain": ["sensor"],
+        "device_class": ["energy_storage"],
+    } in battery_capacity_filter
+    assert {
+        "domain": ["number"],
+        "device_class": ["energy_storage"],
+    } in battery_capacity_filter
+    assert {"domain": ["input_number"]} in battery_capacity_filter
+    assert all("unit_of_measurement" not in item for item in battery_capacity_filter)
+    assert home_energy_filter == [{"domain": ["sensor"], "device_class": ["energy"]}]
+    assert {
+        "domain": ["sensor"],
+        "device_class": ["battery"],
+    } in battery_soc_filter
+    assert {
+        "domain": ["number"],
+        "device_class": ["battery"],
+    } in battery_soc_filter
+
+
+def _plain_filter(items):
+    return [
         {
-            "domain": ["sensor", "number", "input_number"],
-            "unit_of_measurement": [UnitOfEnergy.KILO_WATT_HOUR],
+            key: [str(item) for item in value]
+            if isinstance(value, list)
+            else str(value)
+            for key, value in item.items()
         }
+        for item in items
     ]
-    assert home_energy_filter == [
-        {
-            "domain": ["sensor"],
-            "device_class": ["energy"],
-            "unit_of_measurement": [UnitOfEnergy.KILO_WATT_HOUR],
-        }
-    ]
-    assert any(item["domain"] == ["number"] for item in battery_soc_filter)
 
 
 async def test_reconfigure_updates_config_entry_entities(hass, config_entry):
