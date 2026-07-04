@@ -213,8 +213,8 @@ pokud je změnil jazyk backendu, konflikt názvů nebo ruční přejmenování.
 
 ## Výstupní entity
 
-Energy Planner vytváří pouze senzorové entity. Ve verzi v1 nevytváří switche,
-numbers, selects ani žádné entity pro ovládání zařízení.
+Energy Planner vytváří pouze senzorové a binární senzorové entity. Ve verzi v1
+nevytváří switche, numbers, selects ani žádné entity pro ovládání zařízení.
 
 Níže uvedená entity ID jsou typické defaulty pro instanci integrace pojmenovanou
 `Energy Planner`. Home Assistant může přidat suffix nebo použít přejmenovaná
@@ -224,6 +224,8 @@ ID zkontrolujte v Settings > Devices & services > Energy Planner > Entities.
 | Typické entity ID | Output key | Kategorie | Jednotka/typ | Popis |
 |-------------------|------------|-----------|--------------|-------|
 | `sensor.energy_planner_state` | `state` | Diagnostika | text | Stav planneru: `ok`, `warning` nebo `insufficient_data`. Atributy obsahují warnings, počet slotů a kompaktní stav historie. |
+| `binary_sensor.energy_planner_charge_now` | `charge_now` | Standardní | binary | Zapnuto, když je aktuální SoC na začátku plánu pod `charge_to_soc`. Použijte pro spuštění nebo povolení nabíjení ze sítě bez porovnávání SoC v automatizacích. |
+| `binary_sensor.energy_planner_discharge_allowed` | `discharge_allowed` | Standardní | binary | Zapnuto, když je aktuální SoC na začátku plánu nad `safe_discharge_soc`. Použijte pro povolení vybíjení baterie bez porovnávání SoC v automatizacích. |
 | `sensor.energy_planner_lock_soc` | `lock_soc` | Standardní | `%` | Minimální SoC, které planner chce chránit pro plánovací okno nízkého/vysokého tarifu. |
 | `sensor.energy_planner_charge_to_soc` | `charge_to_soc` | Standardní | `%` | Volitelný cílový SoC pro nabíjení ze sítě potřebný k pokrytí forecastovaného deficitu ve vysokém tarifu z nakonfigurovaného nabíjecího okna. |
 | `sensor.energy_planner_target_soc` | `target_soc` | Standardní | `%` | Finální cílové SoC použité plannerem; aktuálně vyšší hodnota z `lock_soc` a `charge_to_soc`. |
