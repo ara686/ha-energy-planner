@@ -18,6 +18,7 @@ from custom_components.energy_planner.coordinator import (
     EnergyPlannerCoordinator,
     _consumption_from_hourly_profile,
     _solcast_entity_ids,
+    _solcast_forecast,
 )
 from custom_components.energy_planner.sources import (
     parse_float,
@@ -205,6 +206,14 @@ def test_solcast_entity_ids_do_not_duplicate_explicit_forecast_days(hass):
         "sensor.custom_solcast_day_3",
         "sensor.solcast_pv_forecast_forecast_day_4",
     ]
+
+
+def test_solcast_forecast_without_configured_entities_is_not_a_warning(hass):
+    entry = MockConfigEntry(domain=DOMAIN, data={})
+    warnings: list[str] = []
+
+    assert _solcast_forecast(hass, entry, warnings) == []
+    assert warnings == []
 
 
 def test_consumption_from_hourly_profile_uses_target_hour_and_correction():

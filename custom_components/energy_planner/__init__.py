@@ -20,7 +20,7 @@ from .const import (
     DOMAIN,
 )
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["binary_sensor", "sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 SOC_REFRESH_DEBOUNCE_SECONDS = 60

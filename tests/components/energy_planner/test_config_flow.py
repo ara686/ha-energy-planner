@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from homeassistant import config_entries
-from homeassistant.const import UnitOfEnergy
+from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.config_flow import _user_schema
 from custom_components.energy_planner.const import (
     CONF_BATTERY_CAPACITY_ENTITY,
+    CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
@@ -31,6 +33,7 @@ from custom_components.energy_planner.const import (
     DEFAULT_NAME,
     DOMAIN,
 )
+from custom_components.energy_planner.history import EnergyHistory, EnergyHistoryStore
 
 from .conftest import config_data, options_flow_input, set_source_states
 
@@ -117,6 +120,48 @@ async def test_user_flow_rejects_zero_battery_capacity(hass):
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"][CONF_BATTERY_CAPACITY_ENTITY] == "battery_capacity_positive"
+
+
+async def test_user_flow_rejects_soc_outside_percentage_range(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.battery_soc",
+        "140",
+        {"unit_of_measurement": PERCENTAGE},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=config_data(),
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_BATTERY_SOC_ENTITY] == "percentage_range"
+
+
+async def test_user_flow_rejects_soc_with_non_percentage_unit(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.battery_min_soc",
+        "20",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=config_data(),
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_BATTERY_MIN_SOC_ENTITY] == "percentage_entity_required"
 
 
 async def test_user_flow_rejects_power_sensor_as_home_energy_source(hass):
@@ -250,6 +295,46 @@ async def test_reconfigure_updates_config_entry_entities(hass, config_entry):
         config_entry.data[CONF_BATTERY_CAPACITY_ENTITY]
         == "sensor.installed_battery_capacity"
     )
+
+
+async def test_reconfigure_preserves_history_when_energy_sources_change(
+    hass,
+    config_entry,
+):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.new_home_energy_total",
+        "2000",
+        {
+            "device_class": "energy",
+            "state_class": "total",
+            "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+        },
+    )
+    history = EnergyHistory()
+    history.add_hourly_sample(dt_util.now(), home_kwh=1.0)
+    store = EnergyHistoryStore(hass, config_entry.entry_id)
+    await store.async_save(history)
+    assert (await store.async_load()).buckets
+
+    config_entry.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": config_entry.entry_id,
+        },
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=config_data(
+            **{CONF_HOME_ENERGY_ENTITY: "sensor.new_home_energy_total"}
+        ),
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert (await EnergyHistoryStore(hass, config_entry.entry_id).async_load()).buckets
 
 
 async def test_user_flow_blocks_duplicate_entry(hass):

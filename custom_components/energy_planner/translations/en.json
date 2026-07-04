@@ -37,6 +37,8 @@
     },
     "error": {
       "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
+      "percentage_entity_required": "Selected SoC entity must use percent units.",
+      "percentage_range": "Selected SoC value must be between 0 and 100%.",
       "battery_capacity_unit": "Battery capacity must be an entity in kWh.",
       "battery_capacity_positive": "Battery capacity must be greater than 0 kWh.",
       "energy_sensor_required": "Selected consumption entity must be a cumulative energy sensor in kWh."
@@ -86,6 +88,14 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "charge_now": {
+        "name": "Charge now"
+      },
+      "discharge_allowed": {
+        "name": "Discharge allowed"
+      }
+    },
     "sensor": {
       "state": {
         "name": "State"

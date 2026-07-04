@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 
+from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 
+from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIPTIONS
 from custom_components.energy_planner.const import (
     CONF_CHARGE_WINDOW,
     CONF_FORECAST_HORIZON_HOURS,
@@ -24,6 +26,7 @@ from custom_components.energy_planner.history import (
     EnergyHistoryStore,
     hour_key,
 )
+from custom_components.energy_planner.models import PlannerResult
 from custom_components.energy_planner.sensor import SENSOR_DESCRIPTIONS
 
 from .conftest import set_source_states
@@ -41,7 +44,7 @@ async def test_setup_entry_creates_all_sensors(hass, config_entry):
     entities = er.async_entries_for_config_entry(registry, config_entry.entry_id)
     entity_ids = {entity.unique_id: entity.entity_id for entity in entities}
 
-    assert len(entity_ids) == len(SENSOR_DESCRIPTIONS)
+    assert len(entity_ids) == len(SENSOR_DESCRIPTIONS) + len(BINARY_SENSOR_DESCRIPTIONS)
 
     target_state = hass.states.get(entity_ids[f"{config_entry.entry_id}_target_soc"])
     assert target_state is not None
@@ -148,6 +151,98 @@ async def test_selected_soc_sensors_suggest_whole_number_display(
         assert state.attributes["unit_of_measurement"] == "%"
         assert registry_entry is not None
         assert registry_entry.options[SENSOR_DOMAIN]["suggested_display_precision"] == 0
+
+
+async def test_plan_binary_sensors_expose_charge_and_discharge_decisions(
+    hass,
+    config_entry,
+):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    registry = er.async_get(hass)
+    charge_now_entity_id = registry.async_get_entity_id(
+        BINARY_SENSOR_DOMAIN,
+        DOMAIN,
+        f"{config_entry.entry_id}_charge_now",
+    )
+    discharge_allowed_entity_id = registry.async_get_entity_id(
+        BINARY_SENSOR_DOMAIN,
+        DOMAIN,
+        f"{config_entry.entry_id}_discharge_allowed",
+    )
+
+    assert charge_now_entity_id is not None
+    assert discharge_allowed_entity_id is not None
+
+    config_entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "soc_at_planner_start": 40,
+                "charge_to_soc": 60,
+                "safe_discharge_soc": 30,
+            },
+        )
+    )
+    await hass.async_block_till_done()
+
+    charge_now = hass.states.get(charge_now_entity_id)
+    discharge_allowed = hass.states.get(discharge_allowed_entity_id)
+
+    assert charge_now is not None
+    assert charge_now.state == STATE_ON
+    assert discharge_allowed is not None
+    assert discharge_allowed.state == STATE_ON
+
+    config_entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "soc_at_planner_start": 70,
+                "charge_to_soc": 60,
+                "safe_discharge_soc": 80,
+            },
+        )
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(charge_now_entity_id).state == STATE_OFF
+    assert hass.states.get(discharge_allowed_entity_id).state == STATE_OFF
+
+    config_entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="insufficient_data",
+            updated=dt_util.utcnow(),
+            plan={
+                "soc_at_planner_start": 70,
+                "charge_to_soc": 60,
+                "safe_discharge_soc": 80,
+            },
+        )
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(charge_now_entity_id).state == STATE_UNAVAILABLE
+    assert hass.states.get(discharge_allowed_entity_id).state == STATE_UNAVAILABLE
+
+    config_entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={"soc_at_planner_start": 70},
+        )
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(charge_now_entity_id).state == STATE_UNAVAILABLE
+    assert hass.states.get(discharge_allowed_entity_id).state == STATE_UNAVAILABLE
 
 
 async def test_runtime_options_are_exposed_as_diagnostic_sensors(hass, config_entry):

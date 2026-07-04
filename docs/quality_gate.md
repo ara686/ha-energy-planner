@@ -43,7 +43,7 @@ Reference documentation:
 - Root `hacs.json` with honest minimum Home Assistant version.
 - HACS-compatible `manifest.json` with required metadata.
 - Brand assets under the integration `brand` directory.
-- README covering install, configuration, entities, services, troubleshooting and migration.
+- README covering install, configuration, entities, services and troubleshooting.
 - Full GitHub release for HACS releases; a tag alone is not enough.
 - `main` remains stable and release-ready.
 

@@ -37,6 +37,8 @@
     },
     "error": {
       "invalid_numeric_entity": "Vybraná entita musí mať aktuálne číselný stav.",
+      "percentage_entity_required": "Vybraná SoC entita musí používať jednotky percent.",
+      "percentage_range": "Vybraná hodnota SoC musí byť medzi 0 a 100 %.",
       "battery_capacity_unit": "Kapacita batérie musí byť entita v kWh.",
       "battery_capacity_positive": "Kapacita batérie musí byť väčšia ako 0 kWh.",
       "energy_sensor_required": "Vybraná entita spotreby musí byť kumulatívny energetický senzor v kWh."
@@ -86,6 +88,14 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "charge_now": {
+        "name": "Nabíjať teraz"
+      },
+      "discharge_allowed": {
+        "name": "Vybíjanie povolené"
+      }
+    },
     "sensor": {
       "state": {
         "name": "Stav"

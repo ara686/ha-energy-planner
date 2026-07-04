@@ -6,7 +6,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
@@ -53,6 +53,8 @@ ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
 ERR_ENERGY_SENSOR_REQUIRED = "energy_sensor_required"
 ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
+ERR_PERCENTAGE_ENTITY_REQUIRED = "percentage_entity_required"
+ERR_PERCENTAGE_RANGE = "percentage_range"
 ENERGY_STATE_CLASSES = {
     "total",
     "total_increasing",
@@ -397,7 +399,7 @@ def _validate_config_input(
     user_input: dict[str, Any],
 ) -> dict[str, str]:
     errors: dict[str, str] = {}
-    _validate_numeric_entity(hass, user_input, CONF_BATTERY_SOC_ENTITY, errors)
+    _validate_percentage_entity(hass, user_input, CONF_BATTERY_SOC_ENTITY, errors)
     capacity = _validate_numeric_entity(
         hass, user_input, CONF_BATTERY_CAPACITY_ENTITY, errors
     )
@@ -406,7 +408,7 @@ def _validate_config_input(
             errors[CONF_BATTERY_CAPACITY_ENTITY] = ERR_BATTERY_CAPACITY_UNIT
         elif capacity <= 0:
             errors[CONF_BATTERY_CAPACITY_ENTITY] = ERR_BATTERY_CAPACITY_POSITIVE
-    _validate_numeric_entity(hass, user_input, CONF_BATTERY_MIN_SOC_ENTITY, errors)
+    _validate_percentage_entity(hass, user_input, CONF_BATTERY_MIN_SOC_ENTITY, errors)
     _validate_energy_sensor_entity(
         hass,
         user_input[CONF_HOME_ENERGY_ENTITY],
@@ -421,6 +423,26 @@ def _validate_config_input(
             errors,
         )
     return errors
+
+
+def _validate_percentage_entity(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+    key: str,
+    errors: dict[str, str],
+) -> float | None:
+    value = _validate_numeric_entity(hass, user_input, key, errors)
+    if value is None:
+        return None
+    if not 0 <= value <= 100:
+        errors[key] = ERR_PERCENTAGE_RANGE
+        return value
+
+    state = hass.states.get(user_input[key])
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) if state else None
+    if unit and _normalize_unit(unit) != _normalize_unit(PERCENTAGE):
+        errors[key] = ERR_PERCENTAGE_ENTITY_REQUIRED
+    return value
 
 
 def _validate_numeric_entity(
