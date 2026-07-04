@@ -29,6 +29,7 @@
         "title": "Energy Planner options",
         "description": "Configure planner behavior, time windows and SoC forecast settings.",
         "data": {
+          "update_interval_minutes": "Recalculation interval in minutes",
           "interval_minutes": "Planning interval in minutes",
           "history_correction_percent": "History correction percent",
           "min_baseline_kwh_per_hour": "Minimum baseline consumption in kWh per hour",
@@ -44,6 +45,7 @@
       }
     },
     "error": {
+      "update_interval_minutes": "Recalculation interval must be greater than 0 minutes.",
       "interval_minutes": "Planning interval must divide 60.",
       "forecast_horizon_hours": "Forecast horizon must be at least 24 hours.",
       "min_baseline_kwh_per_hour": "Minimum baseline consumption must not be negative.",

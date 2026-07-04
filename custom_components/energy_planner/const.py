@@ -12,6 +12,7 @@ CONF_SOLCAST_TOMORROW_ENTITY = "solcast_tomorrow_entity"
 CONF_SOLCAST_ADDITIONAL_ENTITIES = "solcast_additional_entities"
 CONF_PRICE_ENTITY = "price_entity"
 
+CONF_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
 CONF_INTERVAL_MINUTES = "interval_minutes"
 CONF_HISTORY_CORRECTION_PERCENT = "history_correction_percent"
 CONF_MIN_BASELINE_KWH_PER_HOUR = "min_baseline_kwh_per_hour"
@@ -24,6 +25,7 @@ CONF_CHARGE_WINDOW = "charge_window"
 CONF_SUN_START_REQUIRED_MINUTES = "sun_start_required_minutes"
 CONF_FORECAST_HORIZON_HOURS = "forecast_horizon_hours"
 
+DEFAULT_UPDATE_INTERVAL_MINUTES = 60
 DEFAULT_INTERVAL_MINUTES = 5
 DEFAULT_HISTORY_RETENTION_DAYS = 30
 DEFAULT_HISTORY_LEARNING_DAYS = 3

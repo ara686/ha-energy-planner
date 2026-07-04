@@ -127,15 +127,16 @@ at least `forecast_day_3`.
 
 ### Runtime options
 
-Runtime behavior is changed through the Options Flow: planning interval, history
-correction, baseline load, grid charge limits, NT windows, charge window and
-forecast horizon.
+Runtime behavior is changed through the Options Flow: automatic recalculation
+interval, planning interval, history correction, baseline load, grid charge
+limits, NT windows, charge window and forecast horizon.
 
 Open Settings > Devices & services > Energy Planner > Configure to change these
 values.
 
 | UI field | Key | Default | Accepted value | Description |
 |----------|-----|---------|----------------|-------------|
+| Recalculation interval in minutes | `update_interval_minutes` | `60` | Positive number. | Automatic planner polling interval. A battery SoC state change also triggers an immediate recalculation, so the planner can react before the next periodic update. |
 | Planning interval in minutes | `interval_minutes` | `5` | Positive number that divides 60 exactly. | Time step used for the planner simulation and forecast slots. Common values are `5`, `10`, `15`, `30` or `60`. |
 | History correction percent | `history_correction_percent` | `5.0` | Greater than `-100` and at most `500`. | Extra percentage applied after the hourly consumption profile is calculated. Use this to match or tune the legacy Node-RED `history_correction` behavior. |
 | Minimum baseline consumption in kWh per hour | `min_baseline_kwh_per_hour` | `0.2` | `0` or higher. | Fallback hourly home consumption when the target hour has no usable history sample. |

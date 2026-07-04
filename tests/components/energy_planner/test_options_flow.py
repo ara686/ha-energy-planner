@@ -14,6 +14,8 @@ from custom_components.energy_planner.const import (
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_UPDATE_INTERVAL_MINUTES,
+    DEFAULT_UPDATE_INTERVAL_MINUTES,
 )
 from custom_components.energy_planner.options import (
     OptionsValidationError,
@@ -27,6 +29,7 @@ from custom_components.energy_planner.options import (
 
 def _options(**overrides):
     values = {
+        CONF_UPDATE_INTERVAL_MINUTES: 60,
         CONF_INTERVAL_MINUTES: 5,
         CONF_HISTORY_CORRECTION_PERCENT: 5,
         CONF_MIN_BASELINE_KWH_PER_HOUR: 0.2,
@@ -65,6 +68,7 @@ def test_normalize_options_converts_ui_values_to_typed_options():
     normalized = normalize_options(_options())
 
     assert normalized[CONF_INTERVAL_MINUTES] == 5
+    assert normalized[CONF_UPDATE_INTERVAL_MINUTES] == DEFAULT_UPDATE_INTERVAL_MINUTES
     assert normalized[CONF_HISTORY_CORRECTION_PERCENT] == 5
     assert normalized[CONF_FORECAST_HORIZON_HOURS] == 36
     assert normalized[CONF_NT_WINDOWS][1] == {"start": "22:00", "end": "04:00"}
@@ -75,6 +79,7 @@ def test_normalize_options_converts_ui_values_to_typed_options():
     ("key", "value"),
     [
         (CONF_INTERVAL_MINUTES, 7),
+        (CONF_UPDATE_INTERVAL_MINUTES, 0),
         (CONF_FORECAST_HORIZON_HOURS, 23),
         (CONF_HISTORY_CORRECTION_PERCENT, -100),
         (CONF_GRID_CHARGE_EFFICIENCY, 1.1),

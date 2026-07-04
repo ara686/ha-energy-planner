@@ -15,6 +15,7 @@ from .const import (
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_CHARGE_WINDOW,
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
@@ -26,6 +27,7 @@ from .const import (
     DEFAULT_SOC_EPS_KWH,
     DEFAULT_SOC_RESERVE_PERCENT,
     DEFAULT_SUN_START_REQUIRED_MINUTES,
+    DEFAULT_UPDATE_INTERVAL_MINUTES,
 )
 
 WINDOW_RE = re.compile(r"^(?P<start>\d{2}:\d{2})-(?P<end>\d{2}:\d{2})$")
@@ -37,6 +39,7 @@ class OptionsValidationError(ValueError):
 
 def default_options() -> dict[str, Any]:
     return {
+        CONF_UPDATE_INTERVAL_MINUTES: DEFAULT_UPDATE_INTERVAL_MINUTES,
         CONF_INTERVAL_MINUTES: DEFAULT_INTERVAL_MINUTES,
         CONF_HISTORY_CORRECTION_PERCENT: DEFAULT_HISTORY_CORRECTION_PERCENT,
         CONF_MIN_BASELINE_KWH_PER_HOUR: DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
@@ -52,6 +55,10 @@ def default_options() -> dict[str, Any]:
 
 
 def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
+    update_interval_minutes = int(values[CONF_UPDATE_INTERVAL_MINUTES])
+    if update_interval_minutes <= 0:
+        raise OptionsValidationError("update_interval_minutes")
+
     interval_minutes = int(values[CONF_INTERVAL_MINUTES])
     if interval_minutes <= 0 or 60 % interval_minutes != 0:
         raise OptionsValidationError("interval_minutes")
@@ -89,6 +96,7 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
         raise OptionsValidationError("sun_start_required_minutes")
 
     return {
+        CONF_UPDATE_INTERVAL_MINUTES: update_interval_minutes,
         CONF_INTERVAL_MINUTES: interval_minutes,
         CONF_HISTORY_CORRECTION_PERCENT: history_correction_percent,
         CONF_MIN_BASELINE_KWH_PER_HOUR: min_baseline,

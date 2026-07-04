@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
 
-from custom_components.energy_planner.const import DOMAIN
+from custom_components.energy_planner.const import CONF_UPDATE_INTERVAL_MINUTES, DOMAIN
 from custom_components.energy_planner.sensor import SENSOR_DESCRIPTIONS
 
 from .conftest import set_source_states
@@ -87,6 +89,56 @@ async def test_sensors_are_unavailable_when_required_data_is_invalid(
 
     target_state = hass.states.get(entity_ids[f"{config_entry.entry_id}_target_soc"])
     assert target_state.state == STATE_UNAVAILABLE
+
+
+async def test_battery_soc_change_requests_planner_refresh(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    refresh_calls = 0
+
+    async def mock_refresh() -> None:
+        nonlocal refresh_calls
+        refresh_calls += 1
+
+    config_entry.runtime_data.async_request_refresh = mock_refresh
+
+    hass.states.async_set("sensor.battery_soc", "55")
+    await hass.async_block_till_done()
+    assert refresh_calls == 0
+
+    hass.states.async_set("sensor.battery_soc", "56")
+    await hass.async_block_till_done()
+    assert refresh_calls == 1
+
+
+async def test_options_update_changes_loaded_recalculation_interval(
+    hass,
+    config_entry,
+):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    assert config_entry.runtime_data.update_interval == timedelta(minutes=60)
+
+    hass.config_entries.async_update_entry(
+        config_entry,
+        options={
+            **config_entry.options,
+            CONF_UPDATE_INTERVAL_MINUTES: 15,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert config_entry.runtime_data.update_interval == timedelta(minutes=15)
 
 
 async def test_setup_entry_can_be_unloaded(hass, config_entry):

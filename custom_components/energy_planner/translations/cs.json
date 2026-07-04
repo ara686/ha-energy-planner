@@ -29,6 +29,7 @@
         "title": "Možnosti Energy Planneru",
         "description": "Nastavení chování plánovače, časových oken a predikce SoC.",
         "data": {
+          "update_interval_minutes": "Interval přepočtu v minutách",
           "interval_minutes": "Interval plánování v minutách",
           "history_correction_percent": "Korekce historie v procentech",
           "min_baseline_kwh_per_hour": "Minimální základní spotřeba v kWh za hodinu",
@@ -44,6 +45,7 @@
       }
     },
     "error": {
+      "update_interval_minutes": "Interval přepočtu musí být větší než 0 minut.",
       "interval_minutes": "Interval plánování musí dělit 60 beze zbytku.",
       "forecast_horizon_hours": "Horizont predikce musí být alespoň 24 hodin.",
       "min_baseline_kwh_per_hour": "Minimální základní spotřeba nesmí být záporná.",

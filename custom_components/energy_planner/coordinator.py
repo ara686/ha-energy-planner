@@ -30,6 +30,7 @@ from .const import (
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_CHARGE_WINDOW,
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
@@ -44,6 +45,7 @@ from .const import (
     DEFAULT_SOC_EPS_KWH,
     DEFAULT_SOC_RESERVE_PERCENT,
     DEFAULT_SUN_START_REQUIRED_MINUTES,
+    DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
 from .ha_history import async_get_recorder_energy_history
@@ -70,10 +72,12 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             logger=_LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=timedelta(
-                minutes=_option(entry, CONF_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES)
-            ),
+            update_interval=_coordinator_update_interval(entry),
         )
+
+    def update_interval_from_options(self) -> None:
+        """Apply the current automatic recalculation interval option."""
+        self.update_interval = _coordinator_update_interval(self.entry)
 
     async def async_load_history(self) -> None:
         """Load stored consumption history before the first refresh."""
@@ -477,6 +481,16 @@ def _solcast_daily_slot(entity_id: str) -> str | None:
 
 def _option(entry: ConfigEntry, key: str, default: Any) -> Any:
     return entry.options.get(key, default)
+
+
+def _coordinator_update_interval(entry: ConfigEntry) -> timedelta:
+    return timedelta(
+        minutes=_option(
+            entry,
+            CONF_UPDATE_INTERVAL_MINUTES,
+            DEFAULT_UPDATE_INTERVAL_MINUTES,
+        )
+    )
 
 
 def _time_windows(values: list[dict[str, str]]) -> list[TimeWindow]:

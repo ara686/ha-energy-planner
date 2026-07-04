@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.const import (
+    CONF_INTERVAL_MINUTES,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
+    CONF_UPDATE_INTERVAL_MINUTES,
+    DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
 from custom_components.energy_planner.coordinator import (
+    EnergyPlannerCoordinator,
     _consumption_from_hourly_profile,
     _solcast_entity_ids,
 )
@@ -26,6 +30,31 @@ def test_parse_float_accepts_home_assistant_state_strings():
     assert parse_float("unknown") is None
     assert parse_float("unavailable") is None
     assert parse_float("not-a-number") is None
+
+
+def test_coordinator_default_update_interval_is_60_minutes(hass):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+
+    coordinator = EnergyPlannerCoordinator(hass, entry)
+
+    assert coordinator.update_interval == timedelta(
+        minutes=DEFAULT_UPDATE_INTERVAL_MINUTES
+    )
+
+
+def test_coordinator_update_interval_is_independent_from_planning_interval(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={
+            CONF_UPDATE_INTERVAL_MINUTES: 45,
+            CONF_INTERVAL_MINUTES: 5,
+        },
+    )
+
+    coordinator = EnergyPlannerCoordinator(hass, entry)
+
+    assert coordinator.update_interval == timedelta(minutes=45)
 
 
 def test_parse_solcast_detailed_forecast_attributes():

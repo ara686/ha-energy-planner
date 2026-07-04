@@ -128,14 +128,15 @@ pozdě večer, kdy z dneška zbývá méně dat, povolte a vyberte alespoň
 
 ### Provozní možnosti
 
-Runtime chování se mění přes Options Flow: interval plánování, korekce historie,
-základní spotřeba, limity nabíjení ze sítě, NT okna, nabíjecí okno a horizont
-predikce.
+Runtime chování se mění přes Options Flow: automatický interval přepočtu,
+interval plánování, korekce historie, základní spotřeba, limity nabíjení ze
+sítě, NT okna, nabíjecí okno a horizont predikce.
 
 Hodnoty změníte v Settings > Devices & services > Energy Planner > Configure.
 
 | Položka v UI | Key | Default | Povolená hodnota | Popis |
 |--------------|-----|---------|------------------|-------|
+| Interval přepočtu v minutách | `update_interval_minutes` | `60` | Kladné číslo. | Automatický polling planneru. Změna stavu baterie SoC zároveň spustí okamžitý přepočet, takže planner může reagovat ještě před dalším periodickým během. |
 | Interval plánování v minutách | `interval_minutes` | `5` | Kladné číslo, které beze zbytku dělí 60. | Časový krok používaný pro simulaci planneru a forecast sloty. Běžné hodnoty jsou `5`, `10`, `15`, `30` nebo `60`. |
 | Korekce historie v procentech | `history_correction_percent` | `5.0` | Větší než `-100` a nejvýše `500`. | Dodatečné procento aplikované po výpočtu hodinového profilu spotřeby. Použijte pro sladění nebo doladění legacy Node-RED chování `history_correction`. |
 | Minimální základní spotřeba v kWh za hodinu | `min_baseline_kwh_per_hour` | `0.2` | `0` nebo vyšší. | Fallback hodinová spotřeba domu, když cílová hodina nemá použitelný historický vzorek. |

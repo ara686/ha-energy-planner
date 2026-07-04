@@ -27,6 +27,7 @@ from custom_components.energy_planner.const import (
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
 from custom_components.energy_planner.options import normalize_options
@@ -61,6 +62,7 @@ def options_data(**overrides: Any) -> dict[str, Any]:
 def options_flow_input(**overrides: Any) -> dict[str, Any]:
     """Return options matching the options flow UI schema."""
     data: dict[str, Any] = {
+        CONF_UPDATE_INTERVAL_MINUTES: 60,
         CONF_INTERVAL_MINUTES: 60,
         CONF_HISTORY_CORRECTION_PERCENT: 5.0,
         CONF_MIN_BASELINE_KWH_PER_HOUR: 0.2,

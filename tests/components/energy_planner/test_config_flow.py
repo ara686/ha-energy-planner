@@ -16,6 +16,7 @@ from custom_components.energy_planner.const import (
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -69,6 +70,7 @@ async def test_options_flow_updates_runtime_options(hass, config_entry):
 
     user_input = {
         **options_flow_input(),
+        CONF_UPDATE_INTERVAL_MINUTES: 45,
         CONF_INTERVAL_MINUTES: 30,
         CONF_FORECAST_HORIZON_HOURS: 48,
     }
@@ -78,6 +80,7 @@ async def test_options_flow_updates_runtime_options(hass, config_entry):
     )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_UPDATE_INTERVAL_MINUTES] == 45
     assert result["data"][CONF_INTERVAL_MINUTES] == 30
     assert result["data"][CONF_FORECAST_HORIZON_HOURS] == 48
 
@@ -89,6 +92,7 @@ async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):
     schema = result["data_schema"]
 
     user_input = {
+        CONF_UPDATE_INTERVAL_MINUTES: "60",
         CONF_INTERVAL_MINUTES: "30",
         CONF_HISTORY_CORRECTION_PERCENT: "5.0",
         CONF_MIN_BASELINE_KWH_PER_HOUR: "0.2",
@@ -104,6 +108,7 @@ async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):
 
     validated = schema(user_input)
 
+    assert validated[CONF_UPDATE_INTERVAL_MINUTES] == 60.0
     assert validated[CONF_SOC_RESERVE_PERCENT] == 1.0
     assert validated[CONF_HISTORY_CORRECTION_PERCENT] == 5.0
     assert validated[CONF_INTERVAL_MINUTES] == 30.0

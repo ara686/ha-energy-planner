@@ -91,6 +91,7 @@ Options:
 managed_power_entities: []
 history_retention_days: 30
 history_learning_days: 3
+update_interval_minutes: 60
 interval_minutes: 5
 history_correction_percent: 5
 min_baseline_kwh_per_hour: 0.2
@@ -115,6 +116,7 @@ forecast_detail_level: compact
 ```
 
 Validate:
+- `update_interval_minutes` must be greater than 0.
 - `interval_minutes` must divide 60.
 - `forecast_horizon_hours` must be at least 24.
 - windows must be valid HH:MM.

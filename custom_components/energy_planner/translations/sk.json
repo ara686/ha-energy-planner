@@ -29,6 +29,7 @@
         "title": "Možnosti Energy Planneru",
         "description": "Nastavenie správania plánovača, časových okien a predikcie SoC.",
         "data": {
+          "update_interval_minutes": "Interval prepočtu v minútach",
           "interval_minutes": "Interval plánovania v minútach",
           "history_correction_percent": "Korekcia histórie v percentách",
           "min_baseline_kwh_per_hour": "Minimálna základná spotreba v kWh za hodinu",
@@ -44,6 +45,7 @@
       }
     },
     "error": {
+      "update_interval_minutes": "Interval prepočtu musí byť väčší ako 0 minút.",
       "interval_minutes": "Interval plánovania musí deliť 60 bez zvyšku.",
       "forecast_horizon_hours": "Horizont predikcie musí byť aspoň 24 hodín.",
       "min_baseline_kwh_per_hour": "Minimálna základná spotreba nesmie byť záporná.",

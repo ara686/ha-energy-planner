@@ -27,6 +27,7 @@ from .const import (
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -124,6 +125,14 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
         options = merged_options(dict(self._config_entry.options))
         schema = vol.Schema(
             {
+                vol.Required(
+                    CONF_UPDATE_INTERVAL_MINUTES,
+                    default=options[CONF_UPDATE_INTERVAL_MINUTES],
+                ): _number_selector(
+                    minimum=1,
+                    step=1,
+                    unit_of_measurement="min",
+                ),
                 vol.Required(
                     CONF_INTERVAL_MINUTES,
                     default=options[CONF_INTERVAL_MINUTES],
