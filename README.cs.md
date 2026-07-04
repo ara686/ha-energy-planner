@@ -252,6 +252,67 @@ Pokud je karta prázdná:
 - Spusťte službu `energy_planner.recalculate` a obnovte dashboard.
 - Po instalaci nebo aktualizaci `apexcharts-card` vyčistěte cache prohlížeče.
 
+### Budoucí nevyužitý FVE přebytek přes ApexCharts
+
+Každý forecast bod obsahuje také `unused_surplus_kwh`, což je přebytečná energie
+pro daný plánovací slot. Příklad níže převádí energii slotu na ekvivalentní
+výkon v `kW` podle intervalu mezi forecast body. Pro 5minutový interval planneru
+je to stejné jako vynásobit slotové `kWh` hodnotou `12`.
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 24h
+span:
+  start: hour
+locale: cs
+header:
+  title: Forecast unused PV surplus
+  show: true
+  show_states: true
+  colorize_states: true
+now:
+  show: true
+  label: Now
+yaxis:
+  - min: 0
+    decimals: 2
+series:
+  - entity: sensor.energy_planner_soc_forecast
+    name: Nevyužitý přebytek
+    type: area
+    opacity: 0.45
+    stroke_width: 2
+    unit: kW
+    show:
+      in_header: raw
+      extremas: true
+    data_generator: |
+      const points = entity.attributes.points || [];
+      const first = new Date(points[0]?.timestamp).getTime();
+      const second = new Date(points[1]?.timestamp).getTime();
+      const intervalHours =
+        Number.isFinite(first) && Number.isFinite(second) && second > first
+          ? (second - first) / 3600000
+          : 1;
+
+      return points
+        .map((point) => {
+          const timestamp = new Date(point.timestamp).getTime();
+          if (!Number.isFinite(timestamp)) {
+            return null;
+          }
+          const surplusKwh = Number(point.unused_surplus_kwh ?? 0);
+          return [
+            timestamp,
+            Number.isFinite(surplusKwh) ? surplusKwh / intervalHours : 0,
+          ];
+        })
+        .filter((point) => point !== null);
+```
+
+Pokud chcete zobrazit přímo energii v plánovacím slotu, změňte `unit` na `kWh`
+a vracejte `surplusKwh` místo `surplusKwh / intervalHours`.
+
 ### Samostatná 24hodinová hodnota SoC
 
 Pro jednoduchou hodnotu v dashboardu použijte dedikovaný 24hodinový senzor:
