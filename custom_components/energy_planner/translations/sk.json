@@ -9,8 +9,8 @@
           "battery_soc_entity": "Stav nabitia batérie",
           "battery_capacity_entity": "Kapacita batérie",
           "battery_min_soc_entity": "Minimálny stav nabitia batérie",
-          "home_energy_hourly_entity": "Hodinová história spotreby domu",
-          "managed_energy_hourly_entity": "Hodinová história riadenej spotreby",
+          "home_energy_entity": "Zdroj energie spotreby domu",
+          "managed_energy_entities": "Zdroje riadenej spotreby",
           "solcast_today_entity": "Predpoveď Solcast na dnes",
           "solcast_tomorrow_entity": "Predpoveď Solcast na zajtra",
           "solcast_additional_entities": "Ďalšie dni predpovede Solcast",
@@ -30,6 +30,7 @@
         "description": "Nastavenie správania plánovača, časových okien a predikcie SoC.",
         "data": {
           "update_interval_minutes": "Interval prepočtu v minútach",
+          "history_learning_days": "Počet dní histórie spotreby",
           "interval_minutes": "Interval plánovania v minútach",
           "history_correction_percent": "Korekcia histórie v percentách",
           "min_baseline_kwh_per_hour": "Minimálna základná spotreba v kWh za hodinu",
@@ -46,6 +47,7 @@
     },
     "error": {
       "update_interval_minutes": "Interval prepočtu musí byť väčší ako 0 minút.",
+      "history_learning_days": "Počet dní histórie spotreby musí byť väčší ako 0.",
       "interval_minutes": "Interval plánovania musí deliť 60 bez zvyšku.",
       "forecast_horizon_hours": "Horizont predikcie musí byť aspoň 24 hodín.",
       "min_baseline_kwh_per_hour": "Minimálna základná spotreba nesmie byť záporná.",

@@ -9,6 +9,7 @@ from .const import (
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
+    CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
@@ -21,6 +22,7 @@ from .const import (
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
     DEFAULT_HISTORY_CORRECTION_PERCENT,
+    DEFAULT_HISTORY_LEARNING_DAYS,
     DEFAULT_INTERVAL_MINUTES,
     DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
     DEFAULT_NT_WINDOWS,
@@ -40,6 +42,7 @@ class OptionsValidationError(ValueError):
 def default_options() -> dict[str, Any]:
     return {
         CONF_UPDATE_INTERVAL_MINUTES: DEFAULT_UPDATE_INTERVAL_MINUTES,
+        CONF_HISTORY_LEARNING_DAYS: DEFAULT_HISTORY_LEARNING_DAYS,
         CONF_INTERVAL_MINUTES: DEFAULT_INTERVAL_MINUTES,
         CONF_HISTORY_CORRECTION_PERCENT: DEFAULT_HISTORY_CORRECTION_PERCENT,
         CONF_MIN_BASELINE_KWH_PER_HOUR: DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
@@ -58,6 +61,10 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
     update_interval_minutes = int(values[CONF_UPDATE_INTERVAL_MINUTES])
     if update_interval_minutes <= 0:
         raise OptionsValidationError("update_interval_minutes")
+
+    history_learning_days = int(values[CONF_HISTORY_LEARNING_DAYS])
+    if history_learning_days <= 0:
+        raise OptionsValidationError("history_learning_days")
 
     interval_minutes = int(values[CONF_INTERVAL_MINUTES])
     if interval_minutes <= 0 or 60 % interval_minutes != 0:
@@ -97,6 +104,7 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
 
     return {
         CONF_UPDATE_INTERVAL_MINUTES: update_interval_minutes,
+        CONF_HISTORY_LEARNING_DAYS: history_learning_days,
         CONF_INTERVAL_MINUTES: interval_minutes,
         CONF_HISTORY_CORRECTION_PERCENT: history_correction_percent,
         CONF_MIN_BASELINE_KWH_PER_HOUR: min_baseline,

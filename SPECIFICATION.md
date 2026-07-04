@@ -30,8 +30,10 @@ battery_soc_entity: sensor.cerbo_gx_victron_battery_soc
 battery_capacity_entity: sensor.cerbo_gx_victron_installed_battery_capacity
 battery_min_soc_entity: number.cerbo_gx_victron_battery_minimum_soc_limit
 
-home_energy_hourly_entity: sensor.home_power_hourly_utility_meter
-managed_energy_hourly_entity: sensor.managed_power_utility_meter_hourly
+home_energy_entity: sensor.home_energy_total
+managed_energy_entities:
+  - sensor.ev_energy_total
+  - sensor.water_heater_energy_total
 
 solcast_today_entity: sensor.solcast_pv_forecast_forecast_today
 solcast_tomorrow_entity: sensor.solcast_pv_forecast_forecast_tomorrow
@@ -46,12 +48,11 @@ Assumptions:
 
 - All input data is read from configured Home Assistant entities, states and attributes.
 - The integration must not call Solcast, Victron, tariff provider or device APIs directly in v1.
-- `home_energy_hourly_entity` is an hourly utility-meter-like history source in kWh.
-- `managed_energy_hourly_entity` is an hourly utility-meter-like history source in kWh.
-- The active Node-RED-compatible consumption model reads the last 3 days of Home Assistant history for those hourly sources when available.
-- History records are grouped by `attributes.last_reset` rounded to the hour.
-- For each history hour, the maximum home value is used.
-- For each managed history hour, the maximum managed value is used and capped at `(3 * 25 * 230) / 1000` kWh.
+- `home_energy_entity` is a cumulative whole-home energy source in kWh.
+- `managed_energy_entities` is an optional list of cumulative managed-load energy sources in kWh.
+- The consumption model reads the configured number of Home Assistant history days for those energy sources when available.
+- History records are converted to positive cumulative deltas and assigned to the hour of the newer reading.
+- Managed energy deltas from all managed sources are summed per hour.
 - Managed consumption is subtracted from home consumption per hour before the hourly profile is calculated.
 - Future consumption uses the average for the same hour of day. A forecast slot at 11:00 uses historical 11:00 values, not a global average.
 - The hourly profile includes the legacy 5% margin and then applies `history_correction_percent`.
@@ -88,7 +89,6 @@ Use Options Flow.
 Options:
 
 ```yaml
-managed_power_entities: []
 history_retention_days: 30
 history_learning_days: 3
 update_interval_minutes: 60
@@ -117,6 +117,7 @@ forecast_detail_level: compact
 
 Validate:
 - `update_interval_minutes` must be greater than 0.
+- `history_learning_days` must be greater than 0.
 - `interval_minutes` must divide 60.
 - `forecast_horizon_hours` must be at least 24.
 - windows must be valid HH:MM.

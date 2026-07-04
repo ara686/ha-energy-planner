@@ -32,8 +32,8 @@ YAML konfigurace není ve verzi v1 záměrně podporovaná.
 ## Konfigurace
 
 Energy Planner se konfiguruje pouze přes UI Home Assistantu. Očekává už
-existující entity v Home Assistantu; ve verzi v1 za vás nevytváří pomocné
-senzory.
+existující zdrojové entity v Home Assistantu a vlastní hodinovou historii
+spotřeby si vede interně; Utility Meter helpery už vytvářet nemusíte.
 
 ### Vstupní entity
 
@@ -45,55 +45,45 @@ používaný v diagnostice a debug výstupech.
 | Stav nabití baterie | `battery_soc_entity` | Povinné | Číselný senzor SoC baterie v `%`. | Použijte SoC entitu z integrace FVE/bateriového měniče, například Victron, GoodWe, Solax, Huawei nebo SolarEdge. |
 | Kapacita baterie | `battery_capacity_entity` | Povinné | Číselný senzor kapacity baterie v `kWh`. | Použijte entitu z měniče/BMS, pokud existuje. Pokud je kapacita fixní a měnič ji neposkytuje, vytvořte v Home Assistantu helper s nastavenou hodnotou kapacity. |
 | Minimální stav nabití baterie | `battery_min_soc_entity` | Povinné | Číselný senzor minimálního/rezervního SoC v `%`. | Použijte entitu minimálního SoC z měniče/BMS. Pokud systém má jen fixní rezervu, vytvořte pro ni helper. |
-| Historie hodinové spotřeby domu | `home_energy_hourly_entity` | Povinné | Hodinový `utility_meter` senzor v `kWh`. | Vytvořte Utility Meter helper s cyklem `hourly` ze senzoru celkové spotřeby domu. Toto je hlavní historický vstup spotřeby domu. |
-| Historie hodinové řízené spotřeby | `managed_energy_hourly_entity` | Volitelné | Hodinový `utility_meter` senzor v `kWh`. | Vytvořte další hodinový Utility Meter ze záměrně řízené spotřeby, například nabíjení EV, bojleru nebo ohřevu vody. Tato hodnota se odečítá od spotřeby domu po hodinách. |
+| Zdroj energie spotřeby domu | `home_energy_entity` | Povinné | Kumulativní senzor celkové spotřeby domu v `kWh`. | Použijte total/total-increasing energetický senzor spotřeby domu. Energy Planner z něj interně sestaví hodinovou historii. |
+| Zdroje řízené spotřeby | `managed_energy_entities` | Volitelné | Žádný, jeden nebo více kumulativních energetických senzorů v `kWh`. | Vyberte záměrně řízené zátěže, například nabíjení EV, bojler nebo ohřev vody. Tyto hodnoty se sečtou a po hodinách odečítají od spotřeby domu. |
 | Solcast predikce pro dnešek | `solcast_today_entity` | Volitelné | Solcast forecast senzor z Home Assistantu. | Příklad: `sensor.solcast_pv_forecast_forecast_today`. Energy Planner čte pouze data z Home Assistantu a nevolá Solcast přímo. |
 | Solcast predikce pro zítřek | `solcast_tomorrow_entity` | Volitelné | Solcast forecast senzor z Home Assistantu. | Příklad: `sensor.solcast_pv_forecast_forecast_tomorrow`. Pokud entita pro dnešek používá standardní Solcast naming pattern, Energy Planner umí tuto sourozeneckou entitu najít automaticky. |
 | Další dny Solcast predikce | `solcast_additional_entities` | Volitelné | Jedna nebo více Solcast forecast entit z Home Assistantu. | Příklady: `sensor.solcast_pv_forecast_forecast_day_3`, `sensor.solcast_pv_forecast_forecast_day_4`. Standardní sourozenci `forecast_day_3` až `forecast_day_7` mohou být automaticky nalezeni, pokud existují. |
 | Cena nebo tarif | `price_entity` | Volitelné | Číselný senzor ceny/tarifu nebo stavová entita tarifu. | Rezervováno pro plánování a diagnostiku podle tarifů. Aktuální v1 planner z tohoto vstupu neovládá zařízení. |
 
-### Příprava hodinových helperů spotřeby
+### Energetické zdroje spotřeby
 
-Energy Planner potřebuje hodinové energetické součty, ne okamžité hodnoty výkonu.
-Pro vstupy historie domu a řízené spotřeby vytvořte v Home Assistantu Utility
-Meter helpery:
+Energy Planner potřebuje kumulativní energetické hodnoty, ne okamžité hodnoty
+výkonu. Pro domovní zdroj vyberte senzor, který reprezentuje celkovou spotřebu
+domu v `kWh`. Dobré zdroje jsou podle dostupných dat z elektroměru nebo měniče
+například grid/import plus FVE vlastní spotřeba.
 
-1. Přejděte do Settings > Devices & services > Helpers.
-2. Create helper > Utility Meter.
-3. Vyberte zdrojový energetický senzor v `kWh`.
-4. Nastavte reset cycle na `hourly`.
-5. Tarify nechte prázdné, pokud výslovně nepotřebujete oddělené tarifní měřáky.
-6. Helper uložte a vytvořený senzor použijte jako vstup Energy Planneru.
-
-Pro `Home hourly consumption history` má zdroj reprezentovat celkovou spotřebu
-domu. Dobré zdroje jsou podle dostupných dat z elektroměru nebo měniče například
-grid/import plus FVE vlastní spotřeba.
-
-Pro `Managed hourly consumption history` má zdroj reprezentovat pouze zátěže,
-které jsou záměrně řízené mimo běžný profil domu, například nabíjení EV, bojler,
-ohřev vody nebo jinou řízenou spotřebu. Tato řízená spotřeba už musí být součástí
-celkové spotřeby domu; Energy Planner ji po hodinách odečítá, aby se naučil
-neřiditelnou základní spotřebu. Nepoužívejte zde domovní senzor už očištěný o
-řízenou spotřebu, jinak by se řízená spotřeba odečetla dvakrát.
+Pro `Zdroje řízené spotřeby` vyberte pouze zátěže, které jsou záměrně řízené
+mimo běžný profil domu, například nabíjení EV, bojler, ohřev vody nebo jinou
+řízenou spotřebu. Tato řízená spotřeba už musí být součástí celkové spotřeby
+domu; Energy Planner ji po hodinách odečítá, aby se naučil neřiditelnou základní
+spotřebu. Nepoužívejte domovní senzor už očištěný o řízenou spotřebu, jinak by
+se řízená spotřeba odečetla dvakrát.
 
 Pokud máte pouze výkonový senzor ve `W` nebo `kW`, vytvořte nejdřív Integration
-(Riemann sum integral) helper pro převod výkonu na energii v `kWh` a teprve z
-tohoto energetického senzoru vytvořte hodinový Utility Meter. Pro zátěže, které
-se zapínají/vypínají a drží stabilní výkon, je obvykle správná integrační metoda
+(Riemann sum integral) helper pro převod výkonu na energii v `kWh` a tento
+energetický senzor vyberte v Energy Planneru. Pro zátěže, které se
+zapínají/vypínají a drží stabilní výkon, je obvykle správná integrační metoda
 `left`.
 
-První cyklus Utility Meteru je neúplný až do dalšího hodinového resetu. Energy
-Planner funguje nejlépe po alespoň 3 dnech historie v Home Assistantu pro helper
-spotřeby domu i helper řízené spotřeby.
+Energy Planner sestavuje hodinové buckety interně z kladných delt vybraných
+kumulativních energetických senzorů. První hodnota je pouze baseline; použitelná
+historie vzniká po další změně zdroje nebo z historie Home Assistant recorderu.
 
 ### Model historie spotřeby
 
-Když je dostupná historie Home Assistantu, Energy Planner načte poslední 3 dny
-pro nakonfigurované zdroje domovní a řízené spotřeby, seskupí záznamy podle
-hodiny z `last_reset`, ponechá maximální hodnotu pro každou hodinu, odečte
-řízenou spotřebu od domovní spotřeby a vytvoří profil spotřeby po hodinách dne.
-Například predikce pro 11:00 používá průměr předchozích hodnot z 11:00, ne
-celkový průměr spotřeby domu.
+Když je dostupná historie Home Assistantu, Energy Planner načte nakonfigurovaný
+počet dní historie pro zdroje domovní a řízené spotřeby, spočítá kladné delty
+kumulativních hodnot, zařadí je do hodinových bucketů, odečte řízenou spotřebu od
+domovní spotřeby a vytvoří profil spotřeby po hodinách dne. Například predikce
+pro 11:00 používá průměr předchozích hodnot z 11:00, ne celkový průměr spotřeby
+domu.
 
 Hodinový profil se navýší o Node-RED kompatibilní 5% margin a následně o
 konfigurovatelné `history_correction_percent`. Pokud pro cílovou hodinu neexistuje
@@ -128,15 +118,16 @@ pozdě večer, kdy z dneška zbývá méně dat, povolte a vyberte alespoň
 
 ### Provozní možnosti
 
-Runtime chování se mění přes Options Flow: automatický interval přepočtu,
-interval plánování, korekce historie, základní spotřeba, limity nabíjení ze
-sítě, NT okna, nabíjecí okno a horizont predikce.
+Runtime chování se mění přes Options Flow: automatický interval přepočtu, počet
+dní historie spotřeby, interval plánování, korekce historie, základní spotřeba,
+limity nabíjení ze sítě, NT okna, nabíjecí okno a horizont predikce.
 
 Hodnoty změníte v Settings > Devices & services > Energy Planner > Configure.
 
 | Položka v UI | Key | Default | Povolená hodnota | Popis |
 |--------------|-----|---------|------------------|-------|
 | Interval přepočtu v minutách | `update_interval_minutes` | `60` | Kladné číslo. | Automatický polling planneru. Změna stavu baterie SoC zároveň spustí okamžitý přepočet, takže planner může reagovat ještě před dalším periodickým během. |
+| Počet dní historie spotřeby | `history_learning_days` | `3` | Kladné celé číslo. | Počet dní historie Home Assistantu použitých pro sestavení hodinového profilu spotřeby. |
 | Interval plánování v minutách | `interval_minutes` | `5` | Kladné číslo, které beze zbytku dělí 60. | Časový krok používaný pro simulaci planneru a forecast sloty. Běžné hodnoty jsou `5`, `10`, `15`, `30` nebo `60`. |
 | Korekce historie v procentech | `history_correction_percent` | `5.0` | Větší než `-100` a nejvýše `500`. | Dodatečné procento aplikované po výpočtu hodinového profilu spotřeby. Použijte pro sladění nebo doladění legacy Node-RED chování `history_correction`. |
 | Minimální základní spotřeba v kWh za hodinu | `min_baseline_kwh_per_hour` | `0.2` | `0` nebo vyšší. | Fallback hodinová spotřeba domu, když cílová hodina nemá použitelný historický vzorek. |
@@ -375,7 +366,7 @@ Důležité migrační poznámky:
 - `charge_to_soc` je volitelný cíl nabíjení ze sítě pro nakonfigurované nabíjecí okno.
 - `free_capacity_kwh` znamená bezpečně vybitelnou energii nad `safe_discharge_soc`.
 - Legacy flow přidává 1 procentní bod ke nakonfigurovanému minimálnímu SoC baterie před použitím jako efektivní floor; parity fixtures to modelují explicitně.
-- Predikce spotřeby odpovídá hodinovému profilu aktivního flow: poslední 3 dny historie HA, seskupené podle `last_reset`, řízená spotřeba odečtená po hodinách, plus 5% history margin.
+- Predikce spotřeby odpovídá hodinovému profilu aktivního flow: nakonfigurovaný počet dní HA historie, kumulativní energetické delty seskupené do hodinových bucketů, řízená spotřeba odečtená po hodinách, plus 5% history margin.
 - Čistý planner může vystavovat čistší formát timestampů a kompaktní forecast atributy při zachování hlavních plánovacích výstupů.
 
 Viz `SPECIFICATION.md` a `CODEX_IMPLEMENTATION_PROMPT.md`.

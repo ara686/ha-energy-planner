@@ -1,24 +1,25 @@
 # History Model
 
 The history model intentionally mirrors the active `Energy Prediction 2`
-Node-RED flow.
+Node-RED flow's hour-of-day profile, but Energy Planner builds the hourly energy
+buckets internally.
 
 ## Inputs
 
-- Home source: hourly utility-meter-like cumulative kWh sensor.
-- Managed source: hourly utility-meter-like cumulative kWh sensor.
-- Learning window: last 3 days of Home Assistant history.
+- Home source: cumulative whole-home kWh sensor.
+- Managed sources: optional cumulative managed-load kWh sensors.
+- Learning window: `history_learning_days`, default 3 days.
 
 ## Aggregation
 
-For each Home Assistant history state:
+For each configured source:
 
 1. Parse `state` as kWh.
-2. Parse `attributes.last_reset`.
-3. Round `last_reset` to the hour.
-4. Keep the maximum value seen for that hour.
+2. Sort history states by timestamp.
+3. Convert consecutive cumulative samples into positive deltas.
+4. Assign each delta to the hour of the newer sample.
 
-Managed values are capped at `(3 * 25 * 230) / 1000` kWh before aggregation.
+Managed deltas from all managed sources are summed for each hour.
 
 For each home hour:
 

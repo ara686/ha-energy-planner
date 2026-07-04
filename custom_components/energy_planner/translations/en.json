@@ -9,8 +9,8 @@
           "battery_soc_entity": "Battery state of charge",
           "battery_capacity_entity": "Battery capacity",
           "battery_min_soc_entity": "Battery minimum state of charge",
-          "home_energy_hourly_entity": "Home hourly consumption history",
-          "managed_energy_hourly_entity": "Managed hourly consumption history",
+          "home_energy_entity": "Home energy source",
+          "managed_energy_entities": "Managed energy sources",
           "solcast_today_entity": "Solcast forecast for today",
           "solcast_tomorrow_entity": "Solcast forecast for tomorrow",
           "solcast_additional_entities": "Additional Solcast forecast days",
@@ -30,6 +30,7 @@
         "description": "Configure planner behavior, time windows and SoC forecast settings.",
         "data": {
           "update_interval_minutes": "Recalculation interval in minutes",
+          "history_learning_days": "Consumption history days",
           "interval_minutes": "Planning interval in minutes",
           "history_correction_percent": "History correction percent",
           "min_baseline_kwh_per_hour": "Minimum baseline consumption in kWh per hour",
@@ -46,6 +47,7 @@
     },
     "error": {
       "update_interval_minutes": "Recalculation interval must be greater than 0 minutes.",
+      "history_learning_days": "Consumption history days must be greater than 0.",
       "interval_minutes": "Planning interval must divide 60.",
       "forecast_horizon_hours": "Forecast horizon must be at least 24 hours.",
       "min_baseline_kwh_per_hour": "Minimum baseline consumption must not be negative.",

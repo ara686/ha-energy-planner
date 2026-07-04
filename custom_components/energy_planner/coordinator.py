@@ -19,9 +19,10 @@ from .const import (
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
-    CONF_HOME_ENERGY_HOURLY_ENTITY,
+    CONF_HISTORY_LEARNING_DAYS,
+    CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
-    CONF_MANAGED_ENERGY_HOURLY_ENTITY,
+    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
@@ -79,6 +80,25 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
         """Apply the current automatic recalculation interval option."""
         self.update_interval = _coordinator_update_interval(self.entry)
 
+    def record_energy_source_state(
+        self,
+        *,
+        entity_id: str,
+        source_type: str,
+        state,
+    ) -> None:
+        """Record a changed cumulative energy source state."""
+        value = parse_float(state.state)
+        if value is None:
+            return
+        _record_energy_value(
+            self.history,
+            dt_util.as_local(state.last_updated),
+            entity_id=entity_id,
+            source_type=source_type,
+            value=value,
+        )
+
     async def async_load_history(self) -> None:
         """Load stored consumption history before the first refresh."""
         self.history = await self._history_store.async_load()
@@ -96,12 +116,15 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
         )
         self.history.cleanup(
             now=now,
-            retention_days=DEFAULT_HISTORY_RETENTION_DAYS,
+            retention_days=max(
+                DEFAULT_HISTORY_RETENTION_DAYS, _history_days(self.entry)
+            ),
         )
         planner_history = await _async_planner_history_from_ha(
             self.hass,
             self.entry,
             now=now,
+            learning_days=_history_days(self.entry),
             fallback_history=self.history,
             warnings=source_warnings,
         )
@@ -134,11 +157,16 @@ def build_planner_result(
     """Build a planner result from configured Home Assistant entities."""
     now = now or dt_util.now()
     history = history or EnergyHistory()
-    history_status = history.status(
-        now=now, learning_days=DEFAULT_HISTORY_LEARNING_DAYS
-    )
+    history_days = _history_days(entry)
+    history_status = history.status(now=now, learning_days=history_days)
     history_status["source"] = history_source
-    planner_input, warnings = _build_planner_input(hass, entry, history, now)
+    planner_input, warnings = _build_planner_input(
+        hass,
+        entry,
+        history,
+        now,
+        history_days=history_days,
+    )
     warnings = [*(source_warnings or []), *warnings]
     if planner_input is None:
         return PlannerResult(
@@ -163,6 +191,7 @@ def _build_planner_input(
     entry: ConfigEntry,
     history: EnergyHistory,
     now,
+    history_days: int,
 ) -> tuple[PlannerInput | None, list[str]]:
     warnings: list[str] = []
 
@@ -173,10 +202,10 @@ def _build_planner_input(
     battery_min_soc = _required_float(
         hass, entry, CONF_BATTERY_MIN_SOC_ENTITY, warnings
     )
-    if not entry.data.get(CONF_HOME_ENERGY_HOURLY_ENTITY):
+    if not entry.data.get(CONF_HOME_ENERGY_ENTITY):
         warnings.append(
             "Required history source entity is not configured: "
-            f"{CONF_HOME_ENERGY_HOURLY_ENTITY}."
+            f"{CONF_HOME_ENERGY_ENTITY}."
         )
         return None, warnings
 
@@ -195,12 +224,12 @@ def _build_planner_input(
     )
     hourly_profile = history.hourly_base_consumption_profile(
         now=now,
-        learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
+        learning_days=history_days,
         margin_percent=DEFAULT_HISTORY_PROFILE_MARGIN_PERCENT,
     )
     if not history.status(
         now=now,
-        learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
+        learning_days=history_days,
     )["has_completed_bucket"]:
         warnings.append(
             "Consumption history has no completed hourly bucket yet; "
@@ -288,21 +317,6 @@ def _required_float(
     return value
 
 
-def _optional_float(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    key: str,
-    warnings: list[str],
-) -> float | None:
-    entity_id = entry.data.get(key)
-    if not entity_id:
-        return None
-    value = _entity_float(hass, entity_id)
-    if value is None:
-        warnings.append(f"Optional entity has no valid numeric state: {entity_id}.")
-    return value
-
-
 def _entity_float(hass: HomeAssistant, entity_id: str) -> float | None:
     state = hass.states.get(entity_id)
     if state is None:
@@ -317,33 +331,35 @@ def _record_consumption_history(
     now,
     warnings: list[str],
 ) -> None:
-    home_entity_id = entry.data.get(CONF_HOME_ENERGY_HOURLY_ENTITY)
+    home_entity_id = entry.data.get(CONF_HOME_ENERGY_ENTITY)
     if home_entity_id:
         home_value = _entity_float(hass, home_entity_id)
         if home_value is None:
             warnings.append(
-                "Home consumption history source has no valid numeric state: "
-                f"{home_entity_id}."
+                f"Home energy source has no valid numeric state: {home_entity_id}."
             )
         else:
-            history.record_cumulative_hourly_source(
+            _record_energy_value(
+                history,
                 now,
-                source="home",
+                entity_id=home_entity_id,
+                source_type="home",
                 value=home_value,
             )
 
-    managed_entity_id = entry.data.get(CONF_MANAGED_ENERGY_HOURLY_ENTITY)
-    if managed_entity_id:
+    for managed_entity_id in _managed_energy_entity_ids(entry):
         managed_value = _entity_float(hass, managed_entity_id)
         if managed_value is None:
             warnings.append(
-                "Managed consumption history source has no valid numeric state: "
+                "Managed energy source has no valid numeric state: "
                 f"{managed_entity_id}."
             )
         else:
-            history.record_cumulative_hourly_source(
+            _record_energy_value(
+                history,
                 now,
-                source="managed",
+                entity_id=managed_entity_id,
+                source_type="managed",
                 value=managed_value,
             )
 
@@ -354,24 +370,41 @@ class _PlannerHistory:
         self.source = source
 
 
+def _record_energy_value(
+    history: EnergyHistory,
+    timestamp,
+    *,
+    entity_id: str,
+    source_type: str,
+    value: float,
+) -> None:
+    history.record_cumulative_energy_source(
+        timestamp,
+        source_type=source_type,
+        source_id=f"{source_type}:{entity_id}",
+        value=value,
+    )
+
+
 async def _async_planner_history_from_ha(
     hass: HomeAssistant,
     entry: ConfigEntry,
     *,
     now,
+    learning_days: int,
     fallback_history: EnergyHistory,
     warnings: list[str],
 ) -> _PlannerHistory:
-    home_entity_id = entry.data.get(CONF_HOME_ENERGY_HOURLY_ENTITY)
+    home_entity_id = entry.data.get(CONF_HOME_ENERGY_ENTITY)
     if not home_entity_id:
         return _PlannerHistory(fallback_history, "stored")
 
     history = await async_get_recorder_energy_history(
         hass,
         home_entity_id=home_entity_id,
-        managed_entity_id=entry.data.get(CONF_MANAGED_ENERGY_HOURLY_ENTITY),
+        managed_entity_ids=_managed_energy_entity_ids(entry),
         now=now,
-        learning_days=DEFAULT_HISTORY_LEARNING_DAYS,
+        learning_days=learning_days,
     )
     if history is None:
         warnings.append(
@@ -481,6 +514,23 @@ def _solcast_daily_slot(entity_id: str) -> str | None:
 
 def _option(entry: ConfigEntry, key: str, default: Any) -> Any:
     return entry.options.get(key, default)
+
+
+def _history_days(entry: ConfigEntry) -> int:
+    return int(
+        _option(entry, CONF_HISTORY_LEARNING_DAYS, DEFAULT_HISTORY_LEARNING_DAYS)
+    )
+
+
+def _managed_energy_entity_ids(entry: ConfigEntry) -> list[str]:
+    raw_entity_ids = entry.data.get(CONF_MANAGED_ENERGY_ENTITIES) or []
+    if isinstance(raw_entity_ids, str):
+        return [raw_entity_ids] if raw_entity_ids else []
+    return [
+        entity_id
+        for entity_id in raw_entity_ids
+        if isinstance(entity_id, str) and entity_id
+    ]
 
 
 def _coordinator_update_interval(entry: ConfigEntry) -> timedelta:

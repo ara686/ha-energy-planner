@@ -10,7 +10,9 @@ from custom_components.energy_planner.const import (
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
+    CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
+    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
@@ -43,6 +45,23 @@ async def test_user_flow_creates_entry(hass):
     assert result["data"] == config_data()
 
 
+async def test_user_flow_allows_no_managed_energy_sources(hass):
+    user_input = config_data()
+    user_input.pop(CONF_MANAGED_ENERGY_ENTITIES)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert CONF_MANAGED_ENERGY_ENTITIES not in result["data"]
+
+
 async def test_user_flow_blocks_duplicate_entry(hass):
     MockConfigEntry(
         domain=DOMAIN,
@@ -71,6 +90,7 @@ async def test_options_flow_updates_runtime_options(hass, config_entry):
     user_input = {
         **options_flow_input(),
         CONF_UPDATE_INTERVAL_MINUTES: 45,
+        CONF_HISTORY_LEARNING_DAYS: 5,
         CONF_INTERVAL_MINUTES: 30,
         CONF_FORECAST_HORIZON_HOURS: 48,
     }
@@ -81,6 +101,7 @@ async def test_options_flow_updates_runtime_options(hass, config_entry):
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_UPDATE_INTERVAL_MINUTES] == 45
+    assert result["data"][CONF_HISTORY_LEARNING_DAYS] == 5
     assert result["data"][CONF_INTERVAL_MINUTES] == 30
     assert result["data"][CONF_FORECAST_HORIZON_HOURS] == 48
 
@@ -93,6 +114,7 @@ async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):
 
     user_input = {
         CONF_UPDATE_INTERVAL_MINUTES: "60",
+        CONF_HISTORY_LEARNING_DAYS: "3",
         CONF_INTERVAL_MINUTES: "30",
         CONF_HISTORY_CORRECTION_PERCENT: "5.0",
         CONF_MIN_BASELINE_KWH_PER_HOUR: "0.2",
@@ -109,6 +131,7 @@ async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):
     validated = schema(user_input)
 
     assert validated[CONF_UPDATE_INTERVAL_MINUTES] == 60.0
+    assert validated[CONF_HISTORY_LEARNING_DAYS] == 3.0
     assert validated[CONF_SOC_RESERVE_PERCENT] == 1.0
     assert validated[CONF_HISTORY_CORRECTION_PERCENT] == 5.0
     assert validated[CONF_INTERVAL_MINUTES] == 30.0

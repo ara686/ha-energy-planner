@@ -7,8 +7,10 @@ from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 
 from custom_components.energy_planner.const import CONF_UPDATE_INTERVAL_MINUTES, DOMAIN
+from custom_components.energy_planner.history import hour_key
 from custom_components.energy_planner.sensor import SENSOR_DESCRIPTIONS
 
 from .conftest import set_source_states
@@ -114,6 +116,34 @@ async def test_battery_soc_change_requests_planner_refresh(hass, config_entry):
     hass.states.async_set("sensor.battery_soc", "56")
     await hass.async_block_till_done()
     assert refresh_calls == 1
+
+
+async def test_energy_source_changes_are_recorded_in_internal_history(
+    hass,
+    config_entry,
+):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    hass.states.async_set("sensor.home_energy_total", "1001")
+    hass.states.async_set("sensor.ev_energy_total", "200.4")
+    hass.states.async_set("sensor.water_heater_energy_total", "50.1")
+    await hass.async_block_till_done()
+
+    key = hour_key(
+        dt_util.as_local(hass.states.get("sensor.home_energy_total").last_updated)
+    )
+
+    assert round(config_entry.runtime_data.history.buckets[key].home_kwh, 6) == 1.0
+    assert round(config_entry.runtime_data.history.buckets[key].managed_kwh, 6) == 0.5
+    assert (
+        round(config_entry.runtime_data.history.base_consumption_for_hour(key), 6)
+        == 0.5
+    )
 
 
 async def test_options_update_changes_loaded_recalculation_interval(

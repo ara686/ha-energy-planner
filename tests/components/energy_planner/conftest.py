@@ -16,9 +16,10 @@ from custom_components.energy_planner.const import (
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
-    CONF_HOME_ENERGY_HOURLY_ENTITY,
+    CONF_HISTORY_LEARNING_DAYS,
+    CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
-    CONF_MANAGED_ENERGY_HOURLY_ENTITY,
+    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
@@ -44,8 +45,11 @@ def config_data(**overrides: Any) -> dict[str, Any]:
         CONF_BATTERY_SOC_ENTITY: "sensor.battery_soc",
         CONF_BATTERY_CAPACITY_ENTITY: "sensor.battery_capacity",
         CONF_BATTERY_MIN_SOC_ENTITY: "sensor.battery_min_soc",
-        CONF_HOME_ENERGY_HOURLY_ENTITY: "sensor.home_energy_hourly",
-        CONF_MANAGED_ENERGY_HOURLY_ENTITY: "sensor.managed_energy_hourly",
+        CONF_HOME_ENERGY_ENTITY: "sensor.home_energy_total",
+        CONF_MANAGED_ENERGY_ENTITIES: [
+            "sensor.ev_energy_total",
+            "sensor.water_heater_energy_total",
+        ],
         CONF_SOLCAST_TODAY_ENTITY: "sensor.solcast_today",
         CONF_SOLCAST_TOMORROW_ENTITY: "sensor.solcast_tomorrow",
         CONF_SOLCAST_ADDITIONAL_ENTITIES: ["sensor.solcast_day_3"],
@@ -63,6 +67,7 @@ def options_flow_input(**overrides: Any) -> dict[str, Any]:
     """Return options matching the options flow UI schema."""
     data: dict[str, Any] = {
         CONF_UPDATE_INTERVAL_MINUTES: 60,
+        CONF_HISTORY_LEARNING_DAYS: 3,
         CONF_INTERVAL_MINUTES: 60,
         CONF_HISTORY_CORRECTION_PERCENT: 5.0,
         CONF_MIN_BASELINE_KWH_PER_HOUR: 0.2,
@@ -99,8 +104,9 @@ def set_source_states(hass, *, invalid_required_state: bool = False) -> None:
     )
     hass.states.async_set("sensor.battery_capacity", "20")
     hass.states.async_set("sensor.battery_min_soc", "20")
-    hass.states.async_set("sensor.home_energy_hourly", "0.7")
-    hass.states.async_set("sensor.managed_energy_hourly", "0.1")
+    hass.states.async_set("sensor.home_energy_total", "1000")
+    hass.states.async_set("sensor.ev_energy_total", "200")
+    hass.states.async_set("sensor.water_heater_energy_total", "50")
     hass.states.async_set(
         "sensor.solcast_today",
         "0",

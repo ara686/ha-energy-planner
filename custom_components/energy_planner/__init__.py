@@ -12,7 +12,12 @@ from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import CONF_BATTERY_SOC_ENTITY, DOMAIN
+from .const import (
+    CONF_BATTERY_SOC_ENTITY,
+    CONF_HOME_ENERGY_ENTITY,
+    CONF_MANAGED_ENERGY_ENTITIES,
+    DOMAIN,
+)
 
 PLATFORMS = ["sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -62,6 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     _register_battery_soc_refresh(hass, entry, coordinator)
+    _register_energy_source_history(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -112,3 +118,57 @@ def _register_battery_soc_refresh(
             _handle_battery_soc_change,
         )
     )
+
+
+def _register_energy_source_history(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: Any,
+) -> None:
+    """Record changed cumulative energy source states into internal history."""
+    tracked_sources = _energy_source_entities(entry)
+    if not tracked_sources:
+        return
+
+    source_types = {
+        entity_id: source_type for entity_id, source_type in tracked_sources
+    }
+
+    @callback
+    def _handle_energy_source_change(event) -> None:
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        if old_state is not None and old_state.state == new_state.state:
+            return
+        coordinator.record_energy_source_state(
+            entity_id=new_state.entity_id,
+            source_type=source_types[new_state.entity_id],
+            state=new_state,
+        )
+
+    entry.async_on_unload(
+        async_track_state_change_event(
+            hass,
+            [entity_id for entity_id, _source_type in tracked_sources],
+            _handle_energy_source_change,
+        )
+    )
+
+
+def _energy_source_entities(entry: ConfigEntry) -> list[tuple[str, str]]:
+    sources: list[tuple[str, str]] = []
+    if home_entity_id := entry.data.get(CONF_HOME_ENERGY_ENTITY):
+        sources.append((home_entity_id, "home"))
+
+    raw_managed_entity_ids = entry.data.get(CONF_MANAGED_ENERGY_ENTITIES) or []
+    if isinstance(raw_managed_entity_ids, str):
+        raw_managed_entity_ids = [raw_managed_entity_ids]
+
+    sources.extend(
+        (entity_id, "managed")
+        for entity_id in raw_managed_entity_ids
+        if isinstance(entity_id, str) and entity_id
+    )
+    return sources

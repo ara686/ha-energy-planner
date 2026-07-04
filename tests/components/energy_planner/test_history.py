@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from custom_components.energy_planner.history import (
+    CumulativeEnergySample,
     EnergyHistory,
-    HourlyCumulativeSample,
     hour_key,
 )
 
@@ -46,49 +46,87 @@ def test_cleanup_removes_buckets_outside_retention():
 def test_history_roundtrip_survives_restart_serialization():
     history = EnergyHistory()
     timestamp = datetime(2026, 7, 3, 10, 0)
-    history.record_cumulative_hourly_source(timestamp, source="home", value=1.2)
-    history.record_cumulative_hourly_source(timestamp, source="managed", value=0.2)
+    history.record_cumulative_energy_source(
+        timestamp,
+        source_type="home",
+        source_id="home:sensor.home_energy_total",
+        value=10.0,
+    )
+    history.record_cumulative_energy_source(
+        timestamp + timedelta(minutes=10),
+        source_type="home",
+        source_id="home:sensor.home_energy_total",
+        value=11.2,
+    )
+    history.record_cumulative_energy_source(
+        timestamp,
+        source_type="managed",
+        source_id="managed:sensor.ev_energy_total",
+        value=5.0,
+    )
+    history.record_cumulative_energy_source(
+        timestamp + timedelta(minutes=10),
+        source_type="managed",
+        source_id="managed:sensor.ev_energy_total",
+        value=5.2,
+    )
 
     restored = EnergyHistory.from_dict(history.as_dict())
 
     assert restored.as_dict() == history.as_dict()
     assert restored.base_consumption_for_hour(hour_key(timestamp)) == 1.0
-    assert restored.cumulative_readings["home"].value == 1.2
+    assert restored.cumulative_readings["home:sensor.home_energy_total"].value == 11.2
 
 
-def test_cumulative_hourly_source_records_only_deltas_within_hour():
+def test_cumulative_energy_source_records_only_positive_deltas():
     history = EnergyHistory()
     timestamp = datetime(2026, 7, 3, 10, 5)
 
-    history.record_cumulative_hourly_source(timestamp, source="home", value=0.4)
-    history.record_cumulative_hourly_source(
+    history.record_cumulative_energy_source(
+        timestamp,
+        source_type="home",
+        source_id="home:sensor.home_energy_total",
+        value=100.4,
+    )
+    history.record_cumulative_energy_source(
         timestamp + timedelta(minutes=10),
-        source="home",
-        value=0.7,
+        source_type="home",
+        source_id="home:sensor.home_energy_total",
+        value=100.7,
     )
-    history.record_cumulative_hourly_source(
+    history.record_cumulative_energy_source(
         timestamp + timedelta(minutes=20),
-        source="home",
-        value=0.7,
+        source_type="home",
+        source_id="home:sensor.home_energy_total",
+        value=100.7,
     )
 
-    assert history.base_consumption_for_hour(hour_key(timestamp)) == 0.7
+    assert round(history.base_consumption_for_hour(hour_key(timestamp)), 6) == 0.3
 
 
-def test_cumulative_hourly_source_starts_new_bucket_after_meter_reset():
+def test_cumulative_energy_source_assigns_cross_hour_delta_to_new_hour():
     history = EnergyHistory()
     timestamp = datetime(2026, 7, 3, 10, 55)
 
-    history.record_cumulative_hourly_source(timestamp, source="home", value=1.2)
-    history.record_cumulative_hourly_source(
+    history.record_cumulative_energy_source(
+        timestamp,
+        source_type="home",
+        source_id="home:sensor.home_energy_total",
+        value=100.0,
+    )
+    history.record_cumulative_energy_source(
         timestamp + timedelta(minutes=10),
-        source="home",
-        value=0.2,
+        source_type="home",
+        source_id="home:sensor.home_energy_total",
+        value=100.2,
     )
 
-    assert history.base_consumption_for_hour(hour_key(timestamp)) == 1.2
+    assert history.base_consumption_for_hour(hour_key(timestamp)) == 0.0
     assert (
-        history.base_consumption_for_hour(hour_key(timestamp + timedelta(hours=1)))
+        round(
+            history.base_consumption_for_hour(hour_key(timestamp + timedelta(hours=1))),
+            6,
+        )
         == 0.2
     )
 
@@ -131,17 +169,24 @@ def test_predicted_base_consumption_falls_back_to_minimum_for_missing_hour():
 
 def test_cumulative_history_samples_build_nodered_hourly_profile():
     now = datetime(2026, 7, 3, 12, 0)
-    history = EnergyHistory.from_cumulative_history_samples(
+    history = EnergyHistory.from_cumulative_energy_samples(
         home_samples=[
-            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 1.8),
-            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 2.0),
-            HourlyCumulativeSample(datetime(2026, 7, 2, 11, 0), 4.0),
-            HourlyCumulativeSample(datetime(2026, 7, 2, 12, 0), 10.0),
+            CumulativeEnergySample(datetime(2026, 7, 1, 10, 55), 10.0),
+            CumulativeEnergySample(datetime(2026, 7, 1, 11, 10), 11.8),
+            CumulativeEnergySample(datetime(2026, 7, 1, 11, 50), 12.0),
+            CumulativeEnergySample(datetime(2026, 7, 2, 10, 55), 20.0),
+            CumulativeEnergySample(datetime(2026, 7, 2, 11, 30), 24.0),
+            CumulativeEnergySample(datetime(2026, 7, 2, 11, 55), 24.0),
+            CumulativeEnergySample(datetime(2026, 7, 2, 12, 10), 34.0),
         ],
-        managed_samples=[
-            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 0.5),
-            HourlyCumulativeSample(datetime(2026, 7, 2, 11, 0), 1.0),
-        ],
+        managed_samples_by_source={
+            "sensor.ev_energy_total": [
+                CumulativeEnergySample(datetime(2026, 7, 1, 10, 55), 0.0),
+                CumulativeEnergySample(datetime(2026, 7, 1, 11, 20), 0.5),
+                CumulativeEnergySample(datetime(2026, 7, 2, 10, 55), 10.0),
+                CumulativeEnergySample(datetime(2026, 7, 2, 11, 20), 11.0),
+            ],
+        },
     )
 
     profile = history.hourly_base_consumption_profile(
@@ -156,17 +201,26 @@ def test_cumulative_history_samples_build_nodered_hourly_profile():
     assert profile[12] == 10.5
 
 
-def test_managed_history_samples_are_capped_like_active_nodered_flow():
-    history = EnergyHistory.from_cumulative_history_samples(
+def test_multiple_managed_energy_sources_are_summed_by_hour():
+    history = EnergyHistory.from_cumulative_energy_samples(
         home_samples=[
-            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 20.0),
+            CumulativeEnergySample(datetime(2026, 7, 1, 10, 55), 10.0),
+            CumulativeEnergySample(datetime(2026, 7, 1, 11, 30), 20.0),
         ],
-        managed_samples=[
-            HourlyCumulativeSample(datetime(2026, 7, 1, 11, 0), 100.0),
-        ],
+        managed_samples_by_source={
+            "sensor.ev_energy_total": [
+                CumulativeEnergySample(datetime(2026, 7, 1, 10, 55), 0.0),
+                CumulativeEnergySample(datetime(2026, 7, 1, 11, 30), 2.0),
+            ],
+            "sensor.water_heater_energy_total": [
+                CumulativeEnergySample(datetime(2026, 7, 1, 10, 55), 10.0),
+                CumulativeEnergySample(datetime(2026, 7, 1, 11, 30), 13.0),
+            ],
+        },
     )
 
-    assert history.base_consumption_for_hour("2026-07-01T11:00:00") == 2.75
+    assert history.buckets["2026-07-01T11:00:00"].managed_kwh == 5.0
+    assert history.base_consumption_for_hour("2026-07-01T11:00:00") == 5.0
 
 
 def test_average_base_consumption_uses_learning_window_and_minimum():

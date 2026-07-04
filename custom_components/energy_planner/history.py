@@ -10,12 +10,11 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 STORAGE_VERSION = 1
-MANAGED_POWER_CAP_KWH = (3 * 25 * 230) / 1000
 
 
 @dataclass(frozen=True)
-class HourlyCumulativeSample:
-    reset_time: datetime
+class CumulativeEnergySample:
+    timestamp: datetime
     value: float
 
 
@@ -88,19 +87,20 @@ class EnergyHistory:
         return bucket.base_kwh if bucket else 0.0
 
     @classmethod
-    def from_cumulative_history_samples(
+    def from_cumulative_energy_samples(
         cls,
         *,
-        home_samples: list[HourlyCumulativeSample],
-        managed_samples: list[HourlyCumulativeSample] | None = None,
-        managed_cap_kwh: float = MANAGED_POWER_CAP_KWH,
+        home_samples: list[CumulativeEnergySample],
+        managed_samples_by_source: dict[str, list[CumulativeEnergySample]]
+        | None = None,
     ) -> EnergyHistory:
-        """Build Node-RED-compatible hourly history from HA history samples."""
-        managed_by_hour = _max_by_reset_hour(
-            managed_samples or [],
-            cap_kwh=managed_cap_kwh,
-        )
-        home_by_hour = _max_by_reset_hour(home_samples)
+        """Build hourly history from cumulative energy source samples."""
+        managed_by_hour: dict[str, float] = {}
+        for samples in (managed_samples_by_source or {}).values():
+            for key, value in _positive_deltas_by_hour(samples).items():
+                managed_by_hour[key] = managed_by_hour.get(key, 0.0) + value
+
+        home_by_hour = _positive_deltas_by_hour(home_samples)
         history = cls()
         for key, home_kwh in home_by_hour.items():
             history.buckets[key] = HourlyEnergyBucket(
@@ -110,35 +110,36 @@ class EnergyHistory:
             )
         return history
 
-    def record_cumulative_hourly_source(
+    def record_cumulative_energy_source(
         self,
         timestamp: datetime,
         *,
-        source: str,
+        source_type: str,
+        source_id: str,
         value: float,
     ) -> None:
-        """Record a cumulative hourly utility-meter-like source."""
+        """Record a cumulative energy source reading."""
         if value < 0:
             return
 
         key = hour_key(timestamp)
-        previous = self.cumulative_readings.get(source)
-        delta = value
-        if previous and previous.hour_start == key:
+        previous = self.cumulative_readings.get(source_id)
+        delta = 0.0
+        if previous:
             delta = value - previous.value
             if delta < 0:
-                delta = value
+                delta = 0.0
 
-        self.cumulative_readings[source] = CumulativeHourlyReading(
+        self.cumulative_readings[source_id] = CumulativeHourlyReading(
             hour_start=key,
             value=value,
         )
 
         if delta <= 0:
             return
-        if source == "home":
+        if source_type == "home":
             self.add_hourly_sample(timestamp, home_kwh=delta)
-        elif source == "managed":
+        elif source_type == "managed":
             self.add_hourly_sample(timestamp, home_kwh=0.0, managed_kwh=delta)
 
     def average_base_consumption_kwh_per_hour(
@@ -291,16 +292,21 @@ def hour_key(timestamp: datetime) -> str:
     return timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
 
 
-def _max_by_reset_hour(
-    samples: list[HourlyCumulativeSample],
-    *,
-    cap_kwh: float | None = None,
+def _positive_deltas_by_hour(
+    samples: list[CumulativeEnergySample],
 ) -> dict[str, float]:
     values: dict[str, float] = {}
-    for sample in samples:
+    previous_value: float | None = None
+    for sample in sorted(samples, key=lambda item: item.timestamp):
         if sample.value < 0:
             continue
-        value = sample.value if cap_kwh is None else min(sample.value, cap_kwh)
-        key = hour_key(sample.reset_time)
-        values[key] = max(values.get(key, 0.0), value)
+        if previous_value is None:
+            previous_value = sample.value
+            continue
+        delta = sample.value - previous_value
+        previous_value = sample.value
+        if delta <= 0:
+            continue
+        key = hour_key(sample.timestamp)
+        values[key] = values.get(key, 0.0) + delta
     return values

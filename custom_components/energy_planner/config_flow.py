@@ -15,9 +15,10 @@ from .const import (
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
-    CONF_HOME_ENERGY_HOURLY_ENTITY,
+    CONF_HISTORY_LEARNING_DAYS,
+    CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
-    CONF_MANAGED_ENERGY_HOURLY_ENTITY,
+    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
     CONF_PRICE_ENTITY,
@@ -84,10 +85,12 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_BATTERY_SOC_ENTITY): selector.EntitySelector(),
                 vol.Required(CONF_BATTERY_CAPACITY_ENTITY): selector.EntitySelector(),
                 vol.Required(CONF_BATTERY_MIN_SOC_ENTITY): selector.EntitySelector(),
-                vol.Required(CONF_HOME_ENERGY_HOURLY_ENTITY): selector.EntitySelector(),
-                vol.Optional(
-                    CONF_MANAGED_ENERGY_HOURLY_ENTITY
-                ): selector.EntitySelector(),
+                vol.Required(CONF_HOME_ENERGY_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_MANAGED_ENERGY_ENTITIES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", multiple=True)
+                ),
                 vol.Optional(CONF_SOLCAST_TODAY_ENTITY): selector.EntitySelector(),
                 vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY): selector.EntitySelector(),
                 vol.Optional(CONF_SOLCAST_ADDITIONAL_ENTITIES): selector.EntitySelector(
@@ -132,6 +135,14 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     minimum=1,
                     step=1,
                     unit_of_measurement="min",
+                ),
+                vol.Required(
+                    CONF_HISTORY_LEARNING_DAYS,
+                    default=options[CONF_HISTORY_LEARNING_DAYS],
+                ): _number_selector(
+                    minimum=1,
+                    step=1,
+                    unit_of_measurement="d",
                 ),
                 vol.Required(
                     CONF_INTERVAL_MINUTES,
