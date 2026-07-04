@@ -101,10 +101,10 @@ managed consumption from home consumption, and builds a per-hour-of-day
 consumption profile. For example, the forecast for 11:00 uses the average of
 previous 11:00 values, not the overall house average.
 
-The hourly profile is increased by the Node-RED-compatible 5% margin and then by
-the configurable `history_correction_percent`. If no value exists for a target
-hour, the planner uses `min_baseline_kwh_per_hour`. Energy Planner also stores
-its own hourly history as a fallback when Home Assistant history is unavailable.
+The hourly profile is increased by a built-in 5% history margin and then by the
+configurable `history_correction_percent`. If no value exists for a target hour,
+the planner uses `min_baseline_kwh_per_hour`. Energy Planner also stores its own
+hourly history as a fallback when Home Assistant history is unavailable.
 
 ### Solcast forecast inputs
 
@@ -139,23 +139,26 @@ baseline load, grid charge limits, NT windows, charge window and forecast
 horizon.
 
 Open Settings > Devices & services > Energy Planner > Configure to change these
-values.
+values. The same values are also exposed as read-only diagnostic sensors, so you
+can see and reference the exact active settings from Home Assistant states.
+The entity IDs below are typical defaults; verify the actual IDs in Home
+Assistant if your backend language, conflicts or manual renames changed them.
 
-| UI field | Key | Default | Accepted value | Description |
-|----------|-----|---------|----------------|-------------|
-| Recalculation interval in minutes | `update_interval_minutes` | `60` | Positive number. | Automatic planner polling interval. A battery SoC state change also triggers an immediate recalculation, so the planner can react before the next periodic update. |
-| Consumption history days | `history_learning_days` | `3` | Positive whole number. | Number of days of Home Assistant history used to build the hourly consumption profile. |
-| Planning interval in minutes | `interval_minutes` | `5` | Positive number that divides 60 exactly. | Time step used for the planner simulation and forecast slots. Common values are `5`, `10`, `15`, `30` or `60`. |
-| History correction percent | `history_correction_percent` | `5.0` | Greater than `-100` and at most `500`. | Extra percentage applied after the hourly consumption profile is calculated. Use this to match or tune the legacy Node-RED `history_correction` behavior. |
-| Minimum baseline consumption in kWh per hour | `min_baseline_kwh_per_hour` | `0.2` | `0` or higher. | Fallback hourly home consumption when the target hour has no usable history sample. |
-| Maximum grid charging power in kW | `grid_charge_max_kw` | `5.5` | `0` or higher. | Maximum power the simulation may use when planning grid charging during the charge window. |
-| Grid charging efficiency | `grid_charge_efficiency` | `0.92` | Greater than `0` and at most `1`. | Battery charging efficiency used when converting grid energy into stored battery energy. |
-| SoC reserve percent | `soc_reserve_percent` | `1` | From `0` to `100`. | Extra SoC margin added to calculated lock/target values. |
-| SoC tolerance in kWh | `soc_eps_kwh` | `0.02` | `0` or higher. | Small battery-energy tolerance used by the planner to avoid unstable decisions around exact thresholds. |
-| Low-tariff windows | `nt_windows` | `17:00-19:00,22:00-04:00` | One or more `HH:MM-HH:MM` windows separated by commas. | Windows where low/high tariff protection is evaluated. Windows may cross midnight. |
-| Charging window | `charge_window` | `22:00-04:00` | One `HH:MM-HH:MM` window. | Window where simulated grid charging may be planned. The window may cross midnight. |
-| Minimum solar start duration in minutes | `sun_start_required_minutes` | `30` | Greater than `0`. | Minimum continuous forecasted solar period before the planner treats solar production as started. |
-| Forecast horizon in hours | `forecast_horizon_hours` | `36` | At least `24`. | Future horizon used for SoC forecast and planning. Longer horizons require matching future Solcast data. |
+| UI field | Key | Diagnostic entity | Default | Accepted value | Description |
+|----------|-----|-------------------|---------|----------------|-------------|
+| Recalculation interval in minutes | `update_interval_minutes` | `sensor.energy_planner_recalculation_interval` | `60` | Positive number. | Automatic planner polling interval. A battery SoC state change also triggers an immediate recalculation, so the planner can react before the next periodic update. |
+| Consumption history days | `history_learning_days` | `sensor.energy_planner_consumption_history_days` | `3` | Positive whole number. | Number of days of Home Assistant history used to build the hourly consumption profile. |
+| Planning interval in minutes | `interval_minutes` | `sensor.energy_planner_planning_interval` | `5` | Positive number that divides 60 exactly. | Time step used for the planner simulation and forecast slots. Common values are `5`, `10`, `15`, `30` or `60`. |
+| History correction percent | `history_correction_percent` | `sensor.energy_planner_history_correction` | `5.0` | Greater than `-100` and at most `500`. | Extra percentage applied after the hourly consumption profile is calculated. Use this to tune the learned consumption profile. |
+| Minimum baseline consumption in kWh per hour | `min_baseline_kwh_per_hour` | `sensor.energy_planner_minimum_baseline_consumption` | `0.2` | `0` or higher. | Fallback hourly home consumption when the target hour has no usable history sample. |
+| Maximum grid charging power in kW | `grid_charge_max_kw` | `sensor.energy_planner_maximum_grid_charging_power` | `5.5` | `0` or higher. | Maximum power the simulation may use when planning grid charging during the charge window. |
+| Grid charging efficiency | `grid_charge_efficiency` | `sensor.energy_planner_grid_charging_efficiency` | `0.92` | Greater than `0` and at most `1`. | Battery charging efficiency used when converting grid energy into stored battery energy. |
+| SoC reserve percent | `soc_reserve_percent` | `sensor.energy_planner_soc_reserve` | `1` | From `0` to `100`. | Extra SoC margin added to calculated lock/target values. |
+| SoC tolerance in kWh | `soc_eps_kwh` | `sensor.energy_planner_soc_tolerance` | `0.02` | `0` or higher. | Small battery-energy tolerance used by the planner to avoid unstable decisions around exact thresholds. |
+| Low-tariff windows | `nt_windows` | `sensor.energy_planner_low_tariff_windows` | `17:00-19:00,22:00-04:00` | One or more `HH:MM-HH:MM` windows separated by commas. | Windows where low/high tariff protection is evaluated. Windows may cross midnight. |
+| Charging window | `charge_window` | `sensor.energy_planner_charging_window` | `22:00-04:00` | One `HH:MM-HH:MM` window. | Window where simulated grid charging may be planned. The window may cross midnight. |
+| Minimum solar start duration in minutes | `sun_start_required_minutes` | `sensor.energy_planner_minimum_solar_start_duration` | `30` | Greater than `0`. | Minimum continuous forecasted solar period before the planner treats solar production as started. |
+| Forecast horizon in hours | `forecast_horizon_hours` | `sensor.energy_planner_forecast_horizon` | `36` | At least `24`. | Future horizon used for SoC forecast and planning. Longer horizons require matching future Solcast data. |
 
 ## Output entities
 
@@ -188,7 +191,7 @@ Settings > Devices & services > Energy Planner > Entities.
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
-| `sensor.energy_planner_history_status` | `history_status` | Diagnostic | text | Compact status for the consumption history source and coverage used by the planner. |
+| `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
 
 The SoC forecast includes at least 24 hours and can use a longer configured
 horizon when Home Assistant source data is available.
@@ -369,28 +372,6 @@ uv run --extra ha --extra dev pytest -q
 ```
 
 Release candidates must also pass Hassfest and the HACS Action in GitHub Actions.
-
-## Migration from Node-RED
-
-This integration replaces the active `Energy Prediction 2` Node-RED flow with a
-tested Home Assistant integration.
-
-Only the active Node-RED calculation path is used as a parity reference. Backup,
-dated archive and disconnected Node-RED nodes are ignored.
-
-The local `nodered_export.json` file is intentionally ignored by Git and must not
-be published. Parity tests use sanitized fixtures derived from understood active
-flow behavior, not raw Node-RED code.
-
-Important migration notes:
-
-- v1 exposes planner sensors only and does not control devices.
-- `lock_soc` preserves the battery reserve for NT/VT planning.
-- `charge_to_soc` is the optional grid-charge target for the configured charge window.
-- `free_capacity_kwh` means safely dischargeable energy above `safe_discharge_soc`.
-- The legacy flow adds 1 percentage point to the configured battery minimum SoC before using it as its effective floor; parity fixtures model that explicitly.
-- Consumption prediction follows the active flow's hour-of-day profile: configured HA history days, cumulative energy deltas grouped into hourly buckets, managed consumption subtracted per hour, plus the 5% history margin.
-- The pure planner may expose cleaner timestamp formatting and compact forecast attributes while preserving the core planning outputs.
 
 See `SPECIFICATION.md` and `CODEX_IMPLEMENTATION_PROMPT.md`.
 

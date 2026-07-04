@@ -48,7 +48,7 @@ You are working on a Home Assistant custom integration named `energy_planner`.
 - Keep the repository installable as a HACS integration custom repository.
 - Keep the integration under `custom_components/energy_planner`.
 - Keep `hacs.json` in the repository root with an honest minimum supported Home Assistant version.
-- Keep `README.md` usable for installation, configuration, entities, services, troubleshooting and migration notes.
+- Keep `README.md` usable for installation, configuration, entities, services, troubleshooting, current behavior and known limitations.
 - Keep `README.md` as the primary English README for GitHub and HACS.
 - Keep `README.cs.md` as the secondary Czech translation and update it in the same change whenever `README.md` changes.
 - Keep the language switch near the top of both README files.

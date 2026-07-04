@@ -144,6 +144,45 @@
       },
       "history_status": {
         "name": "History status"
+      },
+      "update_interval_minutes": {
+        "name": "Recalculation interval"
+      },
+      "history_learning_days": {
+        "name": "Consumption history days"
+      },
+      "interval_minutes": {
+        "name": "Planning interval"
+      },
+      "history_correction_percent": {
+        "name": "History correction"
+      },
+      "min_baseline_kwh_per_hour": {
+        "name": "Minimum baseline consumption"
+      },
+      "grid_charge_max_kw": {
+        "name": "Maximum grid charging power"
+      },
+      "grid_charge_efficiency": {
+        "name": "Grid charging efficiency"
+      },
+      "soc_reserve_percent": {
+        "name": "SoC reserve"
+      },
+      "soc_eps_kwh": {
+        "name": "SoC tolerance"
+      },
+      "nt_windows": {
+        "name": "Low-tariff windows"
+      },
+      "charge_window": {
+        "name": "Charging window"
+      },
+      "sun_start_required_minutes": {
+        "name": "Minimum solar start duration"
+      },
+      "forecast_horizon_hours": {
+        "name": "Forecast horizon"
       }
     }
   },

@@ -6,7 +6,8 @@ You are implementing `ha-energy-planner`, a Home Assistant custom integration.
 
 Create a production-quality custom integration named `energy_planner`.
 
-It replaces an existing Node-RED energy prediction flow and exposes planner entities only.
+It calculates energy planning outputs from configured Home Assistant entities
+and exposes planner entities only.
 
 Do not control Victron, EV chargers, heaters, pumps or other devices in v1.
 
@@ -60,7 +61,7 @@ hacs.json
 - Keep `hacs.json` in the repository root with an honest minimum supported Home Assistant version.
 - Keep the integration manifest HACS-compatible with `domain`, `documentation`, `issue_tracker`, `codeowners`, `name` and `version`.
 - Keep `manifest.json` `version` synchronized with release intent.
-- Maintain user-facing README installation, configuration, entity, service, troubleshooting and migration documentation.
+- Maintain user-facing README installation, configuration, entity, service and troubleshooting documentation.
 - Add brand assets before publishing through HACS.
 - Validate release candidates with pytest, Ruff, Hassfest and HACS Action for category `integration`.
 - Publish full GitHub releases for HACS releases; tags alone are not enough.
@@ -185,4 +186,4 @@ The planner tests are highest priority and must be deterministic.
 - Planner core has no HA imports.
 - Coordinator handles missing inputs gracefully.
 - Sensors expose correct units/classes.
-- Documentation explains migration from Node-RED.
+- Documentation explains current behavior, setup, entities, services and troubleshooting.

@@ -73,13 +73,12 @@ History tests:
 - restart persistence
 - managed energy subtraction
 
-Legacy Node-RED parity tests:
+Planner parity tests:
 
-- keep `nodered_export.json` ignored and out of GitHub
-- use only the active flow path that reaches Home Assistant outputs
-- ignore backup, archive, dated and disconnected Node-RED branches
-- do not copy raw Node-RED code into the integration
-- create sanitized parity fixtures or assertions only from understood behavior
+- keep local reference exports and raw external automation data out of GitHub
+- create sanitized parity fixtures or assertions only from documented behavior
+- compare planner outputs, warning behavior and compact forecast data
+- keep planner tests deterministic and independent from Home Assistant internals
 
 ## Real Home Assistant Smoke Test
 

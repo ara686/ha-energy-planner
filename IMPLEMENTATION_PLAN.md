@@ -85,13 +85,13 @@ Acceptance:
 - manual recalc works.
 - diagnostics include useful state.
 
-## Wave 7 – parity validation
+## Wave 7 – planner validation
 
-- Add fixture from legacy Node-RED.
+- Add fixture from documented reference behavior.
 - Compare expected outputs.
 - Document differences.
-- Use local ignored `nodered_export.json` only as reference.
-- Use only the active flow path; ignore backup/archive/disconnected Node-RED nodes.
+- Keep raw external automation exports out of GitHub.
+- Keep fixtures sanitized and deterministic.
 
 Acceptance:
-- README explains migration from Node-RED.
+- README explains current behavior, setup, entities and troubleshooting.

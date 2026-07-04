@@ -103,11 +103,11 @@ domovní spotřeby a vytvoří profil spotřeby po hodinách dne. Například pr
 pro 11:00 používá průměr předchozích hodnot z 11:00, ne celkový průměr spotřeby
 domu.
 
-Hodinový profil se navýší o Node-RED kompatibilní 5% margin a následně o
-konfigurovatelné `history_correction_percent`. Pokud pro cílovou hodinu neexistuje
-žádná hodnota, planner použije `min_baseline_kwh_per_hour`. Energy Planner si
-také ukládá vlastní hodinovou historii jako fallback, když historie Home
-Assistantu není dostupná.
+Hodinový profil se navýší o vestavěný 5% history margin a následně o
+konfigurovatelné `history_correction_percent`. Pokud pro cílovou hodinu
+neexistuje žádná hodnota, planner použije `min_baseline_kwh_per_hour`. Energy
+Planner si také ukládá vlastní hodinovou historii jako fallback, když historie
+Home Assistantu není dostupná.
 
 ### Vstupy Solcast predikce
 
@@ -141,22 +141,27 @@ dní historie spotřeby, interval plánování, korekce historie, základní spo
 limity nabíjení ze sítě, NT okna, nabíjecí okno a horizont predikce.
 
 Hodnoty změníte v Settings > Devices & services > Energy Planner > Configure.
+Stejné hodnoty jsou vystavené také jako read-only diagnostické senzory, takže v
+Home Assistantu vidíte přesně aktivní nastavení a můžete na ně odkazovat ze
+stavů.
+Uvedená entity ID jsou typické defaulty; skutečná ID ověřte v Home Assistantu,
+pokud je změnil jazyk backendu, konflikt názvů nebo ruční přejmenování.
 
-| Položka v UI | Key | Default | Povolená hodnota | Popis |
-|--------------|-----|---------|------------------|-------|
-| Interval přepočtu v minutách | `update_interval_minutes` | `60` | Kladné číslo. | Automatický polling planneru. Změna stavu baterie SoC zároveň spustí okamžitý přepočet, takže planner může reagovat ještě před dalším periodickým během. |
-| Počet dní historie spotřeby | `history_learning_days` | `3` | Kladné celé číslo. | Počet dní historie Home Assistantu použitých pro sestavení hodinového profilu spotřeby. |
-| Interval plánování v minutách | `interval_minutes` | `5` | Kladné číslo, které beze zbytku dělí 60. | Časový krok používaný pro simulaci planneru a forecast sloty. Běžné hodnoty jsou `5`, `10`, `15`, `30` nebo `60`. |
-| Korekce historie v procentech | `history_correction_percent` | `5.0` | Větší než `-100` a nejvýše `500`. | Dodatečné procento aplikované po výpočtu hodinového profilu spotřeby. Použijte pro sladění nebo doladění legacy Node-RED chování `history_correction`. |
-| Minimální základní spotřeba v kWh za hodinu | `min_baseline_kwh_per_hour` | `0.2` | `0` nebo vyšší. | Fallback hodinová spotřeba domu, když cílová hodina nemá použitelný historický vzorek. |
-| Maximální výkon nabíjení ze sítě v kW | `grid_charge_max_kw` | `5.5` | `0` nebo vyšší. | Maximální výkon, který simulace může použít při plánování nabíjení ze sítě během nabíjecího okna. |
-| Účinnost nabíjení ze sítě | `grid_charge_efficiency` | `0.92` | Větší než `0` a nejvýše `1`. | Účinnost nabíjení baterie použitá při převodu energie ze sítě na uloženou energii v baterii. |
-| Rezerva SoC v procentech | `soc_reserve_percent` | `1` | Od `0` do `100`. | Dodatečná SoC rezerva přičtená k vypočteným hodnotám lock/target. |
-| Tolerance SoC v kWh | `soc_eps_kwh` | `0.02` | `0` nebo vyšší. | Malá energetická tolerance baterie používaná plannerem, aby rozhodování nebylo nestabilní kolem přesných prahů. |
-| Okna nízkého tarifu | `nt_windows` | `17:00-19:00,22:00-04:00` | Jedno nebo více oken `HH:MM-HH:MM` oddělených čárkou. | Okna, ve kterých se vyhodnocuje ochrana pro nízký/vysoký tarif. Okna mohou přecházet přes půlnoc. |
-| Nabíjecí okno | `charge_window` | `22:00-04:00` | Jedno okno `HH:MM-HH:MM`. | Okno, ve kterém může být v simulaci plánované nabíjení ze sítě. Okno může přecházet přes půlnoc. |
-| Minimální trvání začátku solární výroby v minutách | `sun_start_required_minutes` | `30` | Větší než `0`. | Minimální souvislá forecastovaná solární perioda, než planner považuje solární výrobu za zahájenou. |
-| Horizont predikce v hodinách | `forecast_horizon_hours` | `36` | Alespoň `24`. | Budoucí horizont používaný pro SoC predikci a plánování. Delší horizonty vyžadují odpovídající budoucí Solcast data. |
+| Položka v UI | Key | Diagnostická entita | Default | Povolená hodnota | Popis |
+|--------------|-----|---------------------|---------|------------------|-------|
+| Interval přepočtu v minutách | `update_interval_minutes` | `sensor.energy_planner_interval_prepoctu` | `60` | Kladné číslo. | Automatický polling planneru. Změna stavu baterie SoC zároveň spustí okamžitý přepočet, takže planner může reagovat ještě před dalším periodickým během. |
+| Počet dní historie spotřeby | `history_learning_days` | `sensor.energy_planner_pocet_dni_historie_spotreby` | `3` | Kladné celé číslo. | Počet dní historie Home Assistantu použitých pro sestavení hodinového profilu spotřeby. |
+| Interval plánování v minutách | `interval_minutes` | `sensor.energy_planner_interval_planovani` | `5` | Kladné číslo, které beze zbytku dělí 60. | Časový krok používaný pro simulaci planneru a forecast sloty. Běžné hodnoty jsou `5`, `10`, `15`, `30` nebo `60`. |
+| Korekce historie v procentech | `history_correction_percent` | `sensor.energy_planner_korekce_historie` | `5.0` | Větší než `-100` a nejvýše `500`. | Dodatečné procento aplikované po výpočtu hodinového profilu spotřeby. Použijte pro doladění naučeného profilu spotřeby. |
+| Minimální základní spotřeba v kWh za hodinu | `min_baseline_kwh_per_hour` | `sensor.energy_planner_minimalni_zakladni_spotreba` | `0.2` | `0` nebo vyšší. | Fallback hodinová spotřeba domu, když cílová hodina nemá použitelný historický vzorek. |
+| Maximální výkon nabíjení ze sítě v kW | `grid_charge_max_kw` | `sensor.energy_planner_maximalni_nabijeni_ze_site` | `5.5` | `0` nebo vyšší. | Maximální výkon, který simulace může použít při plánování nabíjení ze sítě během nabíjecího okna. |
+| Účinnost nabíjení ze sítě | `grid_charge_efficiency` | `sensor.energy_planner_ucinnost_nabijeni_ze_site` | `0.92` | Větší než `0` a nejvýše `1`. | Účinnost nabíjení baterie použitá při převodu energie ze sítě na uloženou energii v baterii. |
+| Rezerva SoC v procentech | `soc_reserve_percent` | `sensor.energy_planner_rezerva_soc` | `1` | Od `0` do `100`. | Dodatečná SoC rezerva přičtená k vypočteným hodnotám lock/target. |
+| Tolerance SoC v kWh | `soc_eps_kwh` | `sensor.energy_planner_tolerance_soc` | `0.02` | `0` nebo vyšší. | Malá energetická tolerance baterie používaná plannerem, aby rozhodování nebylo nestabilní kolem přesných prahů. |
+| Okna nízkého tarifu | `nt_windows` | `sensor.energy_planner_okna_nizkeho_tarifu` | `17:00-19:00,22:00-04:00` | Jedno nebo více oken `HH:MM-HH:MM` oddělených čárkou. | Okna, ve kterých se vyhodnocuje ochrana pro nízký/vysoký tarif. Okna mohou přecházet přes půlnoc. |
+| Nabíjecí okno | `charge_window` | `sensor.energy_planner_okno_pro_nabijeni` | `22:00-04:00` | Jedno okno `HH:MM-HH:MM`. | Okno, ve kterém může být v simulaci plánované nabíjení ze sítě. Okno může přecházet přes půlnoc. |
+| Minimální trvání začátku solární výroby v minutách | `sun_start_required_minutes` | `sensor.energy_planner_minimalni_delka_solarniho_startu` | `30` | Větší než `0`. | Minimální souvislá forecastovaná solární perioda, než planner považuje solární výrobu za zahájenou. |
+| Horizont predikce v hodinách | `forecast_horizon_hours` | `sensor.energy_planner_horizont_predikce` | `36` | Alespoň `24`. | Budoucí horizont používaný pro SoC predikci a plánování. Delší horizonty vyžadují odpovídající budoucí Solcast data. |
 
 ## Výstupní entity
 
@@ -189,7 +194,7 @@ ID zkontrolujte v Settings > Devices & services > Energy Planner > Entities.
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostika | timestamp | Začátek další použitelné periody solární výroby detekované z forecast slotů. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostika | timestamp | Začátek období, pro které je relevantní vypočtené lock SoC. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostika | timestamp | Čas posledního úspěšného výpočtu coordinatoru. |
-| `sensor.energy_planner_history_status` | `history_status` | Diagnostika | text | Kompaktní stav zdroje historie spotřeby a pokrytí použitého plannerem. |
+| `sensor.energy_planner_history_status` | `history_status` | Diagnostika, vypnuto ve výchozím stavu | text | Kompaktní stav zdroje historie spotřeby a pokrytí použitého plannerem. Detail je dostupný také v diagnostice integrace. |
 
 SoC predikce obsahuje alespoň 24 hodin a může použít delší nakonfigurovaný
 horizont, pokud jsou dostupná zdrojová data z Home Assistantu.
@@ -365,28 +370,6 @@ uv run --extra ha --extra dev pytest -q
 ```
 
 Release candidate musí projít také Hassfest a HACS Action v GitHub Actions.
-
-## Migrace z Node-RED
-
-Tato integrace nahrazuje aktivní Node-RED flow `Energy Prediction 2` testovanou
-integrací pro Home Assistant.
-
-Jako parity reference se používá pouze aktivní výpočetní větev Node-RED. Backupy,
-datované archivy a odpojené Node-RED nody se ignorují.
-
-Lokální soubor `nodered_export.json` je záměrně ignorovaný Gitem a nesmí být
-publikován. Parity testy používají sanitizované fixtures odvozené z pochopeného
-chování aktivního flow, ne raw Node-RED kód.
-
-Důležité migrační poznámky:
-
-- v1 vystavuje pouze planner senzory a neovládá zařízení.
-- `lock_soc` zachovává rezervu baterie pro NT/VT plánování.
-- `charge_to_soc` je volitelný cíl nabíjení ze sítě pro nakonfigurované nabíjecí okno.
-- `free_capacity_kwh` znamená bezpečně vybitelnou energii nad `safe_discharge_soc`.
-- Legacy flow přidává 1 procentní bod ke nakonfigurovanému minimálnímu SoC baterie před použitím jako efektivní floor; parity fixtures to modelují explicitně.
-- Predikce spotřeby odpovídá hodinovému profilu aktivního flow: nakonfigurovaný počet dní HA historie, kumulativní energetické delty seskupené do hodinových bucketů, řízená spotřeba odečtená po hodinách, plus 5% history margin.
-- Čistý planner může vystavovat čistší formát timestampů a kompaktní forecast atributy při zachování hlavních plánovacích výstupů.
 
 Viz `SPECIFICATION.md` a `CODEX_IMPLEMENTATION_PROMPT.md`.
 

@@ -9,7 +9,14 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 
-from custom_components.energy_planner.const import CONF_UPDATE_INTERVAL_MINUTES, DOMAIN
+from custom_components.energy_planner.const import (
+    CONF_CHARGE_WINDOW,
+    CONF_FORECAST_HORIZON_HOURS,
+    CONF_HISTORY_LEARNING_DAYS,
+    CONF_NT_WINDOWS,
+    CONF_UPDATE_INTERVAL_MINUTES,
+    DOMAIN,
+)
 from custom_components.energy_planner.history import hour_key
 from custom_components.energy_planner.sensor import SENSOR_DESCRIPTIONS
 
@@ -66,9 +73,64 @@ async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
     assert categories["lock_start"] is EntityCategory.DIAGNOSTIC
     assert categories["updated"] is EntityCategory.DIAGNOSTIC
     assert categories["history_status"] is EntityCategory.DIAGNOSTIC
+    assert categories[CONF_UPDATE_INTERVAL_MINUTES] is EntityCategory.DIAGNOSTIC
+    assert categories[CONF_HISTORY_LEARNING_DAYS] is EntityCategory.DIAGNOSTIC
+    assert categories[CONF_NT_WINDOWS] is EntityCategory.DIAGNOSTIC
+    assert categories[CONF_CHARGE_WINDOW] is EntityCategory.DIAGNOSTIC
+    assert categories[CONF_FORECAST_HORIZON_HOURS] is EntityCategory.DIAGNOSTIC
     assert categories["target_soc"] is None
     assert categories["soc_forecast"] is None
     assert categories["soc_forecast_24h"] is None
+
+
+async def test_runtime_options_are_exposed_as_diagnostic_sensors(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+    entity_ids = {entity.unique_id: entity.entity_id for entity in entities}
+
+    update_interval = hass.states.get(
+        entity_ids[f"{config_entry.entry_id}_{CONF_UPDATE_INTERVAL_MINUTES}"]
+    )
+    nt_windows = hass.states.get(
+        entity_ids[f"{config_entry.entry_id}_{CONF_NT_WINDOWS}"]
+    )
+    charge_window = hass.states.get(
+        entity_ids[f"{config_entry.entry_id}_{CONF_CHARGE_WINDOW}"]
+    )
+
+    assert update_interval is not None
+    assert update_interval.state == "60"
+    assert update_interval.attributes["unit_of_measurement"] == "min"
+    assert nt_windows is not None
+    assert nt_windows.state == "17:00-19:00,22:00-04:00"
+    assert charge_window is not None
+    assert charge_window.state == "22:00-04:00"
+
+
+async def test_history_status_sensor_is_disabled_by_default(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    entity = registry.async_get_entity_id(
+        "sensor",
+        DOMAIN,
+        f"{config_entry.entry_id}_history_status",
+    )
+    assert entity is not None
+    registry_entry = registry.async_get(entity)
+
+    assert registry_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+    assert hass.states.get(entity) is None
 
 
 async def test_sensors_are_unavailable_when_required_data_is_invalid(
@@ -157,7 +219,15 @@ async def test_options_update_changes_loaded_recalculation_interval(
     await hass.async_block_till_done()
     assert config_entry.state is ConfigEntryState.LOADED
 
+    registry = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+    entity_ids = {entity.unique_id: entity.entity_id for entity in entities}
+    update_interval_entity_id = entity_ids[
+        f"{config_entry.entry_id}_{CONF_UPDATE_INTERVAL_MINUTES}"
+    ]
+
     assert config_entry.runtime_data.update_interval == timedelta(minutes=60)
+    assert hass.states.get(update_interval_entity_id).state == "60"
 
     hass.config_entries.async_update_entry(
         config_entry,
@@ -169,6 +239,7 @@ async def test_options_update_changes_loaded_recalculation_interval(
     await hass.async_block_till_done()
 
     assert config_entry.runtime_data.update_interval == timedelta(minutes=15)
+    assert hass.states.get(update_interval_entity_id).state == "15"
 
 
 async def test_setup_entry_can_be_unloaded(hass, config_entry):

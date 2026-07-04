@@ -144,6 +144,45 @@
       },
       "history_status": {
         "name": "Stav historie"
+      },
+      "update_interval_minutes": {
+        "name": "Interval přepočtu"
+      },
+      "history_learning_days": {
+        "name": "Počet dní historie spotřeby"
+      },
+      "interval_minutes": {
+        "name": "Interval plánování"
+      },
+      "history_correction_percent": {
+        "name": "Korekce historie"
+      },
+      "min_baseline_kwh_per_hour": {
+        "name": "Minimální základní spotřeba"
+      },
+      "grid_charge_max_kw": {
+        "name": "Maximální nabíjení ze sítě"
+      },
+      "grid_charge_efficiency": {
+        "name": "Účinnost nabíjení ze sítě"
+      },
+      "soc_reserve_percent": {
+        "name": "Rezerva SoC"
+      },
+      "soc_eps_kwh": {
+        "name": "Tolerance SoC"
+      },
+      "nt_windows": {
+        "name": "Okna nízkého tarifu"
+      },
+      "charge_window": {
+        "name": "Okno pro nabíjení"
+      },
+      "sun_start_required_minutes": {
+        "name": "Minimální délka solárního startu"
+      },
+      "forecast_horizon_hours": {
+        "name": "Horizont predikce"
       }
     }
   },

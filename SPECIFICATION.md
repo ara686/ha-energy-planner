@@ -14,7 +14,8 @@ ha-energy-planner
 
 ## Purpose
 
-Create a Home Assistant custom integration that replaces a Node-RED based energy prediction flow.
+Create a Home Assistant custom integration that calculates battery and energy
+planning outputs from Home Assistant entities.
 
 The integration calculates energy planning entities. It does not directly control any device in v1.
 
@@ -55,7 +56,7 @@ Assumptions:
 - Managed energy deltas from all managed sources are summed per hour.
 - Managed consumption is subtracted from home consumption per hour before the hourly profile is calculated.
 - Future consumption uses the average for the same hour of day. A forecast slot at 11:00 uses historical 11:00 values, not a global average.
-- The hourly profile includes the legacy 5% margin and then applies `history_correction_percent`.
+- The hourly profile includes a built-in 5% history margin and then applies `history_correction_percent`.
 - If Home Assistant history is unavailable, the integration uses its own stored hourly history as a fallback.
 - Solcast PV forecast data is read from the configured Solcast Home Assistant forecast entities.
 - When the configured Solcast today entity uses the standard `_forecast_today` suffix, the integration may auto-detect existing standard sibling entities for tomorrow and day 3 through day 7.
@@ -131,7 +132,7 @@ Requirements:
 - include at least the next 24 hours
 - support a longer configurable horizon through `forecast_horizon_hours`
 - use Solcast forecast data from Home Assistant entities as PV input
-- use the Node-RED-compatible hourly history profile as load input
+- use the hourly history profile as load input
 - use current battery SoC, capacity and minimum SoC from Home Assistant entities
 - respect NT/VT windows, grid charge window and physical battery floor
 - expose a compact time series with timestamp, predicted SoC percent and predicted battery kWh
@@ -164,6 +165,19 @@ sensor.energy_planner_sun_start
 sensor.energy_planner_lock_start
 sensor.energy_planner_updated
 sensor.energy_planner_history_status
+sensor.energy_planner_recalculation_interval
+sensor.energy_planner_consumption_history_days
+sensor.energy_planner_planning_interval
+sensor.energy_planner_history_correction
+sensor.energy_planner_minimum_baseline_consumption
+sensor.energy_planner_maximum_grid_charging_power
+sensor.energy_planner_grid_charging_efficiency
+sensor.energy_planner_soc_reserve
+sensor.energy_planner_soc_tolerance
+sensor.energy_planner_low_tariff_windows
+sensor.energy_planner_charging_window
+sensor.energy_planner_minimum_solar_start_duration
+sensor.energy_planner_forecast_horizon
 ```
 
 Main state sensor:
