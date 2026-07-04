@@ -293,8 +293,9 @@ async def test_battery_soc_change_requests_debounced_planner_refresh(
 
     hass.states.async_set("sensor.battery_soc", "56")
     hass.states.async_set("sensor.battery_soc", "57")
-    await asyncio.sleep(0)
-    await hass.async_block_till_done()
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
     assert refresh_calls == 1
 
 
