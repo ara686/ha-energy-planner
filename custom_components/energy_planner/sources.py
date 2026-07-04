@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from .models import SolarForecastPoint
+from .periods import infer_period_minutes
 
 UNAVAILABLE_STATES = {"", "unknown", "unavailable", "none", "null"}
 
@@ -140,17 +141,11 @@ def _parse_solar_value(entry: Mapping[str, Any]) -> _SolarValue | None:
 
 def _period_minutes(points: list[_RawSolarForecastPoint], index: int) -> int | None:
     point = points[index]
-    if point.period_minutes:
-        return point.period_minutes
-    if index + 1 < len(points):
-        minutes = int((points[index + 1].start - point.start).total_seconds() // 60)
-        if minutes > 0:
-            return minutes
-    if index > 0:
-        minutes = int((point.start - points[index - 1].start).total_seconds() // 60)
-        if minutes > 0:
-            return minutes
-    return None
+    return infer_period_minutes(
+        [item.start for item in points],
+        index,
+        explicit_period_minutes=point.period_minutes,
+    )
 
 
 def _solar_value_to_kwh(

@@ -41,8 +41,6 @@ solcast_tomorrow_entity: sensor.solcast_pv_forecast_forecast_tomorrow
 solcast_additional_entities:
   - sensor.solcast_pv_forecast_forecast_day_3
   - sensor.solcast_pv_forecast_forecast_day_4
-
-price_entity: sensor.final_current_fix_electricity_price_3
 ```
 
 Assumptions:
