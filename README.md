@@ -26,6 +26,8 @@ and binary sensors that you can use in dashboards or in your own automations.
   water, pool technology or EV charging.
 - Keep managed loads out of the normal house consumption profile, so the planner
   learns the base household load more realistically.
+- Track managed loads separately, so you can see how much energy went into EV
+  charging, water heating or other controlled loads.
 
 For example, with a Czech D25d tariff you can use the forecast to run flexible
 loads from summer PV surplus, and in winter use the low-tariff window to bridge
@@ -108,6 +110,8 @@ Most useful entities:
 | `sensor.energy_planner_charge_to_soc` | SoC level needed for planned grid charging. |
 | `sensor.energy_planner_safe_discharge_soc` | Lowest SoC that should still preserve the plan. |
 | `sensor.energy_planner_unused_surplus_today` | Estimated unused PV surplus for today. |
+| `sensor.energy_planner_managed_<source>_today` | Energy used today by one managed load, for example EV charging or water heating. |
+| `sensor.energy_planner_managed_<source>_tracked_total` | Energy Planner's tracked total for one managed load. |
 
 See [all created entities](docs/entities.md) for the complete list.
 
@@ -119,6 +123,8 @@ Start with these dashboard ideas:
 - 24 hour SoC gauge from `sensor.energy_planner_soc_forecast_24h`.
 - Unused PV surplus chart.
 - Home vs managed consumption history chart.
+- Per-load managed consumption chart, for example EV charging and water heating
+  in separate series.
 
 Lovelace and ApexCharts examples live in [dashboard examples](docs/dashboard.md).
 Screenshots can be added there later without making this README too long.
@@ -133,6 +139,8 @@ for automations:
   discharge.
 - Use `sensor.energy_planner_unused_surplus_today` to start flexible loads when
   there is enough predicted PV surplus.
+- Use per-load managed sensors to prioritize loads, for example heat water
+  before allowing EV charging.
 
 Example automations with placeholders are in
 [automation examples](docs/automations.md). Always test automations manually in

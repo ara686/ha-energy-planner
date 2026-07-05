@@ -34,7 +34,7 @@ Entities**.
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
-| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh` and `base_kwh` values for graph cards. |
+| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh`, per-source `managed_sources` and `base_kwh` values for graph cards. |
 
 Only `sensor.energy_planner_soc_forecast` uses Home Assistant's `battery`
 device class. The other SoC outputs are planning setpoints, limits or future
@@ -42,3 +42,33 @@ helper values, so they remain plain percentage sensors.
 
 Forecast `soc_percent` values are rounded to whole integer percentages because
 most PV and battery systems do not provide meaningful decimal SoC precision.
+
+## Managed Source Entities
+
+For every configured `Managed energy source`, Energy Planner also creates a
+small group of per-source entities. The final entity IDs depend on the selected
+source entity name. For example, a source with friendly name `EV charging energy`
+typically creates entity IDs like
+`sensor.energy_planner_managed_ev_charging_energy_today`.
+
+| Typical entity pattern | Category | Unit/type | Description |
+|------------------------|----------|-----------|-------------|
+| `sensor.energy_planner_managed_<source>_today` | Standard | `kWh` | Energy used by this managed load today. Uses Home Assistant long-term statistics with `device_class: energy` and `state_class: total_increasing`. |
+| `sensor.energy_planner_managed_<source>_current_hour` | Standard | `kWh` | Energy used by this managed load in the current hour bucket. Useful for live dashboards and automation conditions. |
+| `sensor.energy_planner_managed_<source>_last_hour` | Standard | `kWh` | Energy used by this managed load in the previous completed hour bucket. Useful for hourly charts and decisions that should not use an incomplete current hour. |
+| `sensor.energy_planner_managed_<source>_tracked_total` | Standard | `kWh` | Monotonic total tracked by Energy Planner from positive deltas observed after setup. Uses `device_class: energy` and `state_class: total_increasing`. |
+| `sensor.energy_planner_managed_<source>_history` | Diagnostic, disabled by default | `kWh` | Detail entity for graph cards. Its `points` attribute contains hourly `managed_kwh` values for this one source. Enable it only when you want per-source history graphs. |
+
+Each per-source entity includes these attributes:
+
+- `source_entity_id`: original managed source entity selected in setup.
+- `source_name`: source friendly name used when the entity was created.
+- `history_source`: whether the hourly values came from Home Assistant recorder
+  history or Energy Planner's stored fallback history.
+- `today_kwh`, `current_hour_kwh`, `last_hour_kwh`: compact summary values.
+- `point_count`, `point_limit`, `truncated`: history payload status.
+- `tracked_total_kwh`: Energy Planner's monotonic tracked total for the source.
+
+The `history` entity additionally exposes a `points` attribute with compact
+hourly data. Other per-source entities intentionally do not expose `points`, so
+regular state history stays compact.

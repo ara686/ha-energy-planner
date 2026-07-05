@@ -160,6 +160,21 @@
       "consumption_history": {
         "name": "Consumption history"
       },
+      "managed_source_today": {
+        "name": "Managed {source} today"
+      },
+      "managed_source_current_hour": {
+        "name": "Managed {source} current hour"
+      },
+      "managed_source_last_hour": {
+        "name": "Managed {source} last hour"
+      },
+      "managed_source_tracked_total": {
+        "name": "Managed {source} tracked total"
+      },
+      "managed_source_history": {
+        "name": "Managed {source} history"
+      },
       "update_interval_minutes": {
         "name": "Recalculation interval"
       },

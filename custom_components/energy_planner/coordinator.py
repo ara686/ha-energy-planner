@@ -57,6 +57,7 @@ from .sources import parse_float, parse_solcast_attributes
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_CONSUMPTION_HISTORY_SENSOR_POINTS = 24 * 7
+_MAX_MANAGED_SOURCE_HISTORY_SENSOR_POINTS = 24 * 7
 _SOLCAST_DAILY_ENTITY_RE = re.compile(
     r"(?:^|_)(?:forecast_)?(today|tomorrow|day_[3-7])$"
 )
@@ -173,6 +174,13 @@ def build_planner_result(
         source=history_source,
         status=history_status,
     )
+    managed_source_history = _managed_source_history_payload(
+        history,
+        now=now,
+        learning_days=history_days,
+        source=history_source,
+        source_ids=_managed_energy_entity_ids(entry),
+    )
     planner_input, warnings = _build_planner_input(
         hass,
         entry,
@@ -189,12 +197,14 @@ def build_planner_result(
             forecast={
                 "history_status": history_status,
                 "consumption_history": consumption_history,
+                "managed_source_history": managed_source_history,
             },
         )
 
     result = calculate_plan(planner_input)
     result.forecast["history_status"] = history_status
     result.forecast["consumption_history"] = consumption_history
+    result.forecast["managed_source_history"] = managed_source_history
     result.debug["history_status"] = history_status
     if warnings:
         result.warnings = warnings + result.warnings
@@ -226,6 +236,48 @@ def _consumption_history_payload(
         "truncated": truncated,
         "points": points,
     }
+
+
+def _managed_source_history_payload(
+    history: EnergyHistory,
+    *,
+    now,
+    learning_days: int,
+    source: str,
+    source_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    payload: dict[str, dict[str, Any]] = {}
+    for source_id in source_ids:
+        points, truncated = history.managed_source_hourly_points(
+            source_id,
+            now=now,
+            learning_days=learning_days,
+            point_limit=_MAX_MANAGED_SOURCE_HISTORY_SENSOR_POINTS,
+        )
+        latest_kwh = points[-1]["managed_kwh"] if points else 0.0
+        payload[source_id] = {
+            "history_source": source,
+            "source_entity_id": source_id,
+            "learning_days": learning_days,
+            "today_kwh": round(
+                history.managed_source_today_kwh(source_id, now=now),
+                6,
+            ),
+            "current_hour_kwh": round(
+                history.managed_source_current_hour_kwh(source_id, now=now),
+                6,
+            ),
+            "last_hour_kwh": round(
+                history.managed_source_last_hour_kwh(source_id, now=now),
+                6,
+            ),
+            "latest_kwh": latest_kwh,
+            "point_count": len(points),
+            "point_limit": _MAX_MANAGED_SOURCE_HISTORY_SENSOR_POINTS,
+            "truncated": truncated,
+            "points": points,
+        }
+    return payload
 
 
 def _build_planner_input(

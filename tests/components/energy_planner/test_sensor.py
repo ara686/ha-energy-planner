@@ -11,6 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 
 from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIPTIONS
 from custom_components.energy_planner.const import (
@@ -27,7 +28,10 @@ from custom_components.energy_planner.history import (
     hour_key,
 )
 from custom_components.energy_planner.models import PlannerResult
-from custom_components.energy_planner.sensor import SENSOR_DESCRIPTIONS
+from custom_components.energy_planner.sensor import (
+    MANAGED_SOURCE_SENSOR_DESCRIPTIONS,
+    SENSOR_DESCRIPTIONS,
+)
 
 from .conftest import set_source_states
 
@@ -44,7 +48,11 @@ async def test_setup_entry_creates_all_sensors(hass, config_entry):
     entities = er.async_entries_for_config_entry(registry, config_entry.entry_id)
     entity_ids = {entity.unique_id: entity.entity_id for entity in entities}
 
-    assert len(entity_ids) == len(SENSOR_DESCRIPTIONS) + len(BINARY_SENSOR_DESCRIPTIONS)
+    assert len(entity_ids) == (
+        len(SENSOR_DESCRIPTIONS)
+        + len(BINARY_SENSOR_DESCRIPTIONS)
+        + 2 * len(MANAGED_SOURCE_SENSOR_DESCRIPTIONS)
+    )
 
     target_state = hass.states.get(entity_ids[f"{config_entry.entry_id}_target_soc"])
     assert target_state is not None
@@ -331,9 +339,83 @@ async def test_consumption_history_sensor_exposes_hourly_points(hass, config_ent
     assert point == {
         "home_kwh": 1.0,
         "managed_kwh": 0.5,
+        "managed_sources": {
+            "sensor.ev_energy_total": 0.4,
+            "sensor.water_heater_energy_total": 0.1,
+        },
         "base_kwh": 0.5,
         "is_current_hour": True,
     }
+
+
+async def test_managed_source_sensors_expose_per_source_values(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    hass.states.async_set("sensor.home_energy_total", "1001")
+    hass.states.async_set("sensor.ev_energy_total", "200.4")
+    hass.states.async_set("sensor.water_heater_energy_total", "50.1")
+    await hass.async_block_till_done()
+
+    await config_entry.runtime_data.async_request_refresh()
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    ev_prefix = f"{config_entry.entry_id}_managed_{slugify('sensor.ev_energy_total')}"
+    water_prefix = (
+        f"{config_entry.entry_id}_managed_{slugify('sensor.water_heater_energy_total')}"
+    )
+
+    ev_today = hass.states.get(
+        registry.async_get_entity_id("sensor", DOMAIN, f"{ev_prefix}_today")
+    )
+    ev_current_hour = hass.states.get(
+        registry.async_get_entity_id("sensor", DOMAIN, f"{ev_prefix}_current_hour")
+    )
+    ev_last_hour = hass.states.get(
+        registry.async_get_entity_id("sensor", DOMAIN, f"{ev_prefix}_last_hour")
+    )
+    ev_tracked_total = hass.states.get(
+        registry.async_get_entity_id("sensor", DOMAIN, f"{ev_prefix}_tracked_total")
+    )
+    water_today = hass.states.get(
+        registry.async_get_entity_id("sensor", DOMAIN, f"{water_prefix}_today")
+    )
+
+    assert ev_today is not None
+    assert ev_current_hour is not None
+    assert ev_last_hour is not None
+    assert ev_tracked_total is not None
+    assert water_today is not None
+
+    assert round(float(ev_today.state), 6) == 0.4
+    assert round(float(ev_current_hour.state), 6) == 0.4
+    assert round(float(ev_last_hour.state), 6) == 0.0
+    assert round(float(ev_tracked_total.state), 6) == 0.4
+    assert round(float(water_today.state), 6) == 0.1
+
+    assert ev_today.attributes["device_class"] == "energy"
+    assert ev_today.attributes["state_class"] == "total_increasing"
+    assert ev_today.attributes["unit_of_measurement"] == "kWh"
+    assert ev_current_hour.attributes["device_class"] == "energy"
+    assert "state_class" not in ev_current_hour.attributes
+    assert ev_today.attributes["source_entity_id"] == "sensor.ev_energy_total"
+    assert ev_today.attributes["source_name"] == "EV charging energy"
+    assert ev_today.attributes["point_count"] == 1
+    assert "points" not in ev_today.attributes
+
+    ev_history_entity_id = registry.async_get_entity_id(
+        "sensor",
+        DOMAIN,
+        f"{ev_prefix}_history",
+    )
+    ev_history_registry_entry = registry.async_get(ev_history_entity_id)
+    assert ev_history_registry_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+    assert hass.states.get(ev_history_entity_id) is None
 
 
 async def test_sensors_are_unavailable_when_required_data_is_invalid(
@@ -416,6 +498,24 @@ async def test_energy_source_changes_are_recorded_in_internal_history(
 
     assert round(config_entry.runtime_data.history.buckets[key].home_kwh, 6) == 1.0
     assert round(config_entry.runtime_data.history.buckets[key].managed_kwh, 6) == 0.5
+    assert {
+        source: round(value, 6)
+        for source, value in config_entry.runtime_data.history.buckets[
+            key
+        ].managed_sources.items()
+    } == {
+        "sensor.ev_energy_total": 0.4,
+        "sensor.water_heater_energy_total": 0.1,
+    }
+    assert (
+        round(
+            config_entry.runtime_data.history.managed_source_tracked_total_kwh(
+                "sensor.ev_energy_total"
+            ),
+            6,
+        )
+        == 0.4
+    )
     assert (
         round(config_entry.runtime_data.history.base_consumption_for_hour(key), 6)
         == 0.5
