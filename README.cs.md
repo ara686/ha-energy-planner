@@ -100,14 +100,14 @@ Nejužitečnější entity:
 
 | Entita | Význam |
 |--------|--------|
-| `sensor.energy_planner_soc_forecast` | Predikované SoC na konci nastaveného horizontu. V atributech obsahuje body pro graf. |
-| `sensor.energy_planner_soc_forecast_24h` | Predikované SoC přesně za 24 hodin od posledního výpočtu. |
+| `sensor.energy_planner_soc_forecast` | Pasivně predikované SoC na konci nastaveného horizontu. Používá aktuální SoC, historii spotřeby a předpověď FVE, bez předpokladu, že automatizace Energy Planneru už baterii nabila nebo zamkla. V atributech obsahuje body pro graf. |
+| `sensor.energy_planner_soc_forecast_24h` | Pasivně predikované SoC přesně za 24 hodin od posledního výpočtu. |
 | `binary_sensor.energy_planner_charge_now` | Zapnuto, když plán říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |
 | `sensor.energy_planner_target_soc` | Cílové SoC použité plannerem. |
 | `sensor.energy_planner_charge_to_soc` | SoC potřebné pro plánované nabíjení ze sítě. |
 | `sensor.energy_planner_safe_discharge_soc` | Nejnižší SoC, které ještě zachová plán. |
-| `sensor.energy_planner_unused_surplus_today` | Odhad nevyužitého přebytku z FVE pro dnešek. |
+| `sensor.energy_planner_unused_surplus_today` | Odhad nevyužitého přebytku z FVE pro dnešek z pasivní predikce. |
 | `sensor.energy_planner_managed_<source>_today` | Dnešní spotřeba jedné řízené zátěže, například EV nebo TUV. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Sledovaný součet Energy Planneru pro jednu řízenou zátěž. |
 

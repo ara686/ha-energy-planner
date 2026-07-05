@@ -6,7 +6,15 @@ from unittest.mock import AsyncMock
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.const import (
+    CONF_BATTERY_CAPACITY_ENTITY,
+    CONF_BATTERY_MIN_SOC_ENTITY,
+    CONF_BATTERY_SOC_ENTITY,
+    CONF_FORECAST_HORIZON_HOURS,
+    CONF_HISTORY_CORRECTION_PERCENT,
+    CONF_HISTORY_LEARNING_DAYS,
+    CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
+    CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
@@ -19,7 +27,9 @@ from custom_components.energy_planner.coordinator import (
     _consumption_from_hourly_profile,
     _solcast_entity_ids,
     _solcast_forecast,
+    build_planner_result,
 )
+from custom_components.energy_planner.history import EnergyHistory
 from custom_components.energy_planner.sources import (
     parse_float,
     parse_solcast_attributes,
@@ -234,4 +244,43 @@ def test_consumption_from_hourly_profile_uses_target_hour_and_correction():
             history_correction_percent=3,
         )
         == 0.2
+    )
+
+
+def test_build_planner_result_uses_hour_of_day_history_for_soc_forecast(hass):
+    now = datetime(2026, 7, 3, 23, 0)
+    history = EnergyHistory()
+    for hours_ago in range(1, 25):
+        history.add_hourly_sample(
+            now - timedelta(hours=hours_ago),
+            home_kwh=0.171,
+        )
+
+    hass.states.async_set("sensor.battery_soc", "100")
+    hass.states.async_set("sensor.battery_capacity", "10")
+    hass.states.async_set("sensor.battery_min_soc", "20")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_BATTERY_SOC_ENTITY: "sensor.battery_soc",
+            CONF_BATTERY_CAPACITY_ENTITY: "sensor.battery_capacity",
+            CONF_BATTERY_MIN_SOC_ENTITY: "sensor.battery_min_soc",
+            CONF_HOME_ENERGY_ENTITY: "sensor.home_energy_total",
+        },
+        options={
+            CONF_FORECAST_HORIZON_HOURS: 24,
+            CONF_HISTORY_LEARNING_DAYS: 1,
+            CONF_HISTORY_CORRECTION_PERCENT: 0,
+            CONF_INTERVAL_MINUTES: 60,
+            CONF_MIN_BASELINE_KWH_PER_HOUR: 0,
+        },
+    )
+
+    result = build_planner_result(hass, entry, history=history, now=now)
+
+    assert result.state == "ok"
+    assert result.plan["soc_forecast_24h"]["soc_percent"] == 57
+    assert all(
+        point["consumption_kwh"] == 0.18
+        for point in result.plan["soc_forecast"]["points"]
     )

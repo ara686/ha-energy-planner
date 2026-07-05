@@ -21,15 +21,15 @@ Entities**.
 | `sensor.energy_planner_safe_discharge_soc` | `safe_discharge_soc` | Standard | `%` | Lowest SoC the planner considers safe to discharge to while still preserving the future plan. |
 | `sensor.energy_planner_free_capacity_soc` | `free_capacity_soc` | Standard | `%` | Current SoC above `safe_discharge_soc`, expressed as battery percentage. |
 | `sensor.energy_planner_free_capacity` | `free_capacity_kwh` | Standard | `kWh` | Current energy above `safe_discharge_soc`, expressed as battery capacity. |
-| `sensor.energy_planner_unused_surplus_today` | `unused_surplus_today_kwh` | Standard | `kWh` | Forecasted PV surplus for today that cannot be stored or used by the simulated plan. |
-| `sensor.energy_planner_unused_surplus_total` | `unused_surplus_total_kwh` | Standard | `kWh` | Forecasted PV surplus across the configured forecast horizon that cannot be stored or used by the simulated plan. |
-| `sensor.energy_planner_first_full_time` | `first_full_time` | Standard | timestamp | First forecasted time when the battery reaches full SoC. |
+| `sensor.energy_planner_unused_surplus_today` | `unused_surplus_today_kwh` | Standard | `kWh` | Passive forecasted PV surplus for today that cannot be stored in the battery. |
+| `sensor.energy_planner_unused_surplus_total` | `unused_surplus_total_kwh` | Standard | `kWh` | Passive forecasted PV surplus across the configured forecast horizon that cannot be stored in the battery. |
+| `sensor.energy_planner_first_full_time` | `first_full_time` | Standard | timestamp | First passive forecasted time when the battery reaches full SoC. |
 | `sensor.energy_planner_high_tariff_grid_import_at_target` | `vt_grid_import_kwh_at_target` | Standard | `kWh` | Forecasted high-tariff grid import remaining in the simulation when charging to `target_soc`. |
 | `sensor.energy_planner_charged_total_at_target` | `charged_kwh_total_at_target` | Standard | `kWh` | Total grid energy the simulation charges into the battery to reach `target_soc`. |
 | `sensor.energy_planner_soc_at_planner_start` | `soc_at_planner_start` | Diagnostic | `%` | Predicted SoC at the start of the planning window. |
 | `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | Diagnostic | `%` | Predicted SoC at the start of the lock/protection window. |
-| `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and the compact future `points` array for graph cards. |
-| `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
+| `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is passive predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and the compact future `points` array for graph cards. |
+| `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Passive predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
@@ -42,6 +42,13 @@ helper values, so they remain plain percentage sensors.
 
 Forecast `soc_percent` values are rounded to whole integer percentages because
 most PV and battery systems do not provide meaningful decimal SoC precision.
+
+`soc_forecast`, `soc_forecast_24h`, `unused_surplus_today_kwh`,
+`unused_surplus_total_kwh` and `first_full_time` are passive forecasts from the
+current battery SoC, consumption history and PV forecast. They do not assume
+Energy Planner automations have already charged the battery or prevented
+discharge. Plan-specific simulations are exposed separately by
+`vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target`.
 
 ## Managed Source Entities
 

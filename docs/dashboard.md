@@ -57,9 +57,9 @@ and `soc_percent`.
 
 ## Future Unused PV Surplus With ApexCharts
 
-Each forecast point also contains `unused_surplus_kwh`, which is the surplus
-energy for that planner slot. The example below converts slot energy to an
-equivalent power value in `kW`.
+Each forecast point also contains `unused_surplus_kwh`, which is the passive
+forecast surplus energy for that planner slot. The example below converts slot
+energy to an equivalent power value in `kW`.
 
 <img width="518" height="374" alt="image" src="https://github.com/user-attachments/assets/8eea7ce6-5777-481b-a942-4c4f68c3df96" />
 
