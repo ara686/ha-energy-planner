@@ -14,12 +14,18 @@ def test_hourly_aggregation_and_managed_subtraction():
     history = EnergyHistory()
     timestamp = datetime(2026, 7, 3, 10, 15)
 
-    history.add_hourly_sample(timestamp, home_kwh=1.5, managed_kwh=0.4)
+    history.add_hourly_sample(
+        timestamp,
+        home_kwh=1.5,
+        managed_kwh=0.4,
+        managed_source_id="sensor.ev_energy_total",
+    )
     history.add_hourly_sample(timestamp + timedelta(minutes=20), home_kwh=0.5)
 
     key = hour_key(timestamp)
     assert history.buckets[key].home_kwh == 2.0
     assert history.buckets[key].managed_kwh == 0.4
+    assert history.buckets[key].managed_sources == {"sensor.ev_energy_total": 0.4}
     assert history.base_consumption_for_hour(key) == 1.6
     assert history.dirty is True
 
@@ -43,6 +49,7 @@ def test_hourly_points_export_home_managed_and_base_consumption():
             "timestamp": "2026-07-03T10:00:00",
             "home_kwh": 2.0,
             "managed_kwh": 0.5,
+            "managed_sources": {},
             "base_kwh": 1.5,
             "is_current_hour": False,
         },
@@ -50,6 +57,7 @@ def test_hourly_points_export_home_managed_and_base_consumption():
             "timestamp": "2026-07-03T11:00:00",
             "home_kwh": 1.25,
             "managed_kwh": 0.0,
+            "managed_sources": {},
             "base_kwh": 1.25,
             "is_current_hour": False,
         },
@@ -120,6 +128,10 @@ def test_history_roundtrip_survives_restart_serialization():
     assert restored.dirty is False
     assert restored.base_consumption_for_hour(hour_key(timestamp)) == 1.0
     assert restored.cumulative_readings["home:sensor.home_energy_total"].value == 11.2
+    assert restored.buckets[hour_key(timestamp)].managed_sources == {
+        "sensor.ev_energy_total": 0.2
+    }
+    assert restored.managed_source_tracked_total_kwh("sensor.ev_energy_total") == 0.2
 
 
 def test_cumulative_energy_source_records_only_positive_deltas():
@@ -275,7 +287,93 @@ def test_multiple_managed_energy_sources_are_summed_by_hour():
     )
 
     assert history.buckets["2026-07-01T11:00:00"].managed_kwh == 5.0
+    assert history.buckets["2026-07-01T11:00:00"].managed_sources == {
+        "sensor.ev_energy_total": 2.0,
+        "sensor.water_heater_energy_total": 3.0,
+    }
     assert history.base_consumption_for_hour("2026-07-01T11:00:00") == 5.0
+
+
+def test_managed_source_history_reports_per_source_values():
+    now = datetime(2026, 7, 3, 12, 30)
+    history = EnergyHistory()
+    history.add_hourly_sample(
+        now.replace(hour=10, minute=5),
+        home_kwh=2.0,
+        managed_kwh=0.75,
+        managed_source_id="sensor.ev_energy_total",
+    )
+    history.add_hourly_sample(
+        now.replace(hour=11, minute=5),
+        home_kwh=1.0,
+        managed_kwh=0.25,
+        managed_source_id="sensor.ev_energy_total",
+    )
+    history.add_hourly_sample(
+        now.replace(hour=12, minute=5),
+        home_kwh=1.0,
+        managed_kwh=0.5,
+        managed_source_id="sensor.water_heater_energy_total",
+    )
+
+    points, truncated = history.managed_source_hourly_points(
+        "sensor.ev_energy_total",
+        now=now,
+        learning_days=1,
+    )
+
+    assert not truncated
+    assert points == [
+        {
+            "timestamp": "2026-07-03T10:00:00",
+            "managed_kwh": 0.75,
+            "is_current_hour": False,
+        },
+        {
+            "timestamp": "2026-07-03T11:00:00",
+            "managed_kwh": 0.25,
+            "is_current_hour": False,
+        },
+    ]
+    assert (
+        history.managed_source_today_kwh(
+            "sensor.ev_energy_total",
+            now=now,
+        )
+        == 1.0
+    )
+    assert (
+        history.managed_source_last_hour_kwh(
+            "sensor.ev_energy_total",
+            now=now,
+        )
+        == 0.25
+    )
+    assert (
+        history.managed_source_current_hour_kwh(
+            "sensor.water_heater_energy_total",
+            now=now,
+        )
+        == 0.5
+    )
+
+
+def test_legacy_history_without_managed_sources_still_loads():
+    restored = EnergyHistory.from_dict(
+        {
+            "buckets": [
+                {
+                    "hour_start": "2026-07-03T10:00:00",
+                    "home_kwh": 2.0,
+                    "managed_kwh": 0.5,
+                }
+            ],
+            "cumulative_readings": {},
+        }
+    )
+
+    assert restored.buckets["2026-07-03T10:00:00"].managed_kwh == 0.5
+    assert restored.buckets["2026-07-03T10:00:00"].managed_sources == {}
 
 
 def test_history_status_reports_usable_bucket_count():

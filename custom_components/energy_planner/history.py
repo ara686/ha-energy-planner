@@ -23,6 +23,7 @@ class HourlyEnergyBucket:
     hour_start: str
     home_kwh: float = 0.0
     managed_kwh: float = 0.0
+    managed_sources: dict[str, float] = field(default_factory=dict)
 
     @property
     def base_kwh(self) -> float:
@@ -33,14 +34,20 @@ class HourlyEnergyBucket:
             "hour_start": self.hour_start,
             "home_kwh": round(self.home_kwh, 6),
             "managed_kwh": round(self.managed_kwh, 6),
+            "managed_sources": {
+                source: round(value, 6)
+                for source, value in sorted(self.managed_sources.items())
+            },
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HourlyEnergyBucket:
+        managed_sources = _float_dict(data.get("managed_sources"))
         return cls(
             hour_start=str(data["hour_start"]),
             home_kwh=float(data.get("home_kwh", 0.0)),
-            managed_kwh=float(data.get("managed_kwh", 0.0)),
+            managed_kwh=float(data.get("managed_kwh", sum(managed_sources.values()))),
+            managed_sources=managed_sources,
         )
 
 
@@ -69,6 +76,7 @@ class EnergyHistory:
     cumulative_readings: dict[str, CumulativeHourlyReading] = field(
         default_factory=dict
     )
+    managed_source_totals: dict[str, float] = field(default_factory=dict)
     dirty: bool = False
 
     def add_hourly_sample(
@@ -77,6 +85,7 @@ class EnergyHistory:
         *,
         home_kwh: float,
         managed_kwh: float = 0.0,
+        managed_source_id: str | None = None,
     ) -> None:
         home_delta = max(home_kwh, 0.0)
         managed_delta = max(managed_kwh, 0.0)
@@ -86,6 +95,10 @@ class EnergyHistory:
         bucket = self.buckets.setdefault(key, HourlyEnergyBucket(hour_start=key))
         bucket.home_kwh += home_delta
         bucket.managed_kwh += managed_delta
+        if managed_delta > 0 and managed_source_id:
+            bucket.managed_sources[managed_source_id] = (
+                bucket.managed_sources.get(managed_source_id, 0.0) + managed_delta
+            )
         self.dirty = True
 
     def base_consumption_for_hour(self, key: str) -> float:
@@ -107,6 +120,10 @@ class EnergyHistory:
                 "timestamp": bucket.hour_start,
                 "home_kwh": round(bucket.home_kwh, 6),
                 "managed_kwh": round(bucket.managed_kwh, 6),
+                "managed_sources": {
+                    source: round(value, 6)
+                    for source, value in sorted(bucket.managed_sources.items())
+                },
                 "base_kwh": round(bucket.base_kwh, 6),
                 "is_current_hour": bucket.hour_start == current_key,
             }
@@ -130,17 +147,21 @@ class EnergyHistory:
     ) -> EnergyHistory:
         """Build hourly history from cumulative energy source samples."""
         managed_by_hour: dict[str, float] = {}
-        for samples in (managed_samples_by_source or {}).values():
+        managed_sources_by_hour: dict[str, dict[str, float]] = {}
+        for source_id, samples in (managed_samples_by_source or {}).items():
             for key, value in _positive_deltas_by_hour(samples).items():
                 managed_by_hour[key] = managed_by_hour.get(key, 0.0) + value
+                source_values = managed_sources_by_hour.setdefault(key, {})
+                source_values[source_id] = source_values.get(source_id, 0.0) + value
 
         home_by_hour = _positive_deltas_by_hour(home_samples)
         history = cls()
-        for key, home_kwh in home_by_hour.items():
+        for key in home_by_hour.keys() | managed_by_hour.keys():
             history.buckets[key] = HourlyEnergyBucket(
                 hour_start=key,
-                home_kwh=home_kwh,
+                home_kwh=home_by_hour.get(key, 0.0),
                 managed_kwh=managed_by_hour.get(key, 0.0),
+                managed_sources=managed_sources_by_hour.get(key, {}),
             )
         return history
 
@@ -176,7 +197,89 @@ class EnergyHistory:
         if source_type == "home":
             self.add_hourly_sample(timestamp, home_kwh=delta)
         elif source_type == "managed":
-            self.add_hourly_sample(timestamp, home_kwh=0.0, managed_kwh=delta)
+            source_entity_id = _source_entity_id(source_type, source_id)
+            self.add_hourly_sample(
+                timestamp,
+                home_kwh=0.0,
+                managed_kwh=delta,
+                managed_source_id=source_entity_id,
+            )
+            self.managed_source_totals[source_entity_id] = (
+                self.managed_source_totals.get(source_entity_id, 0.0) + delta
+            )
+            self.dirty = True
+
+    def managed_source_current_hour_kwh(
+        self,
+        source_id: str,
+        *,
+        now: datetime,
+    ) -> float:
+        return self._managed_source_bucket_kwh(source_id, hour_key(now))
+
+    def managed_source_last_hour_kwh(
+        self,
+        source_id: str,
+        *,
+        now: datetime,
+    ) -> float:
+        return self._managed_source_bucket_kwh(
+            source_id,
+            hour_key(now - timedelta(hours=1)),
+        )
+
+    def managed_source_today_kwh(
+        self,
+        source_id: str,
+        *,
+        now: datetime,
+    ) -> float:
+        today = now.date()
+        return sum(
+            bucket.managed_sources.get(source_id, 0.0)
+            for key, bucket in self.buckets.items()
+            if datetime.fromisoformat(key).date() == today
+        )
+
+    def managed_source_tracked_total_kwh(self, source_id: str) -> float:
+        return self.managed_source_totals.get(source_id, 0.0)
+
+    def managed_source_hourly_points(
+        self,
+        source_id: str,
+        *,
+        now: datetime,
+        learning_days: int,
+        point_limit: int | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Return compact per-source managed history points for visualization."""
+        cutoff = now - timedelta(days=max(1, learning_days))
+        current_key = hour_key(now)
+        points = [
+            {
+                "timestamp": bucket.hour_start,
+                "managed_kwh": round(
+                    bucket.managed_sources.get(source_id, 0.0),
+                    6,
+                ),
+                "is_current_hour": bucket.hour_start == current_key,
+            }
+            for key, bucket in sorted(
+                self.buckets.items(),
+                key=lambda item: _datetime_sort_value(item[0]),
+            )
+            if _datetime_sort_value(key) >= _datetime_value(cutoff)
+            and bucket.managed_sources.get(source_id, 0.0) > 0
+        ]
+        if point_limit is None or len(points) <= point_limit:
+            return points, False
+        return points[-point_limit:], True
+
+    def _managed_source_bucket_kwh(self, source_id: str, key: str) -> float:
+        bucket = self.buckets.get(key)
+        if bucket is None:
+            return 0.0
+        return bucket.managed_sources.get(source_id, 0.0)
 
     def hourly_base_consumption_profile(
         self,
@@ -243,6 +346,10 @@ class EnergyHistory:
                 source: reading.as_dict()
                 for source, reading in sorted(self.cumulative_readings.items())
             },
+            "managed_source_totals": {
+                source: round(value, 6)
+                for source, value in sorted(self.managed_source_totals.items())
+            },
         }
 
     @classmethod
@@ -267,7 +374,11 @@ class EnergyHistory:
             if isinstance(raw_readings, dict)
             else {}
         )
-        return cls(buckets=buckets, cumulative_readings=cumulative_readings)
+        return cls(
+            buckets=buckets,
+            cumulative_readings=cumulative_readings,
+            managed_source_totals=_float_dict(data.get("managed_source_totals")),
+        )
 
 
 class EnergyHistoryStore:
@@ -325,3 +436,19 @@ def _positive_deltas_by_hour(
         key = hour_key(sample.timestamp)
         values[key] = values.get(key, 0.0) + delta
     return values
+
+
+def _float_dict(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    parsed: dict[str, float] = {}
+    for key, raw_value in value.items():
+        try:
+            parsed[str(key)] = max(float(raw_value), 0.0)
+        except (TypeError, ValueError):
+            continue
+    return parsed
+
+
+def _source_entity_id(source_type: str, source_id: str) -> str:
+    return source_id.removeprefix(f"{source_type}:")

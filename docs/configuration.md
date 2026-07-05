@@ -17,7 +17,7 @@ The `Key` column is the internal configuration key visible in diagnostics.
 | Battery capacity | `battery_capacity_entity` | Required | Numeric battery capacity sensor in `kWh`. | Use an inverter/BMS entity if it exists. If capacity is fixed and not exposed by the inverter, create a Home Assistant helper with the configured capacity value. |
 | Battery minimum state of charge | `battery_min_soc_entity` | Required | Numeric minimum/reserve SoC sensor in `%`. | Use the minimum SoC entity from the inverter/BMS. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
 | Home energy source | `home_energy_entity` | Required | Cumulative whole-home energy sensor in `kWh`. | Use a total/total-increasing energy sensor for house consumption. Energy Planner builds the hourly history internally from this source. |
-| Managed energy sources | `managed_energy_entities` | Optional | Zero, one or more cumulative energy sensors in `kWh`. | Select intentionally controlled loads, for example EV charging, boiler heating or water heating. These values are summed and subtracted from home consumption per hour. |
+| Managed energy sources | `managed_energy_entities` | Optional | Zero, one or more cumulative energy sensors in `kWh`. | Select intentionally controlled loads, for example EV charging, boiler heating or water heating. These values are summed and subtracted from home consumption per hour. Energy Planner also creates separate per-source managed sensors for each selected entity. |
 | Solcast forecast for today | `solcast_today_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_today`. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
 | Solcast forecast for tomorrow | `solcast_tomorrow_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_tomorrow`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect this sibling entity. |
 | Additional Solcast forecast days | `solcast_additional_entities` | Optional | One or more Solcast forecast sensors from Home Assistant. | Examples: `sensor.solcast_pv_forecast_forecast_day_3`, `sensor.solcast_pv_forecast_forecast_day_4`. Standard `forecast_day_3` through `forecast_day_7` siblings can be auto-detected when they exist. |
@@ -35,6 +35,13 @@ heating, water heating or another managed load. Managed consumption must already
 be part of the home consumption total; Energy Planner subtracts it per hour to
 learn the uncontrollable baseline. Do not use a net-after-managed house sensor,
 otherwise managed consumption would be subtracted twice.
+
+Each managed source is tracked separately as well as in the combined
+`managed_kwh` total. This lets you see values such as EV charging today, water
+heating in the last hour or a tracked total for one controlled load. The source
+entities should have useful Home Assistant friendly names before you add the
+integration, because those names are used when the per-source entities are first
+created.
 
 If you only have a power sensor, for example `sensor.home_power` in `W`, create
 a Home Assistant Integral helper first to convert power to energy in `kWh`, then

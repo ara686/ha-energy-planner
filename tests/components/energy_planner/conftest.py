@@ -137,6 +137,7 @@ def set_source_states(hass, *, invalid_required_state: bool = False) -> None:
         "200",
         {
             "device_class": SensorDeviceClass.ENERGY,
+            "friendly_name": "EV charging energy",
             "state_class": SensorStateClass.TOTAL_INCREASING,
             "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
         },
@@ -146,6 +147,7 @@ def set_source_states(hass, *, invalid_required_state: bool = False) -> None:
         "50",
         {
             "device_class": SensorDeviceClass.ENERGY,
+            "friendly_name": "Water heater energy",
             "state_class": SensorStateClass.TOTAL_INCREASING,
             "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
         },

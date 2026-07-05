@@ -14,8 +14,9 @@ When Home Assistant history is available, the planner reads the configured
 2. Sort samples by timestamp.
 3. Convert consecutive samples into positive deltas.
 4. Assign each delta to the hour of the newer sample.
-5. Sum managed deltas from all managed sources for each hour.
-6. Subtract managed kWh from home kWh for the same hour key.
+5. Store managed deltas both per source and as a combined managed total for
+   each hour.
+6. Subtract combined managed kWh from home kWh for the same hour key.
 7. Group the resulting base consumption by hour of day.
 8. Average each hour-of-day group and apply the built-in 5% history margin.
 
@@ -30,3 +31,18 @@ is calculated.
 Energy Planner also keeps its own storage-backed hourly history as a fallback.
 State changes of the configured energy source sensors are recorded as positive
 cumulative deltas. The first reading is kept only as a baseline.
+
+Per-source managed history is stored in the same hourly buckets. For example,
+one bucket can contain:
+
+```text
+home_kwh = 4.2
+managed_kwh = 1.7
+managed_sources.sensor.ev_energy_total = 1.2
+managed_sources.sensor.water_heater_energy_total = 0.5
+base_kwh = 2.5
+```
+
+The planner still uses the combined `managed_kwh` value for baseline
+calculation. The per-source values are exposed for dashboards, statistics and
+automation conditions.

@@ -24,6 +24,8 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
 - Odhadne nevyužitý přebytek z FVE pro bojler, bazén, ohřev vody nebo EV.
 - Oddělí řízené spotřebiče od běžné spotřeby domu, aby se lépe učil běžný
   profil domácnosti.
+- Ukáže řízené spotřebiče zvlášť, takže uvidíte spotřebu EV, TUV, bazénu nebo
+  jiné řízené zátěže samostatně.
 
 Například u tarifu D25d můžete v létě využít přebytek z FVE pro pružné
 spotřebiče a v zimě lépe plánovat využití nízkého tarifu tak, aby baterie
@@ -106,6 +108,8 @@ Nejužitečnější entity:
 | `sensor.energy_planner_charge_to_soc` | SoC potřebné pro plánované nabíjení ze sítě. |
 | `sensor.energy_planner_safe_discharge_soc` | Nejnižší SoC, které ještě zachová plán. |
 | `sensor.energy_planner_unused_surplus_today` | Odhad nevyužitého přebytku z FVE pro dnešek. |
+| `sensor.energy_planner_managed_<source>_today` | Dnešní spotřeba jedné řízené zátěže, například EV nebo TUV. |
+| `sensor.energy_planner_managed_<source>_tracked_total` | Sledovaný součet Energy Planneru pro jednu řízenou zátěž. |
 
 Kompletní seznam entit je v [přehledu entit](docs/entities.md).
 
@@ -117,6 +121,7 @@ Dobré první dashboardy:
 - Gauge s hodnotou SoC za 24 hodin z `sensor.energy_planner_soc_forecast_24h`.
 - Graf nevyužitého přebytku FVE.
 - Graf spotřeby domu proti řízené spotřebě.
+- Graf řízených spotřebičů zvlášť, například EV a TUV jako samostatné řady.
 
 Lovelace a ApexCharts ukázky jsou v [dashboard příkladech](docs/dashboard.md).
 Screenshoty se dají později doplnit tam, bez zbytečného natahování hlavního
@@ -131,6 +136,8 @@ automatizace:
 - `binary_sensor.energy_planner_discharge_allowed` pro povolení vybíjení.
 - `sensor.energy_planner_unused_surplus_today` pro spuštění pružných spotřebičů,
   když je dost předpokládaného přebytku z FVE.
+- Per-load managed senzory pro prioritizaci spotřebičů, například nejdřív
+  dohřát TUV a teprve potom povolit nabíjení EV.
 
 Příklady automatizací s placeholdery jsou v
 [příkladech automatizací](docs/automations.md). Automatizace vždy nejdřív ručně
