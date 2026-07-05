@@ -172,7 +172,14 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
     )
     free_capacity_soc = max(0.0, current_soc - safe_discharge_soc)
 
-    simulation = _simulate(
+    forecast_simulation = _simulate(
+        data=data,
+        slots=slots,
+        initial_soc=current_soc,
+        grid_charge_target_soc=None,
+        nt_lock_soc=floor_soc,
+    )
+    planned_simulation = _simulate(
         data=data,
         slots=slots,
         initial_soc=current_soc,
@@ -180,20 +187,20 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
         nt_lock_soc=lock_soc,
     )
     forecast_24h = _point_at_or_project_end(
-        simulation.points,
+        forecast_simulation.points,
         data.now + timedelta(hours=24),
         data.interval_minutes,
     )
     forecast_horizon = _point_at_or_project_end(
-        simulation.points, horizon_end, data.interval_minutes
-    ) or (simulation.points[-1] if simulation.points else None)
+        forecast_simulation.points, horizon_end, data.interval_minutes
+    ) or (forecast_simulation.points[-1] if forecast_simulation.points else None)
 
     state = "warning" if warnings else "ok"
     if not forecast_24h:
         state = "warning"
         warnings.append("Forecast data does not cover the required 24 hour horizon.")
 
-    points = [point.as_dict() for point in simulation.points]
+    points = [point.as_dict() for point in forecast_simulation.points]
     soc_forecast_24h = forecast_24h.as_dict() if forecast_24h else None
 
     return PlannerResult(
@@ -208,11 +215,13 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
             "free_capacity_kwh": _round(
                 _soc_to_kwh(free_capacity_soc, data.battery_capacity_kwh)
             ),
-            "unused_surplus_kwh": _round(simulation.unused_surplus_today_kwh),
-            "unused_surplus_kwh_total": _round(simulation.unused_surplus_kwh),
-            "first_full_time": _iso_or_none(simulation.first_full_time),
-            "vt_grid_import_kwh_at_target": _round(simulation.vt_grid_import_kwh),
-            "charged_kwh_total_at_target": _round(simulation.charged_kwh),
+            "unused_surplus_kwh": _round(forecast_simulation.unused_surplus_today_kwh),
+            "unused_surplus_kwh_total": _round(forecast_simulation.unused_surplus_kwh),
+            "first_full_time": _iso_or_none(forecast_simulation.first_full_time),
+            "vt_grid_import_kwh_at_target": _round(
+                planned_simulation.vt_grid_import_kwh
+            ),
+            "charged_kwh_total_at_target": _round(planned_simulation.charged_kwh),
             "soc_at_planner_start": _round(soc_at_planner_start),
             "kwh_at_planner_start": _round(kwh_at_planner_start),
             "planner_start": _iso_or_none(planner_start),

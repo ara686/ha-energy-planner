@@ -151,7 +151,7 @@ def test_soc_forecast_contains_24h_point_and_longer_horizon():
     assert result.plan["soc_at_forecast_horizon"] < 90
 
 
-def test_nt_window_uses_grid_and_preserves_battery():
+def test_soc_forecast_uses_battery_in_nt_until_minimum_soc():
     now = datetime(2026, 7, 3, 23, 0)
     result = calculate_plan(
         _input(
@@ -166,8 +166,11 @@ def test_nt_window_uses_grid_and_preserves_battery():
 
     first_point = result.plan["soc_forecast"]["points"][0]
     assert first_point["is_nt"] is True
-    assert first_point["grid_import_kwh"] == 1.0
-    assert first_point["battery_kwh"] == 5.0
+    assert first_point["grid_import_kwh"] == 0.0
+    assert first_point["battery_kwh"] == 4.0
+    assert result.plan["target_soc"] == 100.0
+    assert result.plan["vt_grid_import_kwh_at_target"] == 7.0
+    assert result.plan["charged_kwh_total_at_target"] == 8.0
 
 
 def test_equal_start_end_window_is_empty():

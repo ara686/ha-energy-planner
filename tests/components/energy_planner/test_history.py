@@ -51,6 +51,7 @@ def test_hourly_points_export_home_managed_and_base_consumption():
             "managed_kwh": 0.5,
             "managed_sources": {},
             "base_kwh": 1.5,
+            "base_usable": True,
             "is_current_hour": False,
         },
         {
@@ -59,6 +60,7 @@ def test_hourly_points_export_home_managed_and_base_consumption():
             "managed_kwh": 0.0,
             "managed_sources": {},
             "base_kwh": 1.25,
+            "base_usable": True,
             "is_current_hour": False,
         },
     ]
@@ -80,6 +82,34 @@ def test_managed_subtraction_never_returns_negative_base_consumption():
     history.add_hourly_sample(timestamp, home_kwh=0.5, managed_kwh=1.5)
 
     assert history.base_consumption_for_hour(hour_key(timestamp)) == 0.0
+    assert history.buckets[hour_key(timestamp)].base_usable is False
+
+
+def test_hourly_base_consumption_profile_ignores_managed_only_buckets():
+    now = datetime(2026, 7, 5, 12, 0)
+    history = EnergyHistory()
+    history.add_hourly_sample(
+        datetime(2026, 7, 3, 22, 0),
+        home_kwh=0.0,
+        managed_kwh=2.0,
+        managed_source_id="sensor.ev_energy_total",
+    )
+    history.add_hourly_sample(
+        datetime(2026, 7, 4, 22, 0),
+        home_kwh=1.5,
+        managed_kwh=0.2,
+        managed_source_id="sensor.ev_energy_total",
+    )
+
+    profile = history.hourly_base_consumption_profile(
+        now=now,
+        learning_days=3,
+        margin_percent=0,
+    )
+
+    assert history.buckets["2026-07-03T22:00:00"].base_usable is False
+    assert history.buckets["2026-07-04T22:00:00"].base_usable is True
+    assert profile[22] == 1.3
 
 
 def test_cleanup_removes_buckets_outside_retention():
@@ -387,6 +417,24 @@ def test_history_status_reports_usable_bucket_count():
         "usable_bucket_count": 1,
         "learning_days": 1,
         "has_completed_bucket": True,
+    }
+
+
+def test_history_status_counts_only_usable_completed_buckets():
+    now = datetime(2026, 7, 3, 12, 0)
+    history = EnergyHistory()
+    history.add_hourly_sample(
+        now - timedelta(hours=2),
+        home_kwh=0.0,
+        managed_kwh=1.0,
+    )
+    history.add_hourly_sample(now, home_kwh=1.0)
+
+    assert history.status(now=now, learning_days=1) == {
+        "bucket_count": 2,
+        "usable_bucket_count": 1,
+        "learning_days": 1,
+        "has_completed_bucket": False,
     }
 
 

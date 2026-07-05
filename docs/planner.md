@@ -14,7 +14,13 @@ Solcast `pv_estimate` values are normalized by the Home Assistant source parser
 from kW to kWh using the forecast period length. The pure planner only receives
 PV energy per period.
 
-The SoC forecast output is a compact time series. Each point contains:
+The SoC forecast output is a compact passive time series. It starts from the
+current battery SoC and applies the normalized consumption and PV forecast
+without assuming Energy Planner automations have already charged the battery or
+prevented discharge. Plan-specific target simulations are reported separately by
+the `vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target` outputs.
+
+Each point contains:
 
 - timestamp
 - predicted SoC percent

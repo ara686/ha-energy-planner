@@ -31,6 +31,7 @@ from custom_components.energy_planner.models import PlannerResult
 from custom_components.energy_planner.sensor import (
     MANAGED_SOURCE_SENSOR_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
+    _consumption_history_value,
 )
 
 from .conftest import set_source_states
@@ -344,8 +345,26 @@ async def test_consumption_history_sensor_exposes_hourly_points(hass, config_ent
             "sensor.water_heater_energy_total": 0.1,
         },
         "base_kwh": 0.5,
+        "base_usable": True,
         "is_current_hour": True,
     }
+
+
+def test_consumption_history_value_uses_latest_usable_point():
+    result = PlannerResult(
+        state="ok",
+        updated=datetime(2026, 7, 3, 12, 0),
+        forecast={
+            "consumption_history": {
+                "points": [
+                    {"base_kwh": 1.4, "base_usable": True},
+                    {"base_kwh": 0.0, "base_usable": False},
+                ],
+            },
+        },
+    )
+
+    assert _consumption_history_value(result) == 1.4
 
 
 async def test_managed_source_sensors_expose_per_source_values(hass, config_entry):
