@@ -9,10 +9,10 @@ MANIFEST_PATH = (
 REPOSITORY_ROOT = Path(__file__).parents[3]
 
 
-def test_manifest_declares_calculated_helper_integration() -> None:
+def test_manifest_declares_calculated_hub_integration() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text())
 
-    assert manifest["integration_type"] == "helper"
+    assert manifest["integration_type"] == "hub"
     assert manifest["iot_class"] == "calculated"
 
 
