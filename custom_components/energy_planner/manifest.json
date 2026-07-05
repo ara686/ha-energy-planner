@@ -5,11 +5,11 @@
   "codeowners": ["@ara686"],
   "config_flow": true,
   "documentation": "https://github.com/ara686/ha-energy-planner",
-  "integration_type": "helper",
+  "integration_type": "hub",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/ara686/ha-energy-planner/issues",
   "quality_scale": "bronze",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.1.7"
+  "version": "0.1.8"
 }
