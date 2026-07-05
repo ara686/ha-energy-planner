@@ -29,6 +29,10 @@ class HourlyEnergyBucket:
     def base_kwh(self) -> float:
         return max(self.home_kwh - self.managed_kwh, 0.0)
 
+    @property
+    def base_usable(self) -> bool:
+        return self.home_kwh > 0 and self.home_kwh + 1e-9 >= self.managed_kwh
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "hour_start": self.hour_start,
@@ -125,6 +129,7 @@ class EnergyHistory:
                     for source, value in sorted(bucket.managed_sources.items())
                 },
                 "base_kwh": round(bucket.base_kwh, 6),
+                "base_usable": bucket.base_usable,
                 "is_current_hour": bucket.hour_start == current_key,
             }
             for key, bucket in sorted(
@@ -299,6 +304,8 @@ class EnergyHistory:
                 continue
             if not include_current_hour and key == current_key:
                 continue
+            if not bucket.base_usable:
+                continue
             grouped.setdefault(bucket_time.hour, []).append(bucket.base_kwh)
 
         multiplier = 1 + margin_percent / 100
@@ -323,14 +330,18 @@ class EnergyHistory:
         cutoff = now - timedelta(days=max(1, learning_days))
         usable_bucket_count = sum(
             1
-            for key in self.buckets
+            for key, bucket in self.buckets.items()
             if _datetime_sort_value(key) >= _datetime_value(cutoff)
+            and bucket.base_usable
         )
         return {
             "bucket_count": len(self.buckets),
             "usable_bucket_count": usable_bucket_count,
             "learning_days": learning_days,
-            "has_completed_bucket": any(key != hour_key(now) for key in self.buckets),
+            "has_completed_bucket": any(
+                key != hour_key(now) and bucket.base_usable
+                for key, bucket in self.buckets.items()
+            ),
         }
 
     def as_dict(self) -> dict[str, Any]:

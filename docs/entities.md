@@ -34,7 +34,7 @@ Entities**.
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
-| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh`, per-source `managed_sources` and `base_kwh` values for graph cards. |
+| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest usable hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh`, per-source `managed_sources`, `base_kwh` and `base_usable` values for graph cards. |
 
 Only `sensor.energy_planner_soc_forecast` uses Home Assistant's `battery`
 device class. The other SoC outputs are planning setpoints, limits or future

@@ -96,11 +96,14 @@ def _consumption_history_value(result: PlannerResult) -> float | None:
     points = history.get("points")
     if not isinstance(points, list) or not points:
         return None
-    latest = points[-1]
-    if not isinstance(latest, dict):
-        return None
-    value = latest.get("base_kwh")
-    return value if isinstance(value, (int, float)) else None
+    for latest in reversed(points):
+        if not isinstance(latest, dict):
+            continue
+        if latest.get("base_usable", True) is False:
+            continue
+        value = latest.get("base_kwh")
+        return value if isinstance(value, (int, float)) else None
+    return None
 
 
 def _consumption_history_attributes(result: PlannerResult) -> dict[str, Any]:
