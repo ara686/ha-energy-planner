@@ -18,7 +18,7 @@ For each configured source:
 3. Convert consecutive cumulative samples into positive deltas.
 4. Assign each delta to the hour of the newer sample.
 
-Managed deltas from all managed sources are summed for each hour.
+Managed deltas are stored per source and also summed for each hour.
 
 For each home hour:
 
@@ -27,6 +27,10 @@ base_consumption_kwh = max(home_kwh - managed_kwh, 0)
 ```
 
 The base consumption values are then grouped by hour of day.
+
+The per-source managed values do not change the SoC planner algorithm directly.
+They are exposed through Home Assistant sensors so users can graph and automate
+loads such as EV charging, water heating or pool technology separately.
 
 ```text
 hourly_profile[hour] = round(mean(base_consumption for that hour) * 1.05, 2)

@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
+from homeassistant.util import slugify
 
 try:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -32,6 +33,7 @@ from .const import (
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
+    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
@@ -51,6 +53,12 @@ class EnergyPlannerSensorDescription(SensorEntityDescription):
     entry_value_fn: Callable[[ConfigEntry], Any] | None = None
     attr_fn: Callable[[PlannerResult], dict[str, Any]] | None = None
     always_available: bool = False
+    entity_registry_enabled_default: bool = True
+
+
+@dataclass(frozen=True, kw_only=True)
+class ManagedSourceSensorDescription(SensorEntityDescription):
+    value_key: str = ""
     entity_registry_enabled_default: bool = True
 
 
@@ -98,6 +106,30 @@ def _consumption_history_value(result: PlannerResult) -> float | None:
 def _consumption_history_attributes(result: PlannerResult) -> dict[str, Any]:
     history = result.forecast.get("consumption_history")
     return dict(history) if isinstance(history, dict) else {}
+
+
+def _managed_source_history(result: PlannerResult, source_id: str) -> dict[str, Any]:
+    history = result.forecast.get("managed_source_history")
+    if not isinstance(history, dict):
+        return {}
+    payload = history.get(source_id)
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _managed_source_value(
+    result: PlannerResult,
+    source_id: str,
+    value_key: str,
+) -> float | None:
+    value = _managed_source_history(result, source_id).get(value_key)
+    return round(value, 6) if isinstance(value, (int, float)) else None
+
+
+def _managed_source_history_attributes(
+    result: PlannerResult,
+    source_id: str,
+) -> dict[str, Any]:
+    return _managed_source_history(result, source_id)
 
 
 SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
@@ -380,6 +412,59 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
 )
 
 
+MANAGED_SOURCE_SENSOR_DESCRIPTIONS: tuple[ManagedSourceSensorDescription, ...] = (
+    ManagedSourceSensorDescription(
+        key="today",
+        value_key="today_kwh",
+        translation_key="managed_source_today",
+        icon="mdi:calendar-today",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+    ),
+    ManagedSourceSensorDescription(
+        key="current_hour",
+        value_key="current_hour_kwh",
+        translation_key="managed_source_current_hour",
+        icon="mdi:clock-start",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=3,
+    ),
+    ManagedSourceSensorDescription(
+        key="last_hour",
+        value_key="last_hour_kwh",
+        translation_key="managed_source_last_hour",
+        icon="mdi:clock-check-outline",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=3,
+    ),
+    ManagedSourceSensorDescription(
+        key="tracked_total",
+        value_key="tracked_total_kwh",
+        translation_key="managed_source_tracked_total",
+        icon="mdi:counter",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+    ),
+    ManagedSourceSensorDescription(
+        key="history",
+        value_key="latest_kwh",
+        translation_key="managed_source_history",
+        icon="mdi:chart-timeline-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=3,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -387,10 +472,23 @@ async def async_setup_entry(
 ) -> None:
     """Set up Energy Planner sensors."""
     coordinator: EnergyPlannerCoordinator = entry.runtime_data
-    async_add_entities(
+    entities: list[SensorEntity] = [
         EnergyPlannerSensor(coordinator, entry, description)
         for description in SENSOR_DESCRIPTIONS
-    )
+    ]
+    for source_entity_id in _managed_energy_entity_ids(entry):
+        source_name = _source_display_name(hass, source_entity_id)
+        entities.extend(
+            EnergyPlannerManagedSourceSensor(
+                coordinator,
+                entry,
+                source_entity_id=source_entity_id,
+                source_name=source_name,
+                description=description,
+            )
+            for description in MANAGED_SOURCE_SENSOR_DESCRIPTIONS
+        )
+    async_add_entities(entities)
 
 
 class EnergyPlannerSensor(CoordinatorEntity[EnergyPlannerCoordinator], SensorEntity):
@@ -446,6 +544,86 @@ class EnergyPlannerSensor(CoordinatorEntity[EnergyPlannerCoordinator], SensorEnt
         return self.entity_description.attr_fn(result)
 
 
+class EnergyPlannerManagedSourceSensor(
+    CoordinatorEntity[EnergyPlannerCoordinator],
+    SensorEntity,
+):
+    """Energy Planner per-managed-source history sensor."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: EnergyPlannerCoordinator,
+        entry: ConfigEntry,
+        *,
+        source_entity_id: str,
+        source_name: str,
+        description: ManagedSourceSensorDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self._source_entity_id = source_entity_id
+        self._source_name = source_name
+        self.entity_description = description
+        self._attr_unique_id = (
+            f"{entry.entry_id}_managed_{slugify(source_entity_id)}_{description.key}"
+        )
+        self._attr_entity_registry_enabled_default = (
+            description.entity_registry_enabled_default
+        )
+        self._attr_translation_placeholders = {"source": source_name}
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": entry.title,
+        }
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.data is not None
+
+    @property
+    def native_value(self) -> float | None:
+        if self.entity_description.key == "tracked_total":
+            return round(
+                self.coordinator.history.managed_source_tracked_total_kwh(
+                    self._source_entity_id
+                ),
+                6,
+            )
+        result = self.coordinator.data
+        if result is None:
+            return None
+        return _managed_source_value(
+            result,
+            self._source_entity_id,
+            self.entity_description.value_key,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        attributes: dict[str, Any] = {
+            "source_entity_id": self._source_entity_id,
+            "source_name": self._source_name,
+        }
+        result = self.coordinator.data
+        if result is None:
+            return attributes
+
+        history = _managed_source_history_attributes(result, self._source_entity_id)
+        attributes.update(
+            {key: value for key, value in history.items() if key not in {"points"}}
+        )
+        attributes["tracked_total_kwh"] = round(
+            self.coordinator.history.managed_source_tracked_total_kwh(
+                self._source_entity_id
+            ),
+            6,
+        )
+        if self.entity_description.key == "history" and "points" in history:
+            attributes["points"] = history["points"]
+        return attributes
+
+
 def _datetime_value(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
@@ -463,3 +641,22 @@ def _forecast_24h_soc(result: PlannerResult) -> int | None:
         return None
     value = point.get("soc_percent")
     return value if isinstance(value, int) else None
+
+
+def _managed_energy_entity_ids(entry: ConfigEntry) -> list[str]:
+    raw_entity_ids = entry.data.get(CONF_MANAGED_ENERGY_ENTITIES) or []
+    if isinstance(raw_entity_ids, str):
+        return [raw_entity_ids] if raw_entity_ids else []
+    return [
+        entity_id
+        for entity_id in raw_entity_ids
+        if isinstance(entity_id, str) and entity_id
+    ]
+
+
+def _source_display_name(hass: HomeAssistant, entity_id: str) -> str:
+    state = hass.states.get(entity_id)
+    friendly_name = state.attributes.get("friendly_name") if state else None
+    if isinstance(friendly_name, str) and friendly_name:
+        return friendly_name
+    return entity_id.split(".", 1)[-1].replace("_", " ").title()

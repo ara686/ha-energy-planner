@@ -8,6 +8,7 @@ Screenshots can be added here later, for example:
 - overview dashboard with SoC forecast and target values
 - unused PV surplus chart
 - home vs managed consumption history
+- per-source managed load chart, for example EV charging vs water heating
 - simple mobile dashboard tile set
 
 ## Future SoC Forecast With ApexCharts
@@ -128,6 +129,8 @@ used by the planner:
 
 - `home_kwh`: whole-home consumption in the hour
 - `managed_kwh`: intentionally managed consumption in the hour
+- `managed_sources`: intentionally managed consumption split by configured
+  source entity
 - `base_kwh`: `home_kwh - managed_kwh`, clamped to zero
 
 ```yaml
@@ -175,6 +178,62 @@ series:
         Number(point.base_kwh ?? 0),
       ]);
 ```
+
+## Per-Source Managed Load History With ApexCharts
+
+Energy Planner creates one disabled-by-default history entity for every
+configured managed source. Enable the relevant entities in **Settings > Devices
+& services > Energy Planner > Entities** before using this card.
+
+The example below assumes Home Assistant created these entity IDs:
+
+- `sensor.energy_planner_managed_ev_charging_energy_history`
+- `sensor.energy_planner_managed_water_heater_energy_history`
+
+Adjust them to match your actual entity IDs.
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 3d
+span:
+  end: hour
+locale: en
+header:
+  title: Managed load history
+  show: true
+yaxis:
+  - min: 0
+    decimals: 2
+series:
+  - entity: sensor.energy_planner_managed_ev_charging_energy_history
+    name: EV charging
+    type: column
+    unit: kWh
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.managed_kwh ?? 0),
+      ]);
+  - entity: sensor.energy_planner_managed_water_heater_energy_history
+    name: Water heating
+    type: column
+    unit: kWh
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points.map((point) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.managed_kwh ?? 0),
+      ]);
+```
+
+For simple cards and automation conditions, use the enabled summary entities
+instead, for example:
+
+- `sensor.energy_planner_managed_ev_charging_energy_today`
+- `sensor.energy_planner_managed_ev_charging_energy_current_hour`
+- `sensor.energy_planner_managed_ev_charging_energy_last_hour`
+- `sensor.energy_planner_managed_ev_charging_energy_tracked_total`
 
 ## Home And Managed Power History With ApexCharts
 

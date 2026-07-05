@@ -160,6 +160,21 @@
       "consumption_history": {
         "name": "História spotreby"
       },
+      "managed_source_today": {
+        "name": "Riadená spotreba {source} dnes"
+      },
+      "managed_source_current_hour": {
+        "name": "Riadená spotreba {source} aktuálna hodina"
+      },
+      "managed_source_last_hour": {
+        "name": "Riadená spotreba {source} minulá hodina"
+      },
+      "managed_source_tracked_total": {
+        "name": "Riadená spotreba {source} sledovaný súčet"
+      },
+      "managed_source_history": {
+        "name": "Riadená spotreba {source} história"
+      },
       "update_interval_minutes": {
         "name": "Interval prepočtu"
       },
