@@ -56,3 +56,9 @@ base_usable = true
 The planner still uses the combined `managed_kwh` value for baseline
 calculation. The per-source values are exposed for dashboards, statistics and
 automation conditions.
+
+The main `sensor.energy_planner_consumption_history` graph payload is kept
+compact for Home Assistant's recorder. It exposes hourly `home_kwh`,
+`managed_kwh`, `base_kwh` and usability flags. Per-source history is available
+through the disabled-by-default `sensor.energy_planner_managed_<source>_history`
+entities.

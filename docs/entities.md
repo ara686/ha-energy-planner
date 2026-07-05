@@ -28,13 +28,13 @@ Entities**.
 | `sensor.energy_planner_charged_total_at_target` | `charged_kwh_total_at_target` | Standard | `kWh` | Total grid energy the simulation charges into the battery to reach `target_soc`. |
 | `sensor.energy_planner_soc_at_planner_start` | `soc_at_planner_start` | Diagnostic | `%` | Predicted SoC at the start of the planning window. |
 | `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | Diagnostic | `%` | Predicted SoC at the start of the lock/protection window. |
-| `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is passive predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and the compact future `points` array for graph cards. |
+| `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is passive predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and a recorder-safe future `points` array for graph cards. |
 | `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Passive predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
-| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest usable hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh`, per-source `managed_sources`, `base_kwh` and `base_usable` values for graph cards. |
+| `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest usable hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh`, `base_kwh` and `base_usable` values for graph cards. |
 
 Only `sensor.energy_planner_soc_forecast` uses Home Assistant's `battery`
 device class. The other SoC outputs are planning setpoints, limits or future
@@ -79,3 +79,7 @@ Each per-source entity includes these attributes:
 The `history` entity additionally exposes a `points` attribute with compact
 hourly data. Other per-source entities intentionally do not expose `points`, so
 regular state history stays compact.
+
+The main `sensor.energy_planner_consumption_history` entity shows total home,
+total managed and calculated base consumption. It does not include per-source
+managed breakdown in each point; use the per-source `history` entities for that.
