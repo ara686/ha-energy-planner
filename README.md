@@ -102,14 +102,14 @@ Most useful entities:
 
 | Entity | What it means |
 |--------|---------------|
-| `sensor.energy_planner_soc_forecast` | Forecasted SoC at the configured forecast horizon. Its attributes contain the future forecast points for graphs. |
-| `sensor.energy_planner_soc_forecast_24h` | Forecasted SoC exactly 24 hours from the last calculation. |
+| `sensor.energy_planner_soc_forecast` | Passive forecasted SoC at the configured forecast horizon. It uses current SoC, consumption history and PV forecast, without assuming Energy Planner automations have already charged or locked the battery. Its attributes contain the future forecast points for graphs. |
+| `sensor.energy_planner_soc_forecast_24h` | Passive forecasted SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when the plan says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |
 | `sensor.energy_planner_target_soc` | Target SoC used by the planner. |
 | `sensor.energy_planner_charge_to_soc` | SoC level needed for planned grid charging. |
 | `sensor.energy_planner_safe_discharge_soc` | Lowest SoC that should still preserve the plan. |
-| `sensor.energy_planner_unused_surplus_today` | Estimated unused PV surplus for today. |
+| `sensor.energy_planner_unused_surplus_today` | Estimated unused PV surplus for today from the passive forecast. |
 | `sensor.energy_planner_managed_<source>_today` | Energy used today by one managed load, for example EV charging or water heating. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Energy Planner's tracked total for one managed load. |
 
