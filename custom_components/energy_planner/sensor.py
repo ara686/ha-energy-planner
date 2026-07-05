@@ -46,6 +46,9 @@ from .coordinator import EnergyPlannerCoordinator
 from .models import PlannerResult
 from .options import merged_options, serialize_window, serialize_windows
 
+_FORECAST_ATTRIBUTE_MIN_STEP_MINUTES = 15
+_ENERGY_ATTRIBUTE_PRECISION = 1
+
 
 @dataclass(frozen=True, kw_only=True)
 class EnergyPlannerSensorDescription(SensorEntityDescription):
@@ -108,7 +111,118 @@ def _consumption_history_value(result: PlannerResult) -> float | None:
 
 def _consumption_history_attributes(result: PlannerResult) -> dict[str, Any]:
     history = result.forecast.get("consumption_history")
-    return dict(history) if isinstance(history, dict) else {}
+    if not isinstance(history, dict):
+        return {}
+    attributes = {key: value for key, value in history.items() if key != "points"}
+    points = history.get("points")
+    if isinstance(points, list):
+        attributes["points"] = [
+            _compact_consumption_history_point(point)
+            for point in points
+            if isinstance(point, dict)
+        ]
+        attributes["points_compacted"] = True
+    return attributes
+
+
+def _soc_forecast_attributes(result: PlannerResult) -> dict[str, Any]:
+    forecast = result.plan.get("soc_forecast")
+    if not isinstance(forecast, dict):
+        return {}
+    attributes = {key: value for key, value in forecast.items() if key != "points"}
+    points = forecast.get("points")
+    if isinstance(points, list):
+        compact_points = _compact_forecast_points(points)
+        attributes["source_point_count"] = len(points)
+        attributes["point_count"] = len(compact_points)
+        attributes["points_compacted"] = True
+        attributes["points_downsampled"] = len(compact_points) != len(points)
+        attributes["points_resolution_minutes"] = _points_resolution_minutes(
+            compact_points
+        )
+        attributes["points"] = compact_points
+    return attributes
+
+
+def _compact_forecast_points(points: list[Any]) -> list[dict[str, Any]]:
+    valid_points = [point for point in points if isinstance(point, dict)]
+    if not valid_points:
+        return []
+    stride = _forecast_point_stride(valid_points)
+    compact_points: list[dict[str, Any]] = []
+    for index in range(0, len(valid_points), stride):
+        chunk = valid_points[index : index + stride]
+        point = chunk[-1]
+        unused_surplus_kwh = sum(
+            value
+            for value in (item.get("unused_surplus_kwh") for item in chunk)
+            if isinstance(value, (int, float))
+        )
+        compact_points.append(
+            {
+                "timestamp": point.get("timestamp"),
+                "soc_percent": _int_or_none(point.get("soc_percent")),
+                "unused_surplus_kwh": _round_energy(unused_surplus_kwh),
+            }
+        )
+    return compact_points
+
+
+def _compact_consumption_history_point(point: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "timestamp": point.get("timestamp"),
+        "home_kwh": _round_energy(point.get("home_kwh")),
+        "managed_kwh": _round_energy(point.get("managed_kwh")),
+        "base_kwh": _round_energy(point.get("base_kwh")),
+        "base_usable": point.get("base_usable", True),
+        "is_current_hour": point.get("is_current_hour", False),
+    }
+
+
+def _compact_managed_source_point(point: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "timestamp": point.get("timestamp"),
+        "managed_kwh": _round_energy(point.get("managed_kwh")),
+        "is_current_hour": point.get("is_current_hour", False),
+    }
+
+
+def _forecast_point_stride(points: list[dict[str, Any]]) -> int:
+    interval_minutes = _points_resolution_minutes(points)
+    if interval_minutes is None or interval_minutes <= 0:
+        return 1
+    return max(1, -(-_FORECAST_ATTRIBUTE_MIN_STEP_MINUTES // interval_minutes))
+
+
+def _points_resolution_minutes(points: list[dict[str, Any]]) -> int | None:
+    if len(points) < 2:
+        return None
+    first = _timestamp_value(points[0].get("timestamp"))
+    second = _timestamp_value(points[1].get("timestamp"))
+    if first is None or second is None or second <= first:
+        return None
+    return max(1, round((second - first).total_seconds() / 60))
+
+
+def _timestamp_value(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _round_energy(value: Any) -> float | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return round(value, _ENERGY_ATTRIBUTE_PRECISION)
+
+
+def _int_or_none(value: Any) -> int | None:
+    return int(value) if isinstance(value, int) else None
 
 
 def _managed_source_history(result: PlannerResult, source_id: str) -> dict[str, Any]:
@@ -247,7 +361,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         value_fn=lambda result: result.plan.get("soc_at_forecast_horizon"),
-        attr_fn=lambda result: result.plan.get("soc_forecast", {}),
+        attr_fn=_soc_forecast_attributes,
     ),
     EnergyPlannerSensorDescription(
         key="soc_forecast_24h",
@@ -623,7 +737,12 @@ class EnergyPlannerManagedSourceSensor(
             6,
         )
         if self.entity_description.key == "history" and "points" in history:
-            attributes["points"] = history["points"]
+            attributes["points"] = [
+                _compact_managed_source_point(point)
+                for point in history["points"]
+                if isinstance(point, dict)
+            ]
+            attributes["points_compacted"] = True
         return attributes
 
 

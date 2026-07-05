@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+import json
+from datetime import UTC, datetime, timedelta
 
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
@@ -31,7 +32,9 @@ from custom_components.energy_planner.models import PlannerResult
 from custom_components.energy_planner.sensor import (
     MANAGED_SOURCE_SENSOR_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
+    _consumption_history_attributes,
     _consumption_history_value,
+    _soc_forecast_attributes,
 )
 
 from .conftest import set_source_states
@@ -333,6 +336,7 @@ async def test_consumption_history_sensor_exposes_hourly_points(hass, config_ent
     assert round(float(state.state), 6) == 0.5
     assert state.attributes["point_count"] == 1
     assert state.attributes["truncated"] is False
+    assert state.attributes["points_compacted"] is True
     point = dict(state.attributes["points"][0])
     timestamp = datetime.fromisoformat(point.pop("timestamp"))
     assert timestamp.minute == 0
@@ -340,14 +344,96 @@ async def test_consumption_history_sensor_exposes_hourly_points(hass, config_ent
     assert point == {
         "home_kwh": 1.0,
         "managed_kwh": 0.5,
-        "managed_sources": {
-            "sensor.ev_energy_total": 0.4,
-            "sensor.water_heater_energy_total": 0.1,
-        },
         "base_kwh": 0.5,
         "base_usable": True,
         "is_current_hour": True,
     }
+
+
+def test_soc_forecast_attributes_stay_under_recorder_limit_with_five_minute_points():
+    now = datetime(2026, 7, 5, 16, 30, tzinfo=UTC)
+    points = [
+        {
+            "timestamp": (now + timedelta(minutes=5 * (index + 1))).isoformat(),
+            "soc_percent": min(100, 60 + index // 10),
+            "battery_kwh": 12.345,
+            "solar_kwh": 0.205,
+            "consumption_kwh": 0.073,
+            "grid_charge_kwh": 0.0,
+            "grid_import_kwh": 0.0,
+            "unused_surplus_kwh": 0.024,
+            "is_nt": index % 2 == 0,
+            "is_charge_window": index % 3 == 0,
+        }
+        for index in range(36 * 12)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "soc_forecast": {
+                "horizon_hours": 36,
+                "source": "ha_entities",
+                "points": points,
+            },
+        },
+    )
+
+    attributes = _soc_forecast_attributes(result)
+
+    assert attributes["source_point_count"] == 432
+    assert attributes["point_count"] == 144
+    assert attributes["points_compacted"] is True
+    assert attributes["points_downsampled"] is True
+    assert attributes["points_resolution_minutes"] == 15
+    assert attributes["points"][0] == {
+        "timestamp": "2026-07-05T16:45:00+00:00",
+        "soc_percent": 60,
+        "unused_surplus_kwh": 0.1,
+    }
+    assert len(json.dumps(attributes, separators=(",", ":"))) < 16_384
+
+
+def test_consumption_history_attributes_omit_per_source_breakdown():
+    result = PlannerResult(
+        state="ok",
+        updated=datetime(2026, 7, 3, 12, 0),
+        forecast={
+            "consumption_history": {
+                "source": "stored",
+                "point_count": 1,
+                "points": [
+                    {
+                        "timestamp": "2026-07-03T11:00:00+02:00",
+                        "home_kwh": 1.04,
+                        "managed_kwh": 0.55,
+                        "managed_sources": {
+                            "sensor.ev_energy_total": 0.4,
+                            "sensor.water_heater_energy_total": 0.15,
+                        },
+                        "base_kwh": 0.49,
+                        "base_usable": True,
+                        "is_current_hour": False,
+                    },
+                ],
+            },
+        },
+    )
+
+    attributes = _consumption_history_attributes(result)
+
+    assert attributes["points"] == [
+        {
+            "timestamp": "2026-07-03T11:00:00+02:00",
+            "home_kwh": 1.0,
+            "managed_kwh": 0.6,
+            "base_kwh": 0.5,
+            "base_usable": True,
+            "is_current_hour": False,
+        },
+    ]
+    assert "managed_sources" not in attributes["points"][0]
+    assert attributes["points_compacted"] is True
 
 
 def test_consumption_history_value_uses_latest_usable_point():

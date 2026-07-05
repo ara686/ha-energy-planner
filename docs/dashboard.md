@@ -53,13 +53,15 @@ series:
 ```
 
 The important part is `entity.attributes.points`. Each point uses `timestamp`
-and `soc_percent`.
+and `soc_percent`. The attribute payload is compacted for Home Assistant's
+recorder, so the graph points may use a lower resolution than the internal
+planner calculation.
 
 ## Future Unused PV Surplus With ApexCharts
 
 Each forecast point also contains `unused_surplus_kwh`, which is the passive
-forecast surplus energy for that planner slot. The example below converts slot
-energy to an equivalent power value in `kW`.
+forecast surplus energy for that graph interval. The example below converts the
+interval energy to an equivalent power value in `kW`.
 
 <img width="518" height="374" alt="image" src="https://github.com/user-attachments/assets/8eea7ce6-5777-481b-a942-4c4f68c3df96" />
 
@@ -135,11 +137,12 @@ used by the planner:
 
 - `home_kwh`: whole-home consumption in the hour
 - `managed_kwh`: intentionally managed consumption in the hour
-- `managed_sources`: intentionally managed consumption split by configured
-  source entity
 - `base_kwh`: `home_kwh - managed_kwh`, clamped to zero
 - `base_usable`: whether the bucket is valid for the baseline consumption
   profile used by the forecast
+
+Per-source managed consumption is exposed by the separate
+`sensor.energy_planner_managed_<source>_history` entities.
 
 <img width="511" height="376" alt="image" src="https://github.com/user-attachments/assets/5623fb02-e79d-414b-880b-3766257bacc1" />
 
