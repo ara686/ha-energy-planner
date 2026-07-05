@@ -138,6 +138,8 @@ used by the planner:
 - `managed_sources`: intentionally managed consumption split by configured
   source entity
 - `base_kwh`: `home_kwh - managed_kwh`, clamped to zero
+- `base_usable`: whether the bucket is valid for the baseline consumption
+  profile used by the forecast
 
 <img width="511" height="376" alt="image" src="https://github.com/user-attachments/assets/5623fb02-e79d-414b-880b-3766257bacc1" />
 
