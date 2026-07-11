@@ -1,6 +1,6 @@
 [project]
 name = "ha-energy-planner"
-version = "0.1.10"
+version = "0.1.11"
 description = "Home Assistant custom integration for PV, battery, tariff and EV planning."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,6 +24,7 @@ exclude = ["tests*"]
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 88
