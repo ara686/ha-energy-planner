@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.util import slugify
 
@@ -652,6 +653,7 @@ async def async_setup_entry(
                 entry,
                 source_entity_id=load.source_entity_id,
                 source_name=source_name,
+                subentry_id=load.subentry_id,
                 description=description,
             )
             for description in MANAGED_SOURCE_SENSOR_DESCRIPTIONS
@@ -732,6 +734,7 @@ class EnergyPlannerManagedSourceSensor(
         *,
         source_entity_id: str,
         source_name: str,
+        subentry_id: str | None,
         description: ManagedSourceSensorDescription,
     ) -> None:
         super().__init__(coordinator)
@@ -745,10 +748,12 @@ class EnergyPlannerManagedSourceSensor(
             description.entity_registry_enabled_default
         )
         self._attr_translation_placeholders = {"source": source_name}
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.title,
-        }
+        load_identifier = subentry_id or slugify(source_entity_id)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry.entry_id}_managed_load_{load_identifier}")},
+            name=source_name,
+            via_device=(DOMAIN, entry.entry_id),
+        )
 
     @property
     def available(self) -> bool:
