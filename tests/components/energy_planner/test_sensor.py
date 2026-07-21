@@ -8,6 +8,7 @@ from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAI
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
@@ -19,6 +20,7 @@ from custom_components.energy_planner.const import (
     CONF_CHARGE_WINDOW,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_HISTORY_LEARNING_DAYS,
+    CONF_MANAGED_ENERGY_ENTITY,
     CONF_NT_WINDOWS,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
@@ -32,6 +34,8 @@ from custom_components.energy_planner.models import PlannerResult
 from custom_components.energy_planner.sensor import (
     MANAGED_SOURCE_SENSOR_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
+    EnergyPlannerManagedSourceSensor,
+    EnergyPlannerSensor,
     _consumption_history_attributes,
     _consumption_history_value,
     _soc_forecast_attributes,
@@ -43,6 +47,21 @@ from .conftest import set_source_states
 async def test_setup_entry_creates_all_sensors(hass, config_entry):
     set_source_states(hass)
     config_entry.add_to_hass(hass)
+
+    device_registry = dr.async_get(hass)
+    parent_device = device_registry.async_get_or_create(
+        config_entry_id=config_entry.entry_id,
+        identifiers={(DOMAIN, config_entry.entry_id)},
+        name=config_entry.title,
+    )
+    entity_registry = er.async_get(hass)
+    existing_managed_entity = entity_registry.async_get_or_create(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        (f"{config_entry.entry_id}_managed_{slugify('sensor.ev_energy_total')}_today"),
+        config_entry=config_entry,
+        device_id=parent_device.id,
+    )
 
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
@@ -69,6 +88,79 @@ async def test_setup_entry_creates_all_sensors(hass, config_entry):
     assert "warnings" in planner_state.attributes
     assert "plan" not in planner_state.attributes
     assert "forecast" not in planner_state.attributes
+
+    parent_device = device_registry.async_get_device(
+        identifiers={(DOMAIN, config_entry.entry_id)}
+    )
+    assert parent_device is not None
+
+    managed_devices = {}
+    for subentry in config_entry.subentries.values():
+        source_entity_id = subentry.data[CONF_MANAGED_ENERGY_ENTITY]
+        device = device_registry.async_get_device(
+            identifiers={
+                (
+                    DOMAIN,
+                    f"{config_entry.entry_id}_managed_load_{subentry.subentry_id}",
+                )
+            }
+        )
+        assert device is not None
+        assert device.via_device_id == parent_device.id
+        assert device.config_entries_subentries == {
+            config_entry.entry_id: {subentry.subentry_id}
+        }
+        managed_devices[source_entity_id] = device
+
+    assert set(managed_devices) == {
+        "sensor.ev_energy_total",
+        "sensor.water_heater_energy_total",
+    }
+    assert managed_devices["sensor.ev_energy_total"].name == "EV charging energy"
+    assert managed_devices["sensor.water_heater_energy_total"].name == (
+        "Water heater energy"
+    )
+    assert (
+        managed_devices["sensor.ev_energy_total"].id
+        != managed_devices["sensor.water_heater_energy_total"].id
+    )
+
+    migrated_managed_entity = registry.async_get(existing_managed_entity.entity_id)
+    assert migrated_managed_entity is not None
+    assert (
+        migrated_managed_entity.device_id
+        == managed_devices["sensor.ev_energy_total"].id
+    )
+
+    target_soc_entity = registry.async_get(
+        entity_ids[f"{config_entry.entry_id}_target_soc"]
+    )
+    assert target_soc_entity is not None
+    assert target_soc_entity.device_id == parent_device.id
+
+
+async def test_point_payloads_are_excluded_from_recorder(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    soc_forecast_entity_id = registry.async_get_entity_id(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{config_entry.entry_id}_soc_forecast",
+    )
+    soc_forecast = hass.states.get(soc_forecast_entity_id)
+
+    assert soc_forecast is not None
+    assert soc_forecast.state_info is not None
+    assert "points" in soc_forecast.state_info["unrecorded_attributes"]
+    assert EnergyPlannerSensor._unrecorded_attributes == frozenset({"points"})
+    assert EnergyPlannerManagedSourceSensor._unrecorded_attributes == frozenset(
+        {"points"}
+    )
 
 
 async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
