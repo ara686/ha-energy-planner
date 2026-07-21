@@ -666,6 +666,7 @@ class EnergyPlannerSensor(CoordinatorEntity[EnergyPlannerCoordinator], SensorEnt
     """Energy Planner output sensor."""
 
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"points"})
 
     def __init__(
         self,
@@ -722,6 +723,7 @@ class EnergyPlannerManagedSourceSensor(
     """Energy Planner per-managed-source history sensor."""
 
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"points"})
 
     def __init__(
         self,

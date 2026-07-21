@@ -32,6 +32,8 @@ from custom_components.energy_planner.models import PlannerResult
 from custom_components.energy_planner.sensor import (
     MANAGED_SOURCE_SENSOR_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
+    EnergyPlannerManagedSourceSensor,
+    EnergyPlannerSensor,
     _consumption_history_attributes,
     _consumption_history_value,
     _soc_forecast_attributes,
@@ -69,6 +71,30 @@ async def test_setup_entry_creates_all_sensors(hass, config_entry):
     assert "warnings" in planner_state.attributes
     assert "plan" not in planner_state.attributes
     assert "forecast" not in planner_state.attributes
+
+
+async def test_point_payloads_are_excluded_from_recorder(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    soc_forecast_entity_id = registry.async_get_entity_id(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{config_entry.entry_id}_soc_forecast",
+    )
+    soc_forecast = hass.states.get(soc_forecast_entity_id)
+
+    assert soc_forecast is not None
+    assert soc_forecast.state_info is not None
+    assert "points" in soc_forecast.state_info["unrecorded_attributes"]
+    assert EnergyPlannerSensor._unrecorded_attributes == frozenset({"points"})
+    assert EnergyPlannerManagedSourceSensor._unrecorded_attributes == frozenset(
+        {"points"}
+    )
 
 
 async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
