@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.energy_planner.config_flow import _user_schema
+from custom_components.energy_planner import async_migrate_entry
+from custom_components.energy_planner.config_flow import (
+    _managed_load_schema,
+    _user_schema,
+)
 from custom_components.energy_planner.const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
@@ -21,17 +26,20 @@ from custom_components.energy_planner.const import (
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
+    CONF_MANAGED_ENERGY_ENTITY,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
+    CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_NAME,
     DOMAIN,
+    MANAGED_LOAD_SUBENTRY,
 )
 from custom_components.energy_planner.history import EnergyHistory, EnergyHistoryStore
 
@@ -56,7 +64,17 @@ async def test_user_flow_creates_entry(hass):
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == DEFAULT_NAME
-    assert result["data"] == config_data()
+    expected_data = config_data()
+    expected_data.pop(CONF_MANAGED_ENERGY_ENTITIES)
+    assert result["data"] == expected_data
+    assert [subentry["data"] for subentry in result["subentries"]] == [
+        {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
+        {CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total"},
+    ]
+    assert all(
+        subentry["subentry_type"] == MANAGED_LOAD_SUBENTRY
+        for subentry in result["subentries"]
+    )
 
 
 async def test_user_flow_allows_no_managed_energy_sources(hass):
@@ -284,6 +302,7 @@ async def test_reconfigure_updates_config_entry_entities(hass, config_entry):
     user_input = config_data(
         **{CONF_BATTERY_CAPACITY_ENTITY: "sensor.installed_battery_capacity"}
     )
+    user_input.pop(CONF_MANAGED_ENERGY_ENTITIES)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         user_input=user_input,
@@ -327,14 +346,227 @@ async def test_reconfigure_preserves_history_when_energy_sources_change(
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input=config_data(
-            **{CONF_HOME_ENERGY_ENTITY: "sensor.new_home_energy_total"}
-        ),
+        user_input={
+            key: value
+            for key, value in config_data(
+                **{CONF_HOME_ENERGY_ENTITY: "sensor.new_home_energy_total"}
+            ).items()
+            if key != CONF_MANAGED_ENERGY_ENTITIES
+        },
     )
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert (await EnergyHistoryStore(hass, config_entry.entry_id).async_load()).buckets
+
+
+async def test_managed_load_subentry_flow_accepts_requested_energy(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "input_number.ev_requested_energy",
+        "8.5",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            key: value
+            for key, value in config_data().items()
+            if key != CONF_MANAGED_ENERGY_ENTITIES
+        },
+        unique_id=DOMAIN,
+        version=2,
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        },
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "EV charging energy"
+    assert result["data"] == {
+        CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+        CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+    }
+
+
+async def test_managed_load_subentry_flow_rejects_duplicate_source(hass):
+    set_source_states(hass)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        unique_id=DOMAIN,
+        version=2,
+        subentries_data=(
+            {
+                "data": {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_MANAGED_ENERGY_ENTITY] == "entity_already_configured"
+
+
+async def test_managed_load_subentry_reconfigure_replaces_optional_request(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "input_number.ev_requested_energy",
+        "7",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        unique_id=DOMAIN,
+        version=2,
+        subentries_data=(
+            {
+                "data": {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+    subentry = next(iter(entry.subentries.values()))
+
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry.subentry_id)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        },
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.subentries[subentry.subentry_id].data == {
+        CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+        CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+    }
+
+
+async def test_managed_load_rejects_requested_energy_without_kwh(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "input_number.ev_requested_energy",
+        "7",
+        {"unit_of_measurement": "A"},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        unique_id=DOMAIN,
+        version=2,
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_REQUESTED_ENERGY_ENTITY] == "energy_amount_required"
+
+
+async def test_version_one_entry_migrates_managed_sources_to_subentries(hass):
+    set_source_states(hass)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config_data(),
+        unique_id=DOMAIN,
+        version=1,
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, entry)
+
+    assert entry.version == 2
+    assert CONF_MANAGED_ENERGY_ENTITIES not in entry.data
+    assert {
+        subentry.data[CONF_MANAGED_ENERGY_ENTITY]
+        for subentry in entry.subentries.values()
+    } == {
+        "sensor.ev_energy_total",
+        "sensor.water_heater_energy_total",
+    }
+    assert all(
+        isinstance(subentry, ConfigSubentry)
+        and subentry.subentry_type == MANAGED_LOAD_SUBENTRY
+        for subentry in entry.subentries.values()
+    )
+
+
+async def test_version_one_migration_skips_an_existing_managed_subentry(hass):
+    set_source_states(hass)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config_data(),
+        unique_id=DOMAIN,
+        version=1,
+        subentries_data=(
+            {
+                "data": {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, entry)
+
+    assert len(entry.subentries) == 2
+
+
+def test_managed_load_schema_filters_cumulative_and_requested_energy():
+    fields = {
+        marker.schema: value for marker, value in _managed_load_schema().schema.items()
+    }
+
+    managed_filter = _plain_filter(fields[CONF_MANAGED_ENERGY_ENTITY].config["filter"])
+    requested_filter = _plain_filter(
+        fields[CONF_REQUESTED_ENERGY_ENTITY].config["filter"]
+    )
+
+    assert managed_filter == [{"domain": ["sensor"], "device_class": ["energy"]}]
+    assert {"domain": ["input_number"]} in requested_filter
 
 
 async def test_user_flow_blocks_duplicate_entry(hass):

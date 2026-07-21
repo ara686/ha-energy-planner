@@ -5,6 +5,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .managed_loads import managed_load_configs
 
 
 async def async_get_config_entry_diagnostics(
@@ -26,6 +27,13 @@ async def async_get_config_entry_diagnostics(
             "title": entry.title,
             "domain": DOMAIN,
             "configured_entities": dict(entry.data),
+            "managed_loads": [
+                {
+                    "source_entity_id": load.source_entity_id,
+                    "requested_energy_entity_id": load.requested_energy_entity_id,
+                }
+                for load in managed_load_configs(entry)
+            ],
         },
         "options": dict(entry.options),
         "entities": sorted(entities),

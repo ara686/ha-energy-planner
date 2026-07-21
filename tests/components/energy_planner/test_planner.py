@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from custom_components.energy_planner import planner as planner_module
@@ -91,6 +91,21 @@ def test_generate_forecast_slots_splits_solcast_periods():
     assert len(slots) == 4
     assert [slot.solar_kwh for slot in slots] == [0.5, 0.5, 0.5, 0.5]
     assert [slot.consumption_kwh for slot in slots] == [0.3, 0.3, 0.3, 0.3]
+    assert [slot.solar_coverage for slot in slots] == [1.0, 1.0, 1.0, 1.0]
+
+
+def test_generate_forecast_slots_reports_missing_solar_coverage():
+    now = datetime(2026, 7, 3, 12, 0)
+
+    slots = generate_forecast_slots(
+        now=now,
+        horizon_hours=2,
+        interval_minutes=60,
+        solar_forecast=[SolarForecastPoint(start=now, solar_kwh=1.0)],
+        consumption_kwh_per_hour=0,
+    )
+
+    assert [slot.solar_coverage for slot in slots] == [1.0, 0.0]
 
 
 def test_generate_forecast_slots_aligns_start_to_next_interval():
@@ -122,6 +137,42 @@ def test_generate_forecast_slots_accepts_consumption_profile():
     )
 
     assert [slot.consumption_kwh for slot in slots] == [1.0, 2.0]
+
+
+def test_generate_forecast_slots_keeps_both_fall_back_hours():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 10, 24, 0, 0, tzinfo=timezone)
+    start_utc = now.astimezone(UTC)
+    solar_forecast = [
+        SolarForecastPoint(
+            start=(start_utc + timedelta(hours=index)).astimezone(timezone),
+            solar_kwh=2,
+            period_minutes=60,
+        )
+        for index in range(49)
+    ]
+
+    slots = generate_forecast_slots(
+        now=now,
+        horizon_hours=48,
+        interval_minutes=60,
+        solar_forecast=solar_forecast,
+        consumption_kwh_per_hour=0,
+    )
+
+    repeated_hours = [
+        slot.start
+        for slot in slots
+        if slot.start.date().isoformat() == "2026-10-25" and slot.start.hour == 2
+    ]
+    assert len(slots) == 49
+    assert len(repeated_hours) == 2
+    assert {timestamp.utcoffset() for timestamp in repeated_hours} == {
+        timedelta(hours=1),
+        timedelta(hours=2),
+    }
+    assert all(slot.solar_kwh == 2 for slot in slots)
+    assert all(slot.solar_coverage == 1 for slot in slots)
 
 
 def test_soc_forecast_contains_24h_point_and_longer_horizon():
@@ -314,6 +365,70 @@ def test_unused_surplus_is_recorded_when_battery_is_full():
         < result.plan["unused_surplus_kwh_total"]
     )
     assert result.plan["soc_at_forecast_horizon"] == 100.0
+
+
+def test_tomorrow_surplus_requires_a_complete_calendar_day_forecast():
+    now = datetime(2026, 7, 3, 0, 0, tzinfo=ZoneInfo("Europe/Prague"))
+    slots = _slots(now, 48, solar_kwh=2, consumption_kwh=0)
+
+    complete = calculate_plan(
+        _input(
+            now=now,
+            slots=slots,
+            battery_soc=100,
+            forecast_horizon_hours=48,
+        )
+    )
+
+    assert complete.plan["unused_surplus_tomorrow_kwh"] == 48
+    assert complete.plan["unused_surplus_tomorrow_coverage_percent"] == 100
+    assert complete.plan["unused_surplus_tomorrow_solar_coverage_percent"] == 100
+
+    incomplete_slots = list(slots)
+    incomplete_slots[24] = ForecastSlot(
+        start=incomplete_slots[24].start,
+        solar_kwh=2,
+        consumption_kwh=0,
+        solar_coverage=0,
+    )
+    incomplete = calculate_plan(
+        _input(
+            now=now,
+            slots=incomplete_slots,
+            battery_soc=100,
+            forecast_horizon_hours=48,
+        )
+    )
+
+    assert incomplete.plan["unused_surplus_tomorrow_kwh"] is None
+    assert incomplete.plan["unused_surplus_tomorrow_coverage_percent"] == 100
+    assert incomplete.plan["unused_surplus_tomorrow_solar_coverage_percent"] == 96
+
+
+def test_tomorrow_surplus_covers_a_25_hour_dst_day():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 10, 24, 0, 0, tzinfo=timezone)
+    start_utc = now.astimezone(UTC)
+    slots = [
+        ForecastSlot(
+            start=(start_utc + timedelta(hours=index)).astimezone(timezone),
+            solar_kwh=2,
+            consumption_kwh=0,
+        )
+        for index in range(49)
+    ]
+
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=slots,
+            battery_soc=100,
+            forecast_horizon_hours=48,
+        )
+    )
+
+    assert result.plan["unused_surplus_tomorrow_kwh"] == 50
+    assert result.plan["unused_surplus_tomorrow_coverage_percent"] == 100
 
 
 def test_battery_capacity_must_be_positive():

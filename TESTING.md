@@ -47,6 +47,9 @@ Planner tests:
 - charge window across midnight
 - no Solcast data, malformed Solcast data and missing optional Solcast entities
 - managed load subtraction
+- managed-load daily coverage, true zero days and cumulative meter resets
+- history-based demand, requested-energy override and proportional allocation
+- complete and incomplete next-day forecast coverage
 - history correction
 - partial current hour and forecast horizon boundary
 - SoC forecast for exactly 24 hours and longer horizons

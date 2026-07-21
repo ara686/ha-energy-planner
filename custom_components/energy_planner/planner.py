@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from math import ceil
 
 from .models import (
@@ -35,6 +35,11 @@ def generate_forecast_slots(
     slots: list[ForecastSlot] = []
     slot_start = _ceil_to_interval(now, interval_minutes)
     while slot_start < horizon_end:
+        slot_solar_kwh, solar_coverage = _solar_for_slot(
+            slot_start=slot_start,
+            interval_minutes=interval_minutes,
+            solar_periods=solar_periods,
+        )
         slot_consumption_kwh_per_hour = (
             consumption_kwh_per_hour(slot_start)
             if callable(consumption_kwh_per_hour)
@@ -43,19 +48,14 @@ def generate_forecast_slots(
         slots.append(
             ForecastSlot(
                 start=slot_start,
-                solar_kwh=_round(
-                    _solar_for_slot(
-                        slot_start=slot_start,
-                        interval_minutes=interval_minutes,
-                        solar_periods=solar_periods,
-                    )
-                ),
+                solar_kwh=_round(slot_solar_kwh),
                 consumption_kwh=_round(
                     max(0.0, slot_consumption_kwh_per_hour) * interval_minutes / 60
                 ),
+                solar_coverage=solar_coverage,
             )
         )
-        slot_start += interval
+        slot_start = _add_elapsed_time(slot_start, interval)
     return slots
 
 
@@ -202,6 +202,17 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
 
     points = [point.as_dict() for point in forecast_simulation.points]
     soc_forecast_24h = forecast_24h.as_dict() if forecast_24h else None
+    daily_surplus = _daily_surplus_forecasts(
+        forecast_simulation.points,
+        reference=data.now,
+        interval_minutes=data.interval_minutes,
+    )
+    tomorrow_date = data.now.date() + timedelta(days=1)
+    tomorrow_surplus = next(
+        (item for item in daily_surplus if item["date"] == tomorrow_date.isoformat()),
+        None,
+    )
+    tomorrow_complete = bool(tomorrow_surplus and tomorrow_surplus["complete"])
 
     return PlannerResult(
         state=state,
@@ -217,6 +228,18 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
             ),
             "unused_surplus_kwh": _round(forecast_simulation.unused_surplus_today_kwh),
             "unused_surplus_kwh_total": _round(forecast_simulation.unused_surplus_kwh),
+            "unused_surplus_by_day": daily_surplus,
+            "unused_surplus_tomorrow_kwh": (
+                tomorrow_surplus["unused_surplus_kwh"]
+                if tomorrow_complete and tomorrow_surplus
+                else None
+            ),
+            "unused_surplus_tomorrow_coverage_percent": (
+                tomorrow_surplus["coverage_percent"] if tomorrow_surplus else 0
+            ),
+            "unused_surplus_tomorrow_solar_coverage_percent": (
+                tomorrow_surplus["solar_coverage_percent"] if tomorrow_surplus else 0
+            ),
             "first_full_time": _iso_or_none(forecast_simulation.first_full_time),
             "vt_grid_import_kwh_at_target": _round(
                 planned_simulation.vt_grid_import_kwh
@@ -280,6 +303,7 @@ def _normalized_slots(data: PlannerInput) -> list[ForecastSlot]:
                 start=slot.start,
                 solar_kwh=max(0.0, slot.solar_kwh),
                 consumption_kwh=max(0.0, slot.consumption_kwh),
+                solar_coverage=_clamp(slot.solar_coverage, 0.0, 1.0),
             )
             for slot in data.slots
             if data.now <= slot.start < horizon_end
@@ -307,7 +331,7 @@ def _solar_periods(
         periods.append(
             (
                 point.start,
-                point.start + timedelta(minutes=period_minutes),
+                _add_elapsed_time(point.start, timedelta(minutes=period_minutes)),
                 max(0.0, point.solar_kwh),
             )
         )
@@ -319,20 +343,47 @@ def _solar_for_slot(
     slot_start: datetime,
     interval_minutes: int,
     solar_periods: list[tuple[datetime, datetime, float]],
-) -> float:
-    slot_end = slot_start + timedelta(minutes=interval_minutes)
+) -> tuple[float, float]:
+    slot_end = _add_elapsed_time(slot_start, timedelta(minutes=interval_minutes))
+    timeline_slot_start = _timeline_time(slot_start)
+    timeline_slot_end = _timeline_time(slot_end)
     solar_kwh = 0.0
+    covered_ranges: list[tuple[datetime, datetime]] = []
     for period_start, period_end, period_solar_kwh in solar_periods:
-        overlap_start = max(slot_start, period_start)
-        overlap_end = min(slot_end, period_end)
+        timeline_period_start = _timeline_time(period_start)
+        timeline_period_end = _timeline_time(period_end)
+        overlap_start = max(timeline_slot_start, timeline_period_start)
+        overlap_end = min(timeline_slot_end, timeline_period_end)
         if overlap_start >= overlap_end:
             continue
-        period_seconds = (period_end - period_start).total_seconds()
+        period_seconds = (timeline_period_end - timeline_period_start).total_seconds()
         if period_seconds <= 0:
             continue
         overlap_ratio = (overlap_end - overlap_start).total_seconds() / period_seconds
         solar_kwh += period_solar_kwh * overlap_ratio
-    return solar_kwh
+        covered_ranges.append((overlap_start, overlap_end))
+
+    covered_seconds = 0.0
+    current_start: datetime | None = None
+    current_end: datetime | None = None
+    for overlap_start, overlap_end in sorted(covered_ranges):
+        if current_start is None:
+            current_start, current_end = overlap_start, overlap_end
+            continue
+        assert current_end is not None
+        if overlap_start <= current_end:
+            current_end = max(current_end, overlap_end)
+            continue
+        covered_seconds += (current_end - current_start).total_seconds()
+        current_start, current_end = overlap_start, overlap_end
+    if current_start is not None and current_end is not None:
+        covered_seconds += (current_end - current_start).total_seconds()
+
+    slot_seconds = max(
+        (timeline_slot_end - timeline_slot_start).total_seconds(),
+        1.0,
+    )
+    return solar_kwh, _round(_clamp(covered_seconds / slot_seconds, 0.0, 1.0))
 
 
 def _empty_plan(
@@ -352,6 +403,10 @@ def _empty_plan(
         ),
         "unused_surplus_kwh": 0.0,
         "unused_surplus_kwh_total": 0.0,
+        "unused_surplus_by_day": [],
+        "unused_surplus_tomorrow_kwh": None,
+        "unused_surplus_tomorrow_coverage_percent": 0,
+        "unused_surplus_tomorrow_solar_coverage_percent": 0,
         "first_full_time": None,
         "vt_grid_import_kwh_at_target": 0.0,
         "charged_kwh_total_at_target": 0.0,
@@ -456,6 +511,7 @@ def _simulate(
                 grid_charge_kwh=_round(grid_charge_kwh),
                 grid_import_kwh=_round(grid_import_kwh),
                 unused_surplus_kwh=_round(slot_unused_surplus),
+                solar_coverage=_round(slot.solar_coverage),
                 is_nt=is_nt,
                 is_charge_window=is_charge,
             )
@@ -469,6 +525,81 @@ def _simulate(
         unused_surplus_today_kwh=unused_surplus_today,
         first_full_time=first_full_time,
     )
+
+
+def _daily_surplus_forecasts(
+    points: list[SocForecastPoint],
+    *,
+    reference: datetime,
+    interval_minutes: int,
+) -> list[dict[str, object]]:
+    """Summarize surplus and forecast coverage by local calendar day."""
+    if not points or interval_minutes <= 0:
+        return []
+
+    point_dates = {_local_date(point.timestamp, reference) for point in points}
+    summaries: list[dict[str, object]] = []
+    for target_date in sorted(point_dates):
+        day_points = [
+            point
+            for point in points
+            if _local_date(point.timestamp, reference) == target_date
+        ]
+        expected_minutes = _minutes_in_local_day(target_date, reference)
+        covered_minutes = min(len(day_points) * interval_minutes, expected_minutes)
+        solar_covered_minutes = min(
+            sum(
+                interval_minutes * _clamp(point.solar_coverage, 0.0, 1.0)
+                for point in day_points
+            ),
+            expected_minutes,
+        )
+        coverage_ratio = covered_minutes / expected_minutes
+        solar_coverage_ratio = solar_covered_minutes / expected_minutes
+        summaries.append(
+            {
+                "date": target_date.isoformat(),
+                "unused_surplus_kwh": _round(
+                    sum(point.unused_surplus_kwh for point in day_points)
+                ),
+                "coverage_percent": round(coverage_ratio * 100),
+                "solar_coverage_percent": round(solar_coverage_ratio * 100),
+                "complete": (coverage_ratio >= 0.999 and solar_coverage_ratio >= 0.999),
+            }
+        )
+    return summaries
+
+
+def _local_date(timestamp: datetime, reference: datetime) -> date:
+    if timestamp.tzinfo is not None and reference.tzinfo is not None:
+        timestamp = timestamp.astimezone(reference.tzinfo)
+    return timestamp.date()
+
+
+def _minutes_in_local_day(target_date: date, reference: datetime) -> float:
+    day_start = datetime.combine(target_date, time.min, tzinfo=reference.tzinfo)
+    next_day = datetime.combine(
+        target_date + timedelta(days=1),
+        time.min,
+        tzinfo=reference.tzinfo,
+    )
+    if reference.tzinfo is None:
+        return 24 * 60
+    return (next_day.astimezone(UTC) - day_start.astimezone(UTC)).total_seconds() / 60
+
+
+def _add_elapsed_time(timestamp: datetime, delta: timedelta) -> datetime:
+    """Advance an aware timestamp without skipping or duplicating DST time."""
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return timestamp + delta
+    return (timestamp.astimezone(UTC) + delta).astimezone(timestamp.tzinfo)
+
+
+def _timeline_time(timestamp: datetime) -> datetime:
+    """Return a comparable absolute timestamp while preserving naive inputs."""
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return timestamp
+    return timestamp.astimezone(UTC)
 
 
 def _calculate_charge_to_soc(

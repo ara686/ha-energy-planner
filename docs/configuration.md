@@ -4,8 +4,9 @@ Energy Planner is configured only through the Home Assistant UI. YAML setup is
 not supported.
 
 Use **Settings > Devices & services > Energy Planner > Reconfigure** to change
-input entities without deleting and adding the integration again. Reconfigure
-keeps the stored Energy Planner history.
+the shared input entities. Add, edit or remove each managed load from the
+integration entry's **Managed loads** section. Reconfiguration keeps the stored
+Energy Planner history.
 
 ## Setup Inputs
 
@@ -17,7 +18,7 @@ The `Key` column is the internal configuration key visible in diagnostics.
 | Battery capacity | `battery_capacity_entity` | Required | Numeric battery capacity sensor in `kWh`. | Use an inverter/BMS entity if it exists. If capacity is fixed and not exposed by the inverter, create a Home Assistant helper with the configured capacity value. |
 | Battery minimum state of charge | `battery_min_soc_entity` | Required | Numeric minimum/reserve SoC sensor in `%`. | Use the minimum SoC entity from the inverter/BMS. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
 | Home energy source | `home_energy_entity` | Required | Cumulative whole-home energy sensor in `kWh`. | Use a total/total-increasing energy sensor for house consumption. Energy Planner builds the hourly history internally from this source. |
-| Managed energy sources | `managed_energy_entities` | Optional | Zero, one or more cumulative energy sensors in `kWh`. | Select intentionally controlled loads, for example EV charging, boiler heating or water heating. These values are summed and subtracted from home consumption per hour. Energy Planner also creates separate per-source managed sensors for each selected entity. |
+| Managed energy sources | `managed_energy_entities` | Optional | Zero, one or more cumulative energy sensors in `kWh`. | Initial setup converts each selection into a separate managed-load item. Existing installations are migrated automatically. |
 | Solcast forecast for today | `solcast_today_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_today`. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
 | Solcast forecast for tomorrow | `solcast_tomorrow_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_tomorrow`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect this sibling entity. |
 | Additional Solcast forecast days | `solcast_additional_entities` | Optional | One or more Solcast forecast sensors from Home Assistant. | Examples: `sensor.solcast_pv_forecast_forecast_day_3`, `sensor.solcast_pv_forecast_forecast_day_4`. Standard `forecast_day_3` through `forecast_day_7` siblings can be auto-detected when they exist. |
@@ -42,6 +43,18 @@ heating in the last hour or a tracked total for one controlled load. The source
 entities should have useful Home Assistant friendly names before you add the
 integration, because those names are used when the per-source entities are first
 created.
+
+Each managed-load item has these fields:
+
+| Field | Key | Required | Description |
+|-------|-----|----------|-------------|
+| Cumulative energy meter | `managed_energy_entity` | Required | A `total` or `total_increasing` energy sensor in `kWh`. Its hourly and daily deltas are used for history. |
+| Requested energy tomorrow | `requested_energy_entity` | Optional | A numeric sensor, number or input-number entity in `kWh`. A valid non-negative state replaces this load's historical demand estimate for tomorrow. |
+
+The requested-energy input is deliberately generic. It can be filled by a
+helper or template that already knows the boiler temperature, EV state of
+charge, pool temperature or another device-specific condition. Energy Planner
+does not interpret those physical values and does not control the device.
 
 If you only have a power sensor, for example `sensor.home_power` in `W`, create
 a Home Assistant Integral helper first to convert power to energy in `kWh`, then
@@ -105,4 +118,22 @@ runtime behavior.
 | Low-tariff windows | `nt_windows` | `sensor.energy_planner_low_tariff_windows` | `17:00-19:00,22:00-04:00` | Two start/end time selector pairs in the UI. | Windows where low/high tariff protection is evaluated. Windows may cross midnight. Start and end must differ. |
 | Charging window | `charge_window` | `sensor.energy_planner_charging_window` | `22:00-04:00` | One start/end time selector pair in the UI. | Window where simulated grid charging may be planned. The window may cross midnight. Start and end must differ. |
 | Minimum solar start duration in minutes | `sun_start_required_minutes` | `sensor.energy_planner_minimum_solar_start_duration` | `30` | Greater than `0`. | Minimum continuous forecasted solar period before the planner treats solar production as started. |
-| Forecast horizon in hours | `forecast_horizon_hours` | `sensor.energy_planner_forecast_horizon` | `36` | At least `24`. | Future horizon used for SoC forecast and planning. Longer horizons require matching future Solcast data. |
+| Forecast horizon in hours | `forecast_horizon_hours` | `sensor.energy_planner_forecast_horizon` | `48` | At least `24`. | The 48-hour default leaves room for a complete next local day. A shorter horizon can make tomorrow's recommendation unavailable. Longer horizons require matching future Solcast data. |
+
+## Tomorrow Allocation
+
+For each managed load without a valid requested-energy value, Energy Planner
+uses up to seven completed local calendar days with at least 75% hourly source
+coverage. A recorded zero is a real zero-use day; missing hours are not treated
+as zero. At least three qualified days are required.
+
+```text
+active probability = active days / observed days
+active-day energy = median of days with at least 0.05 kWh
+expected demand = active probability × active-day energy
+```
+
+If expected demand exceeds tomorrow's unused surplus, every load is reduced by
+the same proportional factor. If demand is lower, the remainder is reported as
+unallocated surplus. No recommendation is published unless the planner covers
+the complete next local day and has complete solar input for it.

@@ -14,22 +14,27 @@ from custom_components.energy_planner.const import (
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
+    CONF_MANAGED_ENERGY_ENTITY,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    MANAGED_LOAD_SUBENTRY,
 )
 from custom_components.energy_planner.coordinator import (
     EnergyPlannerCoordinator,
+    _add_surplus_allocation,
     _consumption_from_hourly_profile,
     _solcast_entity_ids,
     _solcast_forecast,
     build_planner_result,
 )
 from custom_components.energy_planner.history import EnergyHistory
+from custom_components.energy_planner.models import PlannerResult
 from custom_components.energy_planner.sources import (
     parse_float,
     parse_solcast_attributes,
@@ -284,3 +289,75 @@ def test_build_planner_result_uses_hour_of_day_history_for_soc_forecast(hass):
         point["consumption_kwh"] == 0.18
         for point in result.plan["soc_forecast"]["points"]
     )
+
+
+def test_surplus_allocation_uses_daily_history_and_requested_override(hass):
+    now = datetime(2026, 7, 21, 12, 0)
+    history = EnergyHistory()
+    for days_ago in range(1, 8):
+        day_start = (now - timedelta(days=days_ago)).replace(hour=0)
+        for hour in range(24):
+            history.add_hourly_sample(
+                day_start + timedelta(hours=hour),
+                home_kwh=0,
+                managed_kwh=3 if hour == 12 else 0,
+                managed_source_id="sensor.boiler_energy_total",
+                observed_source_ids={"sensor.boiler_energy_total"},
+            )
+    hass.states.async_set(
+        "input_number.ev_requested_energy",
+        "9",
+        {"unit_of_measurement": "kWh"},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={CONF_HISTORY_LEARNING_DAYS: 7},
+        version=2,
+        subentries_data=(
+            {
+                "data": {CONF_MANAGED_ENERGY_ENTITY: "sensor.boiler_energy_total"},
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Boiler",
+                "unique_id": "sensor.boiler_energy_total",
+            },
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_tomorrow_kwh": 8,
+            "unused_surplus_tomorrow_coverage_percent": 100,
+            "unused_surplus_tomorrow_solar_coverage_percent": 100,
+        },
+    )
+    warnings: list[str] = []
+
+    _add_surplus_allocation(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        result=result,
+        warnings=warnings,
+    )
+
+    loads = result.plan["surplus_allocation"]["loads"]
+    assert loads["sensor.boiler_energy_total"]["method"] == "history"
+    assert loads["sensor.boiler_energy_total"]["expected_demand_kwh"] == 3
+    assert loads["sensor.ev_energy_total"]["method"] == "requested"
+    assert loads["sensor.ev_energy_total"]["expected_demand_kwh"] == 9
+    assert loads["sensor.boiler_energy_total"]["recommended_kwh"] == 2
+    assert loads["sensor.ev_energy_total"]["recommended_kwh"] == 6
+    assert result.plan["managed_recommended_tomorrow_kwh"] == 8
+    assert warnings == []
