@@ -12,7 +12,8 @@ uv run --extra ha --extra dev pytest -q
 
 The Home Assistant test extra is required because config flow, options flow,
 config entry setup, services, diagnostics and entity behavior are tested against
-Home Assistant test helpers.
+Home Assistant test helpers. The clean CI environment uses Python 3.13, which is
+the minimum Python version supported by the Home Assistant 2025.3 test package.
 
 ## Remote Quality Gate
 
