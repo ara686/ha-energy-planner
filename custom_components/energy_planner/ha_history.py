@@ -58,8 +58,74 @@ async def async_get_recorder_energy_history(
     history = EnergyHistory.from_cumulative_energy_samples(
         home_samples=home_samples,
         managed_samples_by_source=managed_samples_by_source,
+        home_source_id=home_entity_id,
     )
     return history if history.buckets else None
+
+
+async def async_get_recorder_energy_statistics(
+    hass: HomeAssistant,
+    *,
+    home_entity_id: str,
+    managed_entity_ids: list[str],
+    now: datetime,
+    learning_days: int,
+) -> EnergyHistory | None:
+    """Fetch hourly energy changes from Home Assistant long-term statistics."""
+    try:
+        from homeassistant.components.recorder.statistics import (
+            statistics_during_period,
+        )
+        from homeassistant.helpers.recorder import get_instance
+    except ImportError:
+        return None
+
+    entity_ids = {home_entity_id, *managed_entity_ids}
+    start = dt_util.as_utc(now - timedelta(days=max(1, learning_days)))
+    end = dt_util.as_utc(now)
+    try:
+        rows_by_entity = await get_instance(hass).async_add_executor_job(
+            statistics_during_period,
+            hass,
+            start,
+            end,
+            entity_ids,
+            "hour",
+            None,
+            {"change"},
+        )
+    except (KeyError, RuntimeError, TypeError, ValueError):
+        return None
+
+    home_changes = _hourly_changes_from_statistics(
+        rows_by_entity.get(home_entity_id, [])
+    )
+    if not home_changes:
+        return None
+    history = EnergyHistory.from_hourly_energy_changes(
+        home_source_id=home_entity_id,
+        home_changes=home_changes,
+        managed_changes_by_source={
+            entity_id: _hourly_changes_from_statistics(
+                rows_by_entity.get(entity_id, [])
+            )
+            for entity_id in managed_entity_ids
+        },
+    )
+    return history if history.buckets else None
+
+
+def _hourly_changes_from_statistics(rows: list[dict[str, Any]]) -> dict[str, float]:
+    changes: dict[str, float] = {}
+    for row in rows:
+        start = row.get("start")
+        value = parse_float(row.get("change"))
+        if value is None or value < 0 or not isinstance(start, int | float):
+            continue
+        timestamp = dt_util.as_local(dt_util.utc_from_timestamp(start))
+        key = timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
+        changes[key] = value
+    return changes
 
 
 def _samples_from_states(

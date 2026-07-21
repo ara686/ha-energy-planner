@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
 import homeassistant.helpers.config_validation as cv
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.debounce import Debouncer
@@ -17,8 +18,11 @@ from .const import (
     CONF_BATTERY_SOC_ENTITY,
     CONF_HOME_ENERGY_ENTITY,
     CONF_MANAGED_ENERGY_ENTITIES,
+    CONF_MANAGED_ENERGY_ENTITY,
     DOMAIN,
+    MANAGED_LOAD_SUBENTRY,
 )
+from .managed_loads import managed_energy_entity_ids
 
 PLATFORMS = ["binary_sensor", "sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -70,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = coordinator
     _register_battery_soc_refresh(hass, entry, coordinator)
     _register_energy_source_history(hass, entry, coordinator)
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
@@ -90,13 +94,46 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await EnergyHistoryStore(hass, entry.entry_id).async_remove()
 
 
-async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply updated options to the loaded coordinator."""
-    coordinator = getattr(entry, "runtime_data", None)
-    if coordinator is None:
-        return
-    coordinator.update_interval_from_options()
-    await coordinator.async_request_refresh()
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate legacy managed-load lists to config subentries."""
+    if entry.version > 2:
+        return False
+    if entry.version == 2:
+        return True
+
+    data = dict(entry.data)
+    raw_entity_ids = data.pop(CONF_MANAGED_ENERGY_ENTITIES, []) or []
+    if isinstance(raw_entity_ids, str):
+        raw_entity_ids = [raw_entity_ids]
+    existing_source_ids = {
+        subentry.data.get(CONF_MANAGED_ENERGY_ENTITY)
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == MANAGED_LOAD_SUBENTRY
+    }
+    for entity_id in dict.fromkeys(raw_entity_ids):
+        if (
+            not isinstance(entity_id, str)
+            or not entity_id
+            or entity_id in existing_source_ids
+        ):
+            continue
+        state = hass.states.get(entity_id)
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data=MappingProxyType({CONF_MANAGED_ENERGY_ENTITY: entity_id}),
+                subentry_type=MANAGED_LOAD_SUBENTRY,
+                title=state.name if state is not None else entity_id,
+                unique_id=entity_id,
+            ),
+        )
+    hass.config_entries.async_update_entry(entry, data=data, version=2)
+    return True
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the integration after options or managed loads change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 def _register_battery_soc_refresh(
@@ -183,13 +220,7 @@ def _energy_source_entities(entry: ConfigEntry) -> list[tuple[str, str]]:
     if home_entity_id := entry.data.get(CONF_HOME_ENERGY_ENTITY):
         sources.append((home_entity_id, "home"))
 
-    raw_managed_entity_ids = entry.data.get(CONF_MANAGED_ENERGY_ENTITIES) or []
-    if isinstance(raw_managed_entity_ids, str):
-        raw_managed_entity_ids = [raw_managed_entity_ids]
-
     sources.extend(
-        (entity_id, "managed")
-        for entity_id in raw_managed_entity_ids
-        if isinstance(entity_id, str) and entity_id
+        (entity_id, "managed") for entity_id in managed_energy_entity_ids(entry)
     )
     return sources

@@ -7,8 +7,9 @@ The configured home consumption source is expected to be a cumulative kWh sensor
 for whole-home consumption. Optional managed consumption sources use the same
 shape and may contain zero, one or many entities.
 
-When Home Assistant history is available, the planner reads the configured
-`history_learning_days` window and builds the load model this way:
+When Home Assistant statistics are available, the planner first reads their
+hourly `change` values. It falls back to raw recorder states and then its own
+storage. It builds the load model this way:
 
 1. Parse each source state as cumulative kWh.
 2. Sort samples by timestamp.
@@ -21,6 +22,10 @@ When Home Assistant history is available, the planner reads the configured
    source has a positive value and is not lower than the managed total.
 8. Group usable base consumption by hour of day.
 9. Average each hour-of-day group and apply the built-in 5% history margin.
+
+The incomplete current hour is excluded from the future baseline profile.
+Counter decreases are treated as a reset and a new positive cycle, rather than
+as negative consumption.
 
 Forecast slots use that hour-of-day profile. A forecast slot at 11:00 uses the
 average of historical 11:00 values from the learning window. It does not use a
@@ -56,6 +61,12 @@ base_usable = true
 The planner still uses the combined `managed_kwh` value for baseline
 calculation. The per-source values are exposed for dashboards, statistics and
 automation conditions.
+
+For tomorrow allocation, per-source hourly observations are also grouped into
+completed local calendar days. Days below 75% source coverage and the current
+partial day are excluded. This observation flag is important: an observed
+zero-change hour contributes to a real zero-use day, while an absent hour does
+not silently become zero.
 
 The main `sensor.energy_planner_consumption_history` graph payload is kept
 compact for Home Assistant's recorder. It exposes hourly `home_kwh`,

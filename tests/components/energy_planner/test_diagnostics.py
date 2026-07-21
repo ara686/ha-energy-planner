@@ -23,6 +23,12 @@ async def test_config_entry_diagnostics_include_compact_summary(hass, config_ent
 
     assert diagnostics["entry"]["domain"] == DOMAIN
     assert diagnostics["entry"]["configured_entities"]["battery_soc_entity"]
+    assert {
+        load["source_entity_id"] for load in diagnostics["entry"]["managed_loads"]
+    } == {
+        "sensor.ev_energy_total",
+        "sensor.water_heater_energy_total",
+    }
     assert diagnostics["last_state"] in {"ok", "warning"}
     assert diagnostics["history"]["bucket_count"] >= 0
     assert diagnostics["history"]["learning_days"] == 3

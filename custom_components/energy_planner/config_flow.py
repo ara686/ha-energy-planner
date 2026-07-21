@@ -6,8 +6,14 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigSubentryData,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
+)
 from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, PERCENTAGE, UnitOfEnergy
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
 from .const import (
@@ -25,12 +31,14 @@ from .const import (
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
+    CONF_MANAGED_ENERGY_ENTITY,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
+    CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
@@ -41,6 +49,7 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_NT_WINDOWS,
     DOMAIN,
+    MANAGED_LOAD_SUBENTRY,
 )
 from .options import (
     OptionsValidationError,
@@ -51,6 +60,8 @@ from .sources import parse_float
 
 ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
+ERR_ENERGY_AMOUNT_REQUIRED = "energy_amount_required"
+ERR_ENTITY_ALREADY_CONFIGURED = "entity_already_configured"
 ERR_ENERGY_SENSOR_REQUIRED = "energy_sensor_required"
 ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
 ERR_PERCENTAGE_ENTITY_REQUIRED = "percentage_entity_required"
@@ -105,6 +116,25 @@ SENSOR_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
         "domain": "sensor",
     },
 ]
+REQUESTED_ENERGY_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.ENERGY,
+    },
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.ENERGY_STORAGE,
+    },
+    {
+        "domain": "number",
+        "device_class": NumberDeviceClass.ENERGY,
+    },
+    {
+        "domain": "number",
+        "device_class": NumberDeviceClass.ENERGY_STORAGE,
+    },
+    {"domain": "input_number"},
+]
 
 
 def _number_selector(
@@ -130,13 +160,22 @@ def _number_selector(
 class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Energy Planner."""
 
-    VERSION = 1
+    VERSION = 2
 
     @staticmethod
     def async_get_options_flow(
         config_entry,
     ) -> EnergyPlannerOptionsFlow:
         return EnergyPlannerOptionsFlow()
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls,
+        config_entry: ConfigEntry,
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return supported managed-load subentry flows."""
+        return {MANAGED_LOAD_SUBENTRY: ManagedLoadSubentryFlowHandler}
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
@@ -146,7 +185,11 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=DEFAULT_NAME, data=user_input)
+                return self.async_create_entry(
+                    title=DEFAULT_NAME,
+                    data=_without_managed_entities(user_input),
+                    subentries=_managed_load_subentries(self.hass, user_input),
+                )
 
         return self.async_show_form(
             step_id="user",
@@ -164,14 +207,73 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_mismatch()
-                return self.async_update_reload_and_abort(
+                return self.async_update_and_abort(
                     entry,
-                    data=user_input,
+                    data=_without_managed_entities(user_input),
                 )
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_user_schema(dict(entry.data)),
+            data_schema=_user_schema(dict(entry.data), include_managed=False),
+            errors=errors,
+        )
+
+
+class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
+    """Add or reconfigure one managed load."""
+
+    async def async_step_user(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_managed_load_input(
+                self.hass,
+                self._get_entry(),
+                user_input,
+            )
+            if not errors:
+                source_id = user_input[CONF_MANAGED_ENERGY_ENTITY]
+                return self.async_create_entry(
+                    title=_source_display_name(self.hass, source_id),
+                    data=_clean_managed_load_data(user_input),
+                    unique_id=source_id,
+                )
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=_managed_load_schema(),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> SubentryFlowResult:
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_managed_load_input(
+                self.hass,
+                entry,
+                user_input,
+                current_subentry_id=subentry.subentry_id,
+            )
+            if not errors:
+                source_id = user_input[CONF_MANAGED_ENERGY_ENTITY]
+                return self.async_update_and_abort(
+                    entry,
+                    subentry,
+                    title=_source_display_name(self.hass, source_id),
+                    data=_clean_managed_load_data(user_input),
+                    unique_id=source_id,
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_managed_load_schema(dict(subentry.data)),
             errors=errors,
         )
 
@@ -317,44 +419,145 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
         )
 
 
-def _user_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+def _user_schema(
+    defaults: dict[str, Any] | None = None,
+    *,
+    include_managed: bool = True,
+) -> vol.Schema:
+    defaults = defaults or {}
+    fields: dict[vol.Marker, selector.EntitySelector] = {
+        _required(
+            CONF_BATTERY_SOC_ENTITY,
+            defaults,
+        ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
+        _required(
+            CONF_BATTERY_CAPACITY_ENTITY,
+            defaults,
+        ): _entity_selector(BATTERY_CAPACITY_ENTITY_FILTERS),
+        _required(
+            CONF_BATTERY_MIN_SOC_ENTITY,
+            defaults,
+        ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
+        _required(
+            CONF_HOME_ENERGY_ENTITY,
+            defaults,
+        ): _entity_selector(ENERGY_SENSOR_FILTERS),
+        _optional(
+            CONF_SOLCAST_TODAY_ENTITY,
+            defaults,
+        ): _entity_selector(SENSOR_ENTITY_FILTERS),
+        _optional(
+            CONF_SOLCAST_TOMORROW_ENTITY,
+            defaults,
+        ): _entity_selector(SENSOR_ENTITY_FILTERS),
+        _optional(
+            CONF_SOLCAST_ADDITIONAL_ENTITIES,
+            defaults,
+        ): _entity_selector(SENSOR_ENTITY_FILTERS, multiple=True),
+    }
+    if include_managed:
+        fields[
+            _optional(
+                CONF_MANAGED_ENERGY_ENTITIES,
+                defaults,
+            )
+        ] = _entity_selector(ENERGY_SENSOR_FILTERS, multiple=True)
+    return vol.Schema(fields)
+
+
+def _managed_load_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     defaults = defaults or {}
     return vol.Schema(
         {
             _required(
-                CONF_BATTERY_SOC_ENTITY,
-                defaults,
-            ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
-            _required(
-                CONF_BATTERY_CAPACITY_ENTITY,
-                defaults,
-            ): _entity_selector(BATTERY_CAPACITY_ENTITY_FILTERS),
-            _required(
-                CONF_BATTERY_MIN_SOC_ENTITY,
-                defaults,
-            ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
-            _required(
-                CONF_HOME_ENERGY_ENTITY,
+                CONF_MANAGED_ENERGY_ENTITY,
                 defaults,
             ): _entity_selector(ENERGY_SENSOR_FILTERS),
             _optional(
-                CONF_MANAGED_ENERGY_ENTITIES,
+                CONF_REQUESTED_ENERGY_ENTITY,
                 defaults,
-            ): _entity_selector(ENERGY_SENSOR_FILTERS, multiple=True),
-            _optional(
-                CONF_SOLCAST_TODAY_ENTITY,
-                defaults,
-            ): _entity_selector(SENSOR_ENTITY_FILTERS),
-            _optional(
-                CONF_SOLCAST_TOMORROW_ENTITY,
-                defaults,
-            ): _entity_selector(SENSOR_ENTITY_FILTERS),
-            _optional(
-                CONF_SOLCAST_ADDITIONAL_ENTITIES,
-                defaults,
-            ): _entity_selector(SENSOR_ENTITY_FILTERS, multiple=True),
+            ): _entity_selector(REQUESTED_ENERGY_ENTITY_FILTERS),
         }
     )
+
+
+def _without_managed_entities(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Return main-entry data without the legacy managed-load list."""
+    data = dict(user_input)
+    data.pop(CONF_MANAGED_ENERGY_ENTITIES, None)
+    return data
+
+
+def _managed_load_subentries(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+) -> list[ConfigSubentryData]:
+    """Convert managed entities selected during initial setup to subentries."""
+    return [
+        ConfigSubentryData(
+            data={CONF_MANAGED_ENERGY_ENTITY: entity_id},
+            subentry_type=MANAGED_LOAD_SUBENTRY,
+            title=_source_display_name(hass, entity_id),
+            unique_id=entity_id,
+        )
+        for entity_id in dict.fromkeys(
+            _as_entity_list(user_input.get(CONF_MANAGED_ENERGY_ENTITIES))
+        )
+    ]
+
+
+def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, str]:
+    """Normalize persisted managed-load data."""
+    data = {CONF_MANAGED_ENERGY_ENTITY: str(user_input[CONF_MANAGED_ENERGY_ENTITY])}
+    requested_entity_id = user_input.get(CONF_REQUESTED_ENERGY_ENTITY)
+    if requested_entity_id:
+        data[CONF_REQUESTED_ENERGY_ENTITY] = str(requested_entity_id)
+    return data
+
+
+def _source_display_name(hass: HomeAssistant, entity_id: str) -> str:
+    """Return a human-readable title for one managed load."""
+    state = hass.states.get(entity_id)
+    return state.name if state is not None else entity_id
+
+
+def _validate_managed_load_input(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    user_input: dict[str, Any],
+    *,
+    current_subentry_id: str | None = None,
+) -> dict[str, str]:
+    """Validate one managed load and its optional demand override."""
+    errors: dict[str, str] = {}
+    source_id = str(user_input[CONF_MANAGED_ENERGY_ENTITY])
+    _validate_energy_sensor_entity(
+        hass,
+        source_id,
+        CONF_MANAGED_ENERGY_ENTITY,
+        errors,
+    )
+    if any(
+        subentry.subentry_id != current_subentry_id
+        and subentry.subentry_type == MANAGED_LOAD_SUBENTRY
+        and subentry.data.get(CONF_MANAGED_ENERGY_ENTITY) == source_id
+        for subentry in entry.subentries.values()
+    ):
+        errors[CONF_MANAGED_ENERGY_ENTITY] = ERR_ENTITY_ALREADY_CONFIGURED
+
+    if requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
+        requested_input = {CONF_REQUESTED_ENERGY_ENTITY: requested_entity_id}
+        value = _validate_numeric_entity(
+            hass,
+            requested_input,
+            CONF_REQUESTED_ENERGY_ENTITY,
+            errors,
+        )
+        if value is not None and (
+            value < 0 or not _is_kwh_entity(hass, str(requested_entity_id))
+        ):
+            errors[CONF_REQUESTED_ENERGY_ENTITY] = ERR_ENERGY_AMOUNT_REQUIRED
+    return errors
 
 
 def _time_selector() -> selector.TimeSelector:

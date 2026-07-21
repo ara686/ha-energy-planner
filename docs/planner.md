@@ -28,3 +28,9 @@ Each point contains:
 
 The result must always include the +24 hour SoC point when enough input data is
 available, even if the full forecast horizon is longer.
+
+The planner also summarizes unused surplus by local calendar day and reports
+time-slot and solar-input coverage separately. Tomorrow surplus is valid only
+when both cover the entire next local day. The Home Assistant coordinator passes
+that budget to the separate pure allocation module; device states and Home
+Assistant entities never enter the planner core.
