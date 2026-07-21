@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .allocation import ManagedLoadDemandInput, calculate_surplus_allocation
 from .const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
@@ -22,7 +23,6 @@ from .const import (
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
-    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
@@ -33,6 +33,7 @@ from .const import (
     CONF_SUN_START_REQUIRED_MINUTES,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_CHARGE_WINDOW,
+    DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_HISTORY_PROFILE_MARGIN_PERCENT,
     DEFAULT_HISTORY_RETENTION_DAYS,
     DEFAULT_INTERVAL_MINUTES,
+    DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
     DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
     DEFAULT_NT_WINDOWS,
     DEFAULT_SOC_EPS_KWH,
@@ -49,8 +51,12 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
-from .ha_history import async_get_recorder_energy_history
+from .ha_history import (
+    async_get_recorder_energy_history,
+    async_get_recorder_energy_statistics,
+)
 from .history import EnergyHistory, EnergyHistoryStore
+from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
@@ -126,7 +132,11 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             self.hass,
             self.entry,
             now=now,
-            learning_days=_history_days(self.entry),
+            learning_days=max(
+                _history_days(self.entry),
+                DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
+            )
+            + 1,
             fallback_history=self.history,
             warnings=source_warnings,
         )
@@ -179,7 +189,7 @@ def build_planner_result(
         now=now,
         learning_days=history_days,
         source=history_source,
-        source_ids=_managed_energy_entity_ids(entry),
+        source_ids=managed_energy_entity_ids(entry),
     )
     planner_input, warnings = _build_planner_input(
         hass,
@@ -202,6 +212,14 @@ def build_planner_result(
         )
 
     result = calculate_plan(planner_input)
+    _add_surplus_allocation(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        result=result,
+        warnings=warnings,
+    )
     result.forecast["history_status"] = history_status
     result.forecast["consumption_history"] = consumption_history
     result.forecast["managed_source_history"] = managed_source_history
@@ -211,6 +229,65 @@ def build_planner_result(
         if result.state == "ok":
             result.state = "warning"
     return result
+
+
+def _add_surplus_allocation(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    history: EnergyHistory,
+    now,
+    result: PlannerResult,
+    warnings: list[str],
+) -> None:
+    learning_days = DEFAULT_MANAGED_HISTORY_LEARNING_DAYS
+    load_inputs: list[ManagedLoadDemandInput] = []
+    for load in managed_load_configs(entry):
+        daily_usage = history.managed_source_daily_usage(
+            load.source_entity_id,
+            now=now,
+            learning_days=learning_days,
+            minimum_coverage_ratio=DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
+        )
+        requested_energy_kwh = None
+        if load.requested_energy_entity_id:
+            requested_energy_kwh = _entity_float(
+                hass,
+                load.requested_energy_entity_id,
+            )
+            if requested_energy_kwh is None or requested_energy_kwh < 0:
+                warnings.append(
+                    "Requested energy source has no valid non-negative state: "
+                    f"{load.requested_energy_entity_id}. Using history instead."
+                )
+                requested_energy_kwh = None
+        load_inputs.append(
+            ManagedLoadDemandInput(
+                source_id=load.source_entity_id,
+                daily_kwh=[item.energy_kwh for item in daily_usage],
+                requested_energy_kwh=requested_energy_kwh,
+            )
+        )
+
+    tomorrow_surplus = result.plan.get("unused_surplus_tomorrow_kwh")
+    available_surplus_kwh = (
+        float(tomorrow_surplus) if isinstance(tomorrow_surplus, int | float) else None
+    )
+    surplus_complete = (
+        result.plan.get("unused_surplus_tomorrow_coverage_percent") == 100
+        and result.plan.get("unused_surplus_tomorrow_solar_coverage_percent") == 100
+    )
+    allocation = calculate_surplus_allocation(
+        target_date=now.date() + timedelta(days=1),
+        available_surplus_kwh=available_surplus_kwh,
+        surplus_complete=surplus_complete,
+        loads=load_inputs,
+    )
+    allocation_payload = allocation.as_dict()
+    result.plan["surplus_allocation"] = allocation_payload
+    result.plan["managed_expected_demand_tomorrow_kwh"] = allocation.expected_demand_kwh
+    result.plan["managed_recommended_tomorrow_kwh"] = allocation.recommended_kwh
+    result.plan["unallocated_surplus_tomorrow_kwh"] = allocation.unallocated_surplus_kwh
 
 
 def _consumption_history_payload(
@@ -320,6 +397,7 @@ def _build_planner_input(
         now=now,
         learning_days=history_days,
         margin_percent=DEFAULT_HISTORY_PROFILE_MARGIN_PERCENT,
+        include_current_hour=False,
     )
     if not history.status(
         now=now,
@@ -441,7 +519,7 @@ def _record_consumption_history(
                 value=home_value,
             )
 
-    for managed_entity_id in _managed_energy_entity_ids(entry):
+    for managed_entity_id in managed_energy_entity_ids(entry):
         managed_value = _entity_float(hass, managed_entity_id)
         if managed_value is None:
             warnings.append(
@@ -493,20 +571,32 @@ async def _async_planner_history_from_ha(
     if not home_entity_id:
         return _PlannerHistory(fallback_history, "stored")
 
-    history = await async_get_recorder_energy_history(
+    managed_entity_ids = managed_energy_entity_ids(entry)
+    history = await async_get_recorder_energy_statistics(
         hass,
         home_entity_id=home_entity_id,
-        managed_entity_ids=_managed_energy_entity_ids(entry),
+        managed_entity_ids=managed_entity_ids,
         now=now,
         learning_days=learning_days,
     )
+    source = "ha_statistics"
+    if history is None:
+        history = await async_get_recorder_energy_history(
+            hass,
+            home_entity_id=home_entity_id,
+            managed_entity_ids=managed_entity_ids,
+            now=now,
+            learning_days=learning_days,
+        )
+        source = "ha_history"
     if history is None:
         warnings.append(
             "Home Assistant recorder history is not available; "
             "using stored Energy Planner history."
         )
         return _PlannerHistory(fallback_history, "stored")
-    return _PlannerHistory(history, "ha_history")
+    history.merge_missing_managed_sources(fallback_history, managed_entity_ids)
+    return _PlannerHistory(history, source)
 
 
 def _consumption_from_hourly_profile(
@@ -607,17 +697,6 @@ def _history_days(entry: ConfigEntry) -> int:
     return int(
         _option(entry, CONF_HISTORY_LEARNING_DAYS, DEFAULT_HISTORY_LEARNING_DAYS)
     )
-
-
-def _managed_energy_entity_ids(entry: ConfigEntry) -> list[str]:
-    raw_entity_ids = entry.data.get(CONF_MANAGED_ENERGY_ENTITIES) or []
-    if isinstance(raw_entity_ids, str):
-        return [raw_entity_ids] if raw_entity_ids else []
-    return [
-        entity_id
-        for entity_id in raw_entity_ids
-        if isinstance(entity_id, str) and entity_id
-    ]
 
 
 def _coordinator_update_interval(entry: ConfigEntry) -> timedelta:

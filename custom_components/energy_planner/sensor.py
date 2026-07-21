@@ -33,7 +33,6 @@ from .const import (
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
-    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOWS,
     CONF_SOC_EPS_KWH,
@@ -43,6 +42,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import EnergyPlannerCoordinator
+from .managed_loads import managed_load_configs
 from .models import PlannerResult
 from .options import merged_options, serialize_window, serialize_windows
 
@@ -249,6 +249,31 @@ def _managed_source_history_attributes(
     return _managed_source_history(result, source_id)
 
 
+def _managed_source_allocation(
+    result: PlannerResult,
+    source_id: str,
+) -> dict[str, Any]:
+    allocation = result.plan.get("surplus_allocation")
+    if not isinstance(allocation, dict):
+        return {}
+    loads = allocation.get("loads")
+    if not isinstance(loads, dict):
+        return {}
+    payload = loads.get(source_id)
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _tomorrow_surplus_attributes(result: PlannerResult) -> dict[str, Any]:
+    return {
+        "forecast_coverage_percent": result.plan.get(
+            "unused_surplus_tomorrow_coverage_percent"
+        ),
+        "solar_coverage_percent": result.plan.get(
+            "unused_surplus_tomorrow_solar_coverage_percent"
+        ),
+    }
+
+
 SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
     EnergyPlannerSensorDescription(
         key="state",
@@ -307,17 +332,38 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         key="unused_surplus_today_kwh",
         translation_key="unused_surplus_today_kwh",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL,
         value_fn=lambda result: result.plan.get("unused_surplus_kwh"),
     ),
     EnergyPlannerSensorDescription(
         key="unused_surplus_total_kwh",
         translation_key="unused_surplus_total_kwh",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL,
         value_fn=lambda result: result.plan.get("unused_surplus_kwh_total"),
+    ),
+    EnergyPlannerSensorDescription(
+        key="unused_surplus_tomorrow_kwh",
+        translation_key="unused_surplus_tomorrow_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda result: result.plan.get("unused_surplus_tomorrow_kwh"),
+        attr_fn=_tomorrow_surplus_attributes,
+    ),
+    EnergyPlannerSensorDescription(
+        key="managed_expected_demand_tomorrow_kwh",
+        translation_key="managed_expected_demand_tomorrow_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda result: result.plan.get("managed_expected_demand_tomorrow_kwh"),
+    ),
+    EnergyPlannerSensorDescription(
+        key="managed_recommended_tomorrow_kwh",
+        translation_key="managed_recommended_tomorrow_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda result: result.plan.get("managed_recommended_tomorrow_kwh"),
+    ),
+    EnergyPlannerSensorDescription(
+        key="unallocated_surplus_tomorrow_kwh",
+        translation_key="unallocated_surplus_tomorrow_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda result: result.plan.get("unallocated_surplus_tomorrow_kwh"),
     ),
     EnergyPlannerSensorDescription(
         key="first_full_time",
@@ -329,16 +375,12 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         key="vt_grid_import_kwh_at_target",
         translation_key="vt_grid_import_kwh_at_target",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL,
         value_fn=lambda result: result.plan.get("vt_grid_import_kwh_at_target"),
     ),
     EnergyPlannerSensorDescription(
         key="charged_kwh_total_at_target",
         translation_key="charged_kwh_total_at_target",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL,
         value_fn=lambda result: result.plan.get("charged_kwh_total_at_target"),
     ),
     EnergyPlannerSensorDescription(
@@ -531,6 +573,14 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
 
 MANAGED_SOURCE_SENSOR_DESCRIPTIONS: tuple[ManagedSourceSensorDescription, ...] = (
     ManagedSourceSensorDescription(
+        key="suggested_tomorrow",
+        value_key="recommended_kwh",
+        translation_key="managed_source_suggested_tomorrow",
+        icon="mdi:chart-donut-variant",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=2,
+    ),
+    ManagedSourceSensorDescription(
         key="today",
         value_key="today_kwh",
         translation_key="managed_source_today",
@@ -593,19 +643,23 @@ async def async_setup_entry(
         EnergyPlannerSensor(coordinator, entry, description)
         for description in SENSOR_DESCRIPTIONS
     ]
-    for source_entity_id in _managed_energy_entity_ids(entry):
-        source_name = _source_display_name(hass, source_entity_id)
-        entities.extend(
+    async_add_entities(entities)
+    for load in managed_load_configs(entry):
+        source_name = _source_display_name(hass, load.source_entity_id)
+        source_entities = [
             EnergyPlannerManagedSourceSensor(
                 coordinator,
                 entry,
-                source_entity_id=source_entity_id,
+                source_entity_id=load.source_entity_id,
                 source_name=source_name,
                 description=description,
             )
             for description in MANAGED_SOURCE_SENSOR_DESCRIPTIONS
+        ]
+        async_add_entities(
+            source_entities,
+            config_subentry_id=load.subentry_id,
         )
-    async_add_entities(entities)
 
 
 class EnergyPlannerSensor(CoordinatorEntity[EnergyPlannerCoordinator], SensorEntity):
@@ -710,6 +764,12 @@ class EnergyPlannerManagedSourceSensor(
         result = self.coordinator.data
         if result is None:
             return None
+        if self.entity_description.key == "suggested_tomorrow":
+            value = _managed_source_allocation(
+                result,
+                self._source_entity_id,
+            ).get(self.entity_description.value_key)
+            return round(value, 6) if isinstance(value, (int, float)) else None
         return _managed_source_value(
             result,
             self._source_entity_id,
@@ -724,6 +784,12 @@ class EnergyPlannerManagedSourceSensor(
         }
         result = self.coordinator.data
         if result is None:
+            return attributes
+
+        if self.entity_description.key == "suggested_tomorrow":
+            attributes.update(
+                _managed_source_allocation(result, self._source_entity_id)
+            )
             return attributes
 
         history = _managed_source_history_attributes(result, self._source_entity_id)
@@ -763,17 +829,6 @@ def _forecast_24h_soc(result: PlannerResult) -> int | None:
         return None
     value = point.get("soc_percent")
     return value if isinstance(value, int) else None
-
-
-def _managed_energy_entity_ids(entry: ConfigEntry) -> list[str]:
-    raw_entity_ids = entry.data.get(CONF_MANAGED_ENERGY_ENTITIES) or []
-    if isinstance(raw_entity_ids, str):
-        return [raw_entity_ids] if raw_entity_ids else []
-    return [
-        entity_id
-        for entity_id in raw_entity_ids
-        if isinstance(entity_id, str) and entity_id
-    ]
 
 
 def _source_display_name(hass: HomeAssistant, entity_id: str) -> str:

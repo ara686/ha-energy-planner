@@ -44,6 +44,37 @@
       "energy_sensor_required": "Selected consumption entity must be a cumulative energy sensor in kWh."
     }
   },
+  "config_subentries": {
+    "managed_load": {
+      "entry_type": "Managed load",
+      "initiate_flow": {"user": "Add managed load"},
+      "step": {
+        "user": {
+          "title": "Add managed load",
+          "description": "Select its cumulative energy meter and, optionally, an entity containing tomorrow's requested energy in kWh.",
+          "data": {
+            "managed_energy_entity": "Cumulative energy meter",
+            "requested_energy_entity": "Requested energy tomorrow"
+          }
+        },
+        "reconfigure": {
+          "title": "Edit managed load",
+          "description": "Update the load's energy meter or optional requested energy.",
+          "data": {
+            "managed_energy_entity": "Cumulative energy meter",
+            "requested_energy_entity": "Requested energy tomorrow"
+          }
+        }
+      },
+      "abort": {"reconfigure_successful": "Managed load updated successfully."},
+      "error": {
+        "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
+        "energy_sensor_required": "The energy meter must be a cumulative energy sensor in kWh.",
+        "energy_amount_required": "Requested energy must be a non-negative entity in kWh.",
+        "entity_already_configured": "This energy meter is already configured."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
@@ -124,6 +155,10 @@
       "unused_surplus_total_kwh": {
         "name": "Unused surplus total"
       },
+      "unused_surplus_tomorrow_kwh": {"name": "Unused surplus tomorrow"},
+      "managed_expected_demand_tomorrow_kwh": {"name": "Expected managed demand tomorrow"},
+      "managed_recommended_tomorrow_kwh": {"name": "Recommended managed energy tomorrow"},
+      "unallocated_surplus_tomorrow_kwh": {"name": "Unallocated surplus tomorrow"},
       "first_full_time": {
         "name": "First full time"
       },
@@ -175,6 +210,7 @@
       "managed_source_history": {
         "name": "Managed {source} history"
       },
+      "managed_source_suggested_tomorrow": {"name": "Managed {source} suggested tomorrow"},
       "update_interval_minutes": {
         "name": "Recalculation interval"
       },

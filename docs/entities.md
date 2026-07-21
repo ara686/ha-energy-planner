@@ -23,6 +23,10 @@ Entities**.
 | `sensor.energy_planner_free_capacity` | `free_capacity_kwh` | Standard | `kWh` | Current energy above `safe_discharge_soc`, expressed as battery capacity. |
 | `sensor.energy_planner_unused_surplus_today` | `unused_surplus_today_kwh` | Standard | `kWh` | Passive forecasted PV surplus for today that cannot be stored in the battery. |
 | `sensor.energy_planner_unused_surplus_total` | `unused_surplus_total_kwh` | Standard | `kWh` | Passive forecasted PV surplus across the configured forecast horizon that cannot be stored in the battery. |
+| `sensor.energy_planner_unused_surplus_tomorrow` | `unused_surplus_tomorrow_kwh` | Standard | `kWh` | Passive surplus for the complete next local calendar day. Unavailable if time-slot or solar coverage is incomplete; coverage percentages are attributes. |
+| `sensor.energy_planner_expected_managed_demand_tomorrow` | `managed_expected_demand_tomorrow_kwh` | Standard | `kWh` | Combined historical or explicitly requested demand before surplus limiting. |
+| `sensor.energy_planner_recommended_managed_energy_tomorrow` | `managed_recommended_tomorrow_kwh` | Standard | `kWh` | Combined managed-load recommendation after proportional surplus limiting. |
+| `sensor.energy_planner_unallocated_surplus_tomorrow` | `unallocated_surplus_tomorrow_kwh` | Standard | `kWh` | Complete tomorrow surplus left after all managed-load recommendations. |
 | `sensor.energy_planner_first_full_time` | `first_full_time` | Standard | timestamp | First passive forecasted time when the battery reaches full SoC. |
 | `sensor.energy_planner_high_tariff_grid_import_at_target` | `vt_grid_import_kwh_at_target` | Standard | `kWh` | Forecasted high-tariff grid import remaining in the simulation when charging to `target_soc`. |
 | `sensor.energy_planner_charged_total_at_target` | `charged_kwh_total_at_target` | Standard | `kWh` | Total grid energy the simulation charges into the battery to reach `target_soc`. |
@@ -60,7 +64,8 @@ typically creates entity IDs like
 
 | Typical entity pattern | Category | Unit/type | Description |
 |------------------------|----------|-----------|-------------|
-| `sensor.energy_planner_managed_<source>_today` | Standard | `kWh` | Energy used by this managed load today. Uses Home Assistant long-term statistics with `device_class: energy` and `state_class: total_increasing`. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Standard | `kWh` | Recommended energy for this load tomorrow. Attributes include method, expected demand, observed and active days, active probability, active-day median, confidence and reason. |
+| `sensor.energy_planner_managed_<source>_today` | Standard | `kWh` | Energy used by this managed load today. Uses `device_class: energy` and `state_class: total_increasing`. |
 | `sensor.energy_planner_managed_<source>_current_hour` | Standard | `kWh` | Energy used by this managed load in the current hour bucket. Useful for live dashboards and automation conditions. |
 | `sensor.energy_planner_managed_<source>_last_hour` | Standard | `kWh` | Energy used by this managed load in the previous completed hour bucket. Useful for hourly charts and decisions that should not use an incomplete current hour. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Standard | `kWh` | Monotonic total tracked by Energy Planner from positive deltas observed after setup. Uses `device_class: energy` and `state_class: total_increasing`. |
@@ -70,8 +75,8 @@ Each per-source entity includes these attributes:
 
 - `source_entity_id`: original managed source entity selected in setup.
 - `source_name`: source friendly name used when the entity was created.
-- `history_source`: whether the hourly values came from Home Assistant recorder
-  history or Energy Planner's stored fallback history.
+- `history_source`: whether hourly values came from Home Assistant long-term
+  statistics, raw recorder history or Energy Planner's stored fallback history.
 - `today_kwh`, `current_hour_kwh`, `last_hour_kwh`: compact summary values.
 - `point_count`, `point_limit`, `truncated`: history payload status.
 - `tracked_total_kwh`: Energy Planner's monotonic tracked total for the source.
@@ -79,6 +84,11 @@ Each per-source entity includes these attributes:
 The `history` entity additionally exposes a `points` attribute with compact
 hourly data. Other per-source entities intentionally do not expose `points`, so
 regular state history stays compact.
+
+The suggested-tomorrow entity has allocation attributes instead of hourly
+history attributes. `method` is `history`, `requested` or `insufficient_data`.
+`confidence` describes the historical estimate and is not a guarantee about PV
+production or device behavior.
 
 The main `sensor.energy_planner_consumption_history` entity shows total home,
 total managed and calculated base consumption. It does not include per-source

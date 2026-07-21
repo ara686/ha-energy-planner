@@ -44,6 +44,37 @@
       "energy_sensor_required": "Vybraná entita spotreby musí byť kumulatívny energetický senzor v kWh."
     }
   },
+  "config_subentries": {
+    "managed_load": {
+      "entry_type": "Riadený odber",
+      "initiate_flow": {"user": "Pridať riadený odber"},
+      "step": {
+        "user": {
+          "title": "Pridať riadený odber",
+          "description": "Vyberte kumulatívny elektromer a voliteľne entitu s požadovanou energiou na zajtra v kWh.",
+          "data": {
+            "managed_energy_entity": "Kumulatívny elektromer",
+            "requested_energy_entity": "Požadovaná energia na zajtra"
+          }
+        },
+        "reconfigure": {
+          "title": "Upraviť riadený odber",
+          "description": "Upravte elektromer odberu alebo voliteľnú požadovanú energiu.",
+          "data": {
+            "managed_energy_entity": "Kumulatívny elektromer",
+            "requested_energy_entity": "Požadovaná energia na zajtra"
+          }
+        }
+      },
+      "abort": {"reconfigure_successful": "Riadený odber bol úspešne aktualizovaný."},
+      "error": {
+        "invalid_numeric_entity": "Vybraná entita musí mať číselný stav.",
+        "energy_sensor_required": "Elektromer musí byť kumulatívny energetický senzor v kWh.",
+        "energy_amount_required": "Požadovaná energia musí byť nezáporná entita v kWh.",
+        "entity_already_configured": "Tento elektromer je už nakonfigurovaný."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
@@ -124,6 +155,10 @@
       "unused_surplus_total_kwh": {
         "name": "Nevyužitý prebytok spolu"
       },
+      "unused_surplus_tomorrow_kwh": {"name": "Nevyužitý prebytok zajtra"},
+      "managed_expected_demand_tomorrow_kwh": {"name": "Očakávaná riadená spotreba zajtra"},
+      "managed_recommended_tomorrow_kwh": {"name": "Odporúčaná riadená energia zajtra"},
+      "unallocated_surplus_tomorrow_kwh": {"name": "Nerozdelený prebytok zajtra"},
       "first_full_time": {
         "name": "Prvý čas plnej batérie"
       },
@@ -175,6 +210,7 @@
       "managed_source_history": {
         "name": "Riadená spotreba {source} história"
       },
+      "managed_source_suggested_tomorrow": {"name": "Riadená spotreba {source} odporúčanie na zajtra"},
       "update_interval_minutes": {
         "name": "Interval prepočtu"
       },

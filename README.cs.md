@@ -22,6 +22,8 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
 - Pomůže rozhodnout, jestli má smysl baterii nabíjet v nízkém tarifu.
 - Ukáže, jestli je podle plánu ještě povolené vybíjení baterie.
 - Odhadne nevyužitý přebytek z FVE pro bojler, bazén, ohřev vody nebo EV.
+- Doporučí rozdělení úplně pokrytého zítřejšího přebytku mezi řízené spotřebiče
+  podle jejich nedávné denní spotřeby nebo volitelné entity s požadavkem.
 - Oddělí řízené spotřebiče od běžné spotřeby domu, aby se lépe učil běžný
   profil domácnosti.
 - Ukáže řízené spotřebiče zvlášť, takže uvidíte spotřebu EV, TUV, bazénu nebo
@@ -32,6 +34,8 @@ spotřebiče a v zimě lépe plánovat využití nízkého tarifu tak, aby bater
 překlenula vysoký tarif.
 
 ## Instalace
+
+Je vyžadován Home Assistant 2025.3 nebo novější.
 
 ### HACS
 
@@ -66,6 +70,8 @@ Volitelné:
 
 - Jedna nebo více kumulativních entit řízené spotřeby v `kWh`, například EV,
   bojler, ohřev vody nebo bazénová technologie.
+- Volitelná číselná entita v `kWh` pro každý řízený odběr s energií požadovanou
+  na zítřek. Pro daný odběr přepíše historický odhad.
 - Solcast předpověď FVE pro dnešek, zítřek a další dny.
 
 Pokud máte spotřebu domu jen jako okamžitý výkon, například
@@ -85,6 +91,8 @@ Energy Planner staví hodinový profil spotřeby z historie Home Assistantu.
   24 hodinách.
 - Přesnější hodnoty čekejte zhruba po 48 hodinách, protože planner uvidí stejné
   hodiny dne vícekrát.
+- Doporučení pro řízené odběry vyžaduje alespoň tři dostatečně pokryté ukončené
+  dny. Běžný odhad používá až sedm posledních dní.
 
 Reconfigure uloženou historii zachovává. Pokud změníte zdrojovou entitu,
 výsledky chvíli sledujte. Integraci smažte jen tehdy, když chcete záměrně
@@ -108,6 +116,10 @@ Nejužitečnější entity:
 | `sensor.energy_planner_charge_to_soc` | SoC potřebné pro plánované nabíjení ze sítě. |
 | `sensor.energy_planner_safe_discharge_soc` | Nejnižší SoC, které ještě zachová plán. |
 | `sensor.energy_planner_unused_surplus_today` | Odhad nevyužitého přebytku z FVE pro dnešek z pasivní predikce. |
+| `sensor.energy_planner_unused_surplus_tomorrow` | Rozdělitelný přebytek na zítřek. Hodnotu má jen při pokrytí celého místního dne i solárních vstupů. |
+| `sensor.energy_planner_recommended_managed_energy_tomorrow` | Celková energie doporučená pro všechny řízené odběry na zítřek. |
+| `sensor.energy_planner_unallocated_surplus_tomorrow` | Zítřejší přebytek zbývající po všech doporučeních. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr; atributy obsahují metodu, spolehlivost a historické vstupy. |
 | `sensor.energy_planner_managed_<source>_today` | Dnešní spotřeba jedné řízené zátěže, například EV nebo TUV. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Sledovaný součet Energy Planneru pro jednu řízenou zátěž. |
 
@@ -136,6 +148,8 @@ automatizace:
 - `binary_sensor.energy_planner_discharge_allowed` pro povolení vybíjení.
 - `sensor.energy_planner_unused_surplus_today` pro spuštění pružných spotřebičů,
   když je dost předpokládaného přebytku z FVE.
+- Hodnotu každého `managed_<source>_suggested_tomorrow` jako vstup vlastní
+  automatizace na další den; Energy Planner zařízení stále sám nespíná.
 - Per-load managed senzory pro prioritizaci spotřebičů, například nejdřív
   dohřát TUV a teprve potom povolit nabíjení EV.
 

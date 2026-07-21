@@ -139,6 +139,20 @@ async def test_only_soc_forecast_uses_battery_device_class(hass, config_entry):
         assert state.attributes.get("device_class") != "battery"
         assert "state_class" not in state.attributes
 
+    for key in (
+        "unused_surplus_today_kwh",
+        "unused_surplus_total_kwh",
+        "unused_surplus_tomorrow_kwh",
+        "managed_expected_demand_tomorrow_kwh",
+        "managed_recommended_tomorrow_kwh",
+        "unallocated_surplus_tomorrow_kwh",
+        "vt_grid_import_kwh_at_target",
+        "charged_kwh_total_at_target",
+    ):
+        state = hass.states.get(entity_ids[f"{config_entry.entry_id}_{key}"])
+        assert state is not None
+        assert "state_class" not in state.attributes
+
 
 async def test_selected_soc_sensors_suggest_whole_number_display(
     hass,
@@ -487,6 +501,11 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     ev_tracked_total = hass.states.get(
         registry.async_get_entity_id("sensor", DOMAIN, f"{ev_prefix}_tracked_total")
     )
+    ev_suggested_entity_id = registry.async_get_entity_id(
+        "sensor",
+        DOMAIN,
+        f"{ev_prefix}_suggested_tomorrow",
+    )
     water_today = hass.states.get(
         registry.async_get_entity_id("sensor", DOMAIN, f"{water_prefix}_today")
     )
@@ -495,6 +514,7 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     assert ev_current_hour is not None
     assert ev_last_hour is not None
     assert ev_tracked_total is not None
+    assert ev_suggested_entity_id is not None
     assert water_today is not None
 
     assert round(float(ev_today.state), 6) == 0.4
@@ -512,6 +532,33 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     assert ev_today.attributes["source_name"] == "EV charging energy"
     assert ev_today.attributes["point_count"] == 1
     assert "points" not in ev_today.attributes
+    assert registry.async_get(ev_suggested_entity_id).config_subentry_id is not None
+
+    config_entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "surplus_allocation": {
+                    "loads": {
+                        "sensor.ev_energy_total": {
+                            "method": "history",
+                            "expected_demand_kwh": 6.0,
+                            "recommended_kwh": 4.0,
+                            "confidence": "medium",
+                        }
+                    }
+                }
+            },
+        )
+    )
+    await hass.async_block_till_done()
+
+    ev_suggested = hass.states.get(ev_suggested_entity_id)
+    assert ev_suggested is not None
+    assert float(ev_suggested.state) == 4
+    assert ev_suggested.attributes["method"] == "history"
+    assert ev_suggested.attributes["expected_demand_kwh"] == 6
 
     ev_history_entity_id = registry.async_get_entity_id(
         "sensor",

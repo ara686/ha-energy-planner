@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from custom_components.energy_planner.history import (
@@ -264,6 +264,22 @@ def test_hourly_base_consumption_profile_prefers_same_hour_history():
     assert profile[11] == 10.0
 
 
+def test_hourly_base_profile_can_exclude_incomplete_current_hour():
+    now = datetime(2026, 7, 3, 12, 30)
+    history = EnergyHistory()
+    history.add_hourly_sample(now - timedelta(days=1), home_kwh=1.0)
+    history.add_hourly_sample(now, home_kwh=9.0)
+
+    profile = history.hourly_base_consumption_profile(
+        now=now,
+        learning_days=3,
+        margin_percent=0,
+        include_current_hour=False,
+    )
+
+    assert profile[12] == 1.0
+
+
 def test_cumulative_history_samples_build_nodered_hourly_profile():
     now = datetime(2026, 7, 3, 12, 0)
     history = EnergyHistory.from_cumulative_energy_samples(
@@ -418,6 +434,134 @@ def test_history_status_reports_usable_bucket_count():
         "learning_days": 1,
         "has_completed_bucket": True,
     }
+
+
+def test_daily_managed_usage_keeps_observed_zero_days():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone)
+    source_id = "sensor.water_heater_energy_total"
+    history = EnergyHistory()
+    for days_ago, daily_kwh in ((3, 3.0), (2, 0.0), (1, 4.0)):
+        day = (now - timedelta(days=days_ago)).replace(hour=0, minute=0)
+        for hour in range(24):
+            history.add_hourly_sample(
+                day + timedelta(hours=hour),
+                home_kwh=0,
+                managed_kwh=daily_kwh if hour == 12 else 0,
+                managed_source_id=source_id,
+                observed_source_ids={source_id},
+            )
+
+    usage = history.managed_source_daily_usage(
+        source_id,
+        now=now,
+        learning_days=7,
+        minimum_coverage_ratio=0.75,
+    )
+
+    assert [item.energy_kwh for item in usage] == [3.0, 0.0, 4.0]
+    assert all(item.coverage_ratio == 1 for item in usage)
+
+
+def test_daily_managed_usage_excludes_low_coverage_and_current_day():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone)
+    source_id = "sensor.pool_energy_total"
+    history = EnergyHistory()
+    for timestamp in (
+        now - timedelta(days=1, hours=4),
+        now - timedelta(days=1, hours=3),
+        now - timedelta(days=1, hours=2),
+        now - timedelta(hours=1),
+    ):
+        history.add_hourly_sample(
+            timestamp,
+            home_kwh=0,
+            managed_kwh=1,
+            managed_source_id=source_id,
+            observed_source_ids={source_id},
+        )
+
+    assert (
+        history.managed_source_daily_usage(
+            source_id,
+            now=now,
+            learning_days=7,
+            minimum_coverage_ratio=0.75,
+        )
+        == []
+    )
+
+
+def test_daily_managed_usage_accepts_all_23_hours_of_spring_dst_day():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 3, 30, 12, 0, tzinfo=timezone)
+    day_start = datetime(2026, 3, 29, 0, 0, tzinfo=timezone)
+    source_id = "sensor.water_heater_energy_total"
+    history = EnergyHistory()
+    for index in range(23):
+        timestamp = (day_start.astimezone(UTC) + timedelta(hours=index)).astimezone(
+            timezone
+        )
+        history.add_hourly_sample(
+            timestamp,
+            home_kwh=0,
+            managed_kwh=3 if index == 12 else 0,
+            managed_source_id=source_id,
+            observed_source_ids={source_id},
+        )
+
+    usage = history.managed_source_daily_usage(
+        source_id,
+        now=now,
+        learning_days=7,
+        minimum_coverage_ratio=1,
+    )
+
+    assert len(usage) == 1
+    assert usage[0].observed_hours == 23
+    assert usage[0].expected_hours == 23
+    assert usage[0].energy_kwh == 3
+
+
+def test_cumulative_meter_reset_starts_a_new_positive_cycle():
+    source_id = "sensor.ev_energy_total"
+    history = EnergyHistory()
+    timestamp = datetime(2026, 7, 3, 10, 0)
+
+    history.record_cumulative_energy_source(
+        timestamp,
+        source_type="managed",
+        source_id=f"managed:{source_id}",
+        value=100,
+    )
+    history.record_cumulative_energy_source(
+        timestamp + timedelta(hours=1),
+        source_type="managed",
+        source_id=f"managed:{source_id}",
+        value=2,
+    )
+
+    assert (
+        history.managed_source_last_hour_kwh(
+            source_id,
+            now=timestamp + timedelta(hours=2),
+        )
+        == 2
+    )
+
+
+def test_statistics_history_represents_zero_change_as_observed():
+    source_id = "sensor.pool_energy_total"
+    history = EnergyHistory.from_hourly_energy_changes(
+        home_source_id="sensor.home_energy_total",
+        home_changes={"2026-07-03T10:00:00": 1.0},
+        managed_changes_by_source={source_id: {"2026-07-03T10:00:00": 0.0}},
+    )
+
+    bucket = history.buckets["2026-07-03T10:00:00"]
+    assert source_id in bucket.observed_sources
+    assert bucket.managed_sources == {}
 
 
 def test_history_status_counts_only_usable_completed_buckets():

@@ -18,6 +18,7 @@ class ForecastSlot:
     start: datetime
     solar_kwh: float
     consumption_kwh: float
+    solar_coverage: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class SocForecastPoint:
     grid_charge_kwh: float = 0.0
     grid_import_kwh: float = 0.0
     unused_surplus_kwh: float = 0.0
+    solar_coverage: float = 1.0
     is_nt: bool = False
     is_charge_window: bool = False
 
@@ -50,6 +52,7 @@ class SocForecastPoint:
             "grid_charge_kwh": self.grid_charge_kwh,
             "grid_import_kwh": self.grid_import_kwh,
             "unused_surplus_kwh": self.unused_surplus_kwh,
+            "solar_coverage": self.solar_coverage,
             "is_nt": self.is_nt,
             "is_charge_window": self.is_charge_window,
         }
@@ -70,7 +73,7 @@ class PlannerInput:
     soc_reserve_percent: float = 1
     soc_eps_kwh: float = 0.02
     sun_start_required_minutes: int = 30
-    forecast_horizon_hours: int = 36
+    forecast_horizon_hours: int = 48
 
 
 @dataclass

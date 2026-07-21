@@ -12,7 +12,8 @@ uv run --extra ha --extra dev pytest -q
 
 The Home Assistant test extra is required because config flow, options flow,
 config entry setup, services, diagnostics and entity behavior are tested against
-Home Assistant test helpers.
+Home Assistant test helpers. The clean CI environment uses Python 3.13, which is
+the minimum Python version supported by the Home Assistant 2025.3 test package.
 
 ## Remote Quality Gate
 
@@ -47,6 +48,9 @@ Planner tests:
 - charge window across midnight
 - no Solcast data, malformed Solcast data and missing optional Solcast entities
 - managed load subtraction
+- managed-load daily coverage, true zero days and cumulative meter resets
+- history-based demand, requested-energy override and proportional allocation
+- complete and incomplete next-day forecast coverage
 - history correction
 - partial current hour and forecast horizon boundary
 - SoC forecast for exactly 24 hours and longer horizons

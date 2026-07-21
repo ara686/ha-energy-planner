@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from custom_components.energy_planner.ha_history import (
     async_get_recorder_energy_history,
+    async_get_recorder_energy_statistics,
 )
 
 
@@ -61,3 +62,53 @@ async def test_recorder_history_uses_keyword_arguments(hass, monkeypatch):
         "no_attributes": False,
         "compressed_state_format": False,
     }
+
+
+async def test_recorder_statistics_are_preferred_as_hourly_changes(
+    hass,
+    monkeypatch,
+):
+    now = datetime(2026, 7, 3, 12, 0)
+    start_timestamp = (now - timedelta(hours=2)).timestamp()
+    captured: dict[str, object] = {}
+
+    def statistics_during_period(*args):
+        captured["args"] = args
+        return {
+            "sensor.home_energy_total": [{"start": start_timestamp, "change": 1.5}],
+            "sensor.ev_energy_total": [{"start": start_timestamp, "change": 0.5}],
+        }
+
+    class RecorderInstance:
+        async def async_add_executor_job(self, target, *args):
+            return target(*args)
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        statistics_during_period,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda _hass: RecorderInstance(),
+    )
+
+    history = await async_get_recorder_energy_statistics(
+        hass,
+        home_entity_id="sensor.home_energy_total",
+        managed_entity_ids=["sensor.ev_energy_total"],
+        now=now,
+        learning_days=3,
+    )
+
+    assert history is not None
+    args = captured["args"]
+    assert args[0] is hass
+    assert args[3] == {
+        "sensor.home_energy_total",
+        "sensor.ev_energy_total",
+    }
+    assert args[4] == "hour"
+    assert args[6] == {"change"}
+    bucket = next(iter(history.buckets.values()))
+    assert bucket.home_kwh == 1.5
+    assert bucket.managed_kwh == 0.5

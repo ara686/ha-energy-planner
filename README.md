@@ -24,6 +24,8 @@ and binary sensors that you can use in dashboards or in your own automations.
 - Decide whether battery discharge is currently still safe for the plan.
 - Estimate unused PV surplus that can be used for flexible loads such as hot
   water, pool technology or EV charging.
+- Recommend how tomorrow's fully covered surplus can be divided among managed
+  loads from their recent daily usage or an optional requested-energy entity.
 - Keep managed loads out of the normal house consumption profile, so the planner
   learns the base household load more realistically.
 - Track managed loads separately, so you can see how much energy went into EV
@@ -34,6 +36,8 @@ loads from summer PV surplus, and in winter use the low-tariff window to bridge
 the next high-tariff period.
 
 ## Installation
+
+Home Assistant 2025.3 or newer is required.
 
 ### HACS
 
@@ -68,6 +72,8 @@ Optional:
 
 - One or more managed-load cumulative energy entities in `kWh`, such as EV
   charging, water heater, boiler or pool technology.
+- An optional numeric `kWh` entity for each managed load with the energy you
+  want to supply tomorrow. It overrides that load's historical estimate.
 - Solcast PV forecast entities for today, tomorrow and additional days.
 
 If your home consumption is only available as a power sensor, for example
@@ -87,6 +93,8 @@ Energy Planner builds an hourly consumption profile from Home Assistant history.
   about 24 hours.
 - Results become more accurate after about 48 hours because the planner has seen
   repeated samples for the same hour of day.
+- Managed-load recommendations require at least three coverage-qualified
+  completed days. The normal estimate uses up to seven recent days.
 
 Reconfigure keeps the stored history. If you change a source entity, check the
 results for a while and only remove the integration if you intentionally want to
@@ -110,6 +118,10 @@ Most useful entities:
 | `sensor.energy_planner_charge_to_soc` | SoC level needed for planned grid charging. |
 | `sensor.energy_planner_safe_discharge_soc` | Lowest SoC that should still preserve the plan. |
 | `sensor.energy_planner_unused_surplus_today` | Estimated unused PV surplus for today from the passive forecast. |
+| `sensor.energy_planner_unused_surplus_tomorrow` | Tomorrow's allocatable surplus. It has a value only when the complete local day and its solar input are covered. |
+| `sensor.energy_planner_recommended_managed_energy_tomorrow` | Total energy recommended for all managed loads tomorrow. |
+| `sensor.energy_planner_unallocated_surplus_tomorrow` | Complete tomorrow surplus remaining after all recommendations. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load, with method, confidence and historical inputs in attributes. |
 | `sensor.energy_planner_managed_<source>_today` | Energy used today by one managed load, for example EV charging or water heating. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Energy Planner's tracked total for one managed load. |
 
@@ -139,6 +151,8 @@ for automations:
   discharge.
 - Use `sensor.energy_planner_unused_surplus_today` to start flexible loads when
   there is enough predicted PV surplus.
+- Use each `managed_<source>_suggested_tomorrow` value as an input to your own
+  next-day automation; Energy Planner still does not switch the device itself.
 - Use per-load managed sensors to prioritize loads, for example heat water
   before allowing EV charging.
 
