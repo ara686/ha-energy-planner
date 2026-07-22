@@ -391,6 +391,33 @@ class EnergyHistory:
                     source_id
                 ]
 
+    def merge_current_hour(self, fallback: EnergyHistory, *, now: datetime) -> None:
+        """Overlay live current-hour readings onto recorder statistics.
+
+        Recorder hourly statistics can lag until the hour is complete. The stored
+        history is updated from source state-change events, so it provides the
+        partial current hour. Values are merged with ``max`` instead of addition
+        because both histories may describe the same consumption interval.
+        """
+        key = hour_key(now)
+        fallback_bucket = fallback.buckets.get(key)
+        if fallback_bucket is None:
+            return
+
+        bucket = self.buckets.setdefault(key, HourlyEnergyBucket(hour_start=key))
+        bucket.home_kwh = max(bucket.home_kwh, fallback_bucket.home_kwh)
+        for source_id, value in fallback_bucket.managed_sources.items():
+            bucket.managed_sources[source_id] = max(
+                bucket.managed_sources.get(source_id, 0.0),
+                value,
+            )
+        bucket.managed_kwh = max(
+            bucket.managed_kwh,
+            fallback_bucket.managed_kwh,
+            sum(bucket.managed_sources.values()),
+        )
+        bucket.observed_sources.update(fallback_bucket.observed_sources)
+
     def managed_source_hourly_points(
         self,
         source_id: str,

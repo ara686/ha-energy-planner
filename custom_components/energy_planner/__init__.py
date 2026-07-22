@@ -28,6 +28,7 @@ PLATFORMS = ["binary_sensor", "sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 SOC_REFRESH_DEBOUNCE_SECONDS = 60
+MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS = 60
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -192,6 +193,18 @@ def _register_energy_source_history(
         entity_id: source_type for entity_id, source_type in tracked_sources
     }
 
+    async def _request_refresh() -> None:
+        await coordinator.async_request_refresh()
+
+    managed_refresh_debouncer = Debouncer(
+        hass,
+        _LOGGER,
+        cooldown=MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS,
+        immediate=False,
+        function=_request_refresh,
+    )
+    entry.async_on_unload(managed_refresh_debouncer.async_cancel)
+
     @callback
     def _handle_energy_source_change(event) -> None:
         old_state = event.data.get("old_state")
@@ -205,6 +218,8 @@ def _register_energy_source_history(
             source_type=source_types[new_state.entity_id],
             state=new_state,
         )
+        if source_types[new_state.entity_id] == "managed":
+            hass.async_create_task(managed_refresh_debouncer.async_call())
 
     entry.async_on_unload(
         async_track_state_change_event(

@@ -595,6 +595,7 @@ async def _async_planner_history_from_ha(
             "using stored Energy Planner history."
         )
         return _PlannerHistory(fallback_history, "stored")
+    history.merge_current_hour(fallback_history, now=now)
     history.merge_missing_managed_sources(fallback_history, managed_entity_ids)
     return _PlannerHistory(history, source)
 
