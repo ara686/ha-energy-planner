@@ -766,6 +766,42 @@ async def test_energy_source_changes_are_recorded_in_internal_history(
     )
 
 
+async def test_managed_source_changes_request_debounced_planner_refresh(
+    hass,
+    config_entry,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "custom_components.energy_planner.MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS",
+        0,
+    )
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    refresh_calls = 0
+
+    async def mock_refresh() -> None:
+        nonlocal refresh_calls
+        refresh_calls += 1
+
+    config_entry.runtime_data.async_request_refresh = mock_refresh
+
+    hass.states.async_set("sensor.home_energy_total", "1000.1")
+    await hass.async_block_till_done()
+    assert refresh_calls == 0
+
+    hass.states.async_set("sensor.ev_energy_total", "200.1")
+    hass.states.async_set("sensor.ev_energy_total", "200.2")
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+    assert refresh_calls == 1
+
+
 async def test_options_update_changes_loaded_recalculation_interval(
     hass,
     config_entry,
