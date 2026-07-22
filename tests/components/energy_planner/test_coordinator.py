@@ -14,6 +14,7 @@ from custom_components.energy_planner.const import (
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
+    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_REQUESTED_ENERGY_ENTITY,
@@ -28,6 +29,7 @@ from custom_components.energy_planner.const import (
 from custom_components.energy_planner.coordinator import (
     EnergyPlannerCoordinator,
     _add_surplus_allocation,
+    _async_planner_history_from_ha,
     _consumption_from_hourly_profile,
     _solcast_entity_ids,
     _solcast_forecast,
@@ -72,6 +74,71 @@ def test_coordinator_update_interval_is_independent_from_planning_interval(hass)
     coordinator = EnergyPlannerCoordinator(hass, entry)
 
     assert coordinator.update_interval == timedelta(minutes=45)
+
+
+async def test_recorder_history_includes_live_current_hour(
+    hass,
+    monkeypatch,
+):
+    now = datetime(2026, 7, 3, 12, 30)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOME_ENERGY_ENTITY: "sensor.home_energy_total",
+            CONF_MANAGED_ENERGY_ENTITIES: ["sensor.ev_energy_total"],
+        },
+    )
+    recorder_history = EnergyHistory()
+    recorder_history.add_hourly_sample(
+        now - timedelta(hours=1),
+        home_kwh=1.5,
+        managed_kwh=0.3,
+        managed_source_id="sensor.ev_energy_total",
+        observed_source_ids={"sensor.ev_energy_total"},
+    )
+    recorder_history.dirty = False
+    live_history = EnergyHistory()
+    live_history.add_hourly_sample(
+        now,
+        home_kwh=0.5,
+        managed_kwh=0.4,
+        managed_source_id="sensor.ev_energy_total",
+        observed_source_ids={"sensor.ev_energy_total"},
+    )
+
+    async def recorder_statistics(*args, **kwargs):
+        return recorder_history
+
+    monkeypatch.setattr(
+        "custom_components.energy_planner.coordinator."
+        "async_get_recorder_energy_statistics",
+        recorder_statistics,
+    )
+
+    planner_history = await _async_planner_history_from_ha(
+        hass,
+        entry,
+        now=now,
+        learning_days=3,
+        fallback_history=live_history,
+        warnings=[],
+    )
+
+    assert planner_history.source == "ha_statistics"
+    assert (
+        planner_history.history.managed_source_current_hour_kwh(
+            "sensor.ev_energy_total",
+            now=now,
+        )
+        == 0.4
+    )
+    assert (
+        planner_history.history.managed_source_today_kwh(
+            "sensor.ev_energy_total",
+            now=now,
+        )
+        == 0.7
+    )
 
 
 async def test_coordinator_saves_internal_history_only_when_dirty(hass):

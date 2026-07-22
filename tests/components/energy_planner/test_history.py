@@ -404,6 +404,61 @@ def test_managed_source_history_reports_per_source_values():
     )
 
 
+def test_current_hour_live_history_overlays_lagging_recorder_statistics():
+    now = datetime(2026, 7, 3, 12, 30)
+    completed_hour = now - timedelta(hours=1)
+    recorder_history = EnergyHistory()
+    recorder_history.add_hourly_sample(
+        completed_hour,
+        home_kwh=1.5,
+        managed_kwh=0.3,
+        managed_source_id="sensor.ev_energy_total",
+        observed_source_ids={"sensor.ev_energy_total"},
+    )
+    recorder_history.add_hourly_sample(
+        now,
+        home_kwh=0.2,
+        managed_kwh=0.1,
+        managed_source_id="sensor.ev_energy_total",
+        observed_source_ids={"sensor.ev_energy_total"},
+    )
+    recorder_history.dirty = False
+
+    live_history = EnergyHistory()
+    live_history.add_hourly_sample(
+        now,
+        home_kwh=0.5,
+        managed_kwh=0.4,
+        managed_source_id="sensor.ev_energy_total",
+        observed_source_ids={"sensor.ev_energy_total"},
+    )
+    live_history.add_hourly_sample(
+        now,
+        home_kwh=0.0,
+        managed_kwh=0.1,
+        managed_source_id="sensor.water_heater_energy_total",
+        observed_source_ids={"sensor.water_heater_energy_total"},
+    )
+
+    recorder_history.merge_current_hour(live_history, now=now)
+
+    completed_bucket = recorder_history.buckets[hour_key(completed_hour)]
+    current_bucket = recorder_history.buckets[hour_key(now)]
+    assert completed_bucket.home_kwh == 1.5
+    assert completed_bucket.managed_sources == {"sensor.ev_energy_total": 0.3}
+    assert current_bucket.home_kwh == 0.5
+    assert current_bucket.managed_kwh == 0.5
+    assert current_bucket.managed_sources == {
+        "sensor.ev_energy_total": 0.4,
+        "sensor.water_heater_energy_total": 0.1,
+    }
+    assert current_bucket.observed_sources == {
+        "sensor.ev_energy_total",
+        "sensor.water_heater_energy_total",
+    }
+    assert recorder_history.dirty is False
+
+
 def test_legacy_history_without_managed_sources_still_loads():
     restored = EnergyHistory.from_dict(
         {
