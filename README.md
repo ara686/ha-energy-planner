@@ -67,12 +67,13 @@ Required:
 - Battery capacity entity in `kWh`.
 - Battery minimum/reserve SoC entity in `%`; generic inverter `number` entities
   such as `number.inverter_battery_low_soc` are supported.
-- Whole-home cumulative energy entity in `kWh`.
+- Whole-home cumulative energy entity with a supported energy unit such as
+  `kWh` or `MWh`; Energy Planner normalizes it to `kWh`.
 
 Optional:
 
-- One or more managed-load cumulative energy entities in `kWh`, such as EV
-  charging, water heater, boiler or pool technology.
+- One or more managed-load cumulative energy entities with a supported energy
+  unit, such as EV charging, water heater, boiler or pool technology.
 - An optional numeric `kWh` entity for each managed load with the energy you
   want to supply tomorrow. It overrides that load's historical estimate.
 - Solcast PV forecast entities for today, tomorrow and additional days.

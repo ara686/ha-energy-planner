@@ -3,7 +3,7 @@
 Energy Planner uses an hour-of-day consumption model built internally from
 cumulative energy source sensors.
 
-The configured home consumption source is expected to be a cumulative kWh sensor
+The configured home consumption source is expected to be a cumulative energy sensor
 for whole-home consumption. Optional managed consumption sources use the same
 shape and may contain zero, one or many entities.
 
@@ -11,7 +11,7 @@ When Home Assistant statistics are available, the planner first reads their
 hourly `change` values. It falls back to raw recorder states and then its own
 storage. It builds the load model this way:
 
-1. Parse each source state as cumulative kWh.
+1. Parse each source state and normalize supported energy units to cumulative kWh.
 2. Sort samples by timestamp.
 3. Convert consecutive samples into positive deltas.
 4. Assign each delta to the hour of the newer sample.

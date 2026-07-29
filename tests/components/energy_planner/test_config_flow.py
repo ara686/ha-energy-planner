@@ -123,6 +123,39 @@ async def test_user_flow_accepts_generic_number_for_battery_min_soc(hass):
     )
 
 
+async def test_user_flow_accepts_mwh_home_energy_source(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.inverter_total_load_consumption",
+        "12.345",
+        {
+            "device_class": "energy",
+            "state_class": "total_increasing",
+            "unit_of_measurement": UnitOfEnergy.MEGA_WATT_HOUR,
+        },
+    )
+    user_input = config_data(
+        **{
+            CONF_HOME_ENERGY_ENTITY: "sensor.inverter_total_load_consumption",
+        }
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert (
+        result["data"][CONF_HOME_ENERGY_ENTITY]
+        == "sensor.inverter_total_load_consumption"
+    )
+
+
 async def test_user_flow_rejects_battery_capacity_with_current_unit(hass):
     set_source_states(hass)
     hass.states.async_set(
@@ -311,6 +344,14 @@ def _plain_filter(items):
     ]
 
 
+def _suggested_values(schema):
+    return {
+        marker.schema: marker.description["suggested_value"]
+        for marker in schema.schema
+        if marker.description and "suggested_value" in marker.description
+    }
+
+
 async def test_reconfigure_updates_config_entry_entities(hass, config_entry):
     set_source_states(hass)
     hass.states.async_set(
@@ -347,6 +388,46 @@ async def test_reconfigure_updates_config_entry_entities(hass, config_entry):
         config_entry.data[CONF_BATTERY_CAPACITY_ENTITY]
         == "sensor.installed_battery_capacity"
     )
+
+
+async def test_reconfigure_preserves_submitted_values_after_validation_error(
+    hass,
+    config_entry,
+):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.invalid_home_power",
+        "1.2",
+        {
+            "device_class": "power",
+            "state_class": "measurement",
+            "unit_of_measurement": "kW",
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": config_entry.entry_id,
+        },
+    )
+    user_input = {
+        key: value
+        for key, value in config_data(
+            **{CONF_HOME_ENERGY_ENTITY: "sensor.invalid_home_power"}
+        ).items()
+        if key != CONF_MANAGED_ENERGY_ENTITIES
+    }
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_HOME_ENERGY_ENTITY] == "energy_sensor_required"
+    assert _suggested_values(result["data_schema"]) == user_input
 
 
 async def test_reconfigure_preserves_history_when_energy_sources_change(

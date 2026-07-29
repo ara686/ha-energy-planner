@@ -17,8 +17,8 @@ The `Key` column is the internal configuration key visible in diagnostics.
 | Battery state of charge | `battery_soc_entity` | Required | Numeric battery SoC sensor in `%`. | Use the SoC entity from your PV/battery inverter integration, for example Victron, GoodWe, Solax, Huawei or SolarEdge. |
 | Battery capacity | `battery_capacity_entity` | Required | Numeric battery capacity sensor in `kWh`. | Use an inverter/BMS entity if it exists. If capacity is fixed and not exposed by the inverter, create a Home Assistant helper with the configured capacity value. |
 | Battery minimum state of charge | `battery_min_soc_entity` | Required | Numeric minimum/reserve SoC `sensor`, `number` or `input_number` entity in `%`. | Generic inverter `number` entities without the battery device class are supported, for example `number.inverter_battery_low_soc`. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
-| Home energy source | `home_energy_entity` | Required | Cumulative whole-home energy sensor in `kWh`. | Use a total/total-increasing energy sensor for house consumption. Energy Planner builds the hourly history internally from this source. |
-| Managed energy sources | `managed_energy_entities` | Optional | Zero, one or more cumulative energy sensors in `kWh`. | Initial setup converts each selection into a separate managed-load item. Existing installations are migrated automatically. |
+| Home energy source | `home_energy_entity` | Required | Cumulative whole-home energy sensor in a Home Assistant-supported energy unit, such as `Wh`, `kWh` or `MWh`. | Use a total/total-increasing energy sensor for house consumption. Energy Planner normalizes source values to `kWh` and builds the hourly history internally. |
+| Managed energy sources | `managed_energy_entities` | Optional | Zero, one or more cumulative energy sensors in a supported energy unit. | Source values are normalized to `kWh`. Initial setup converts each selection into a separate managed-load item. Existing installations are migrated automatically. |
 | Solcast forecast for today | `solcast_today_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_today`. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
 | Solcast forecast for tomorrow | `solcast_tomorrow_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_tomorrow`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect this sibling entity. |
 | Additional Solcast forecast days | `solcast_additional_entities` | Optional | One or more Solcast forecast sensors from Home Assistant. | Examples: `sensor.solcast_pv_forecast_forecast_day_3`, `sensor.solcast_pv_forecast_forecast_day_4`. Standard `forecast_day_3` through `forecast_day_7` siblings can be auto-detected when they exist. |
@@ -48,7 +48,7 @@ Each managed-load item has these fields:
 
 | Field | Key | Required | Description |
 |-------|-----|----------|-------------|
-| Cumulative energy meter | `managed_energy_entity` | Required | A `total` or `total_increasing` energy sensor in `kWh`. Its hourly and daily deltas are used for history. |
+| Cumulative energy meter | `managed_energy_entity` | Required | A `total` or `total_increasing` energy sensor in a supported energy unit such as `Wh`, `kWh` or `MWh`. Its values are normalized to `kWh`; hourly and daily deltas are used for history. |
 | Requested energy tomorrow | `requested_energy_entity` | Optional | A numeric sensor, number or input-number entity in `kWh`. A valid non-negative state replaces this load's historical demand estimate for tomorrow. |
 
 The requested-energy input is deliberately generic. It can be filled by a
