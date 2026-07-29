@@ -65,7 +65,8 @@ Required:
 
 - Battery SoC entity in `%`.
 - Battery capacity entity in `kWh`.
-- Battery minimum/reserve SoC entity in `%`.
+- Battery minimum/reserve SoC entity in `%`; generic inverter `number` entities
+  such as `number.inverter_battery_low_soc` are supported.
 - Whole-home cumulative energy entity in `kWh`.
 
 Optional:

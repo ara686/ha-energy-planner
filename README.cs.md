@@ -63,7 +63,8 @@ Povinné:
 
 - SoC baterie v `%`.
 - Kapacita baterie v `kWh`.
-- Minimální nebo rezervní SoC baterie v `%`.
+- Minimální nebo rezervní SoC baterie v `%`; podporované jsou i obecné entity
+  měniče typu `number`, například `number.inverter_battery_low_soc`.
 - Kumulativní spotřeba celého domu v `kWh`.
 
 Volitelné:
