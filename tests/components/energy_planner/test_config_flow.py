@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
@@ -32,6 +33,8 @@ from custom_components.energy_planner.const import (
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
+    CONF_NT_WINDOWS,
+    CONF_NT_WINDOWS_ENABLED,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
@@ -725,6 +728,56 @@ async def test_options_flow_updates_runtime_options(hass, config_entry):
     assert result["data"][CONF_HISTORY_LEARNING_DAYS] == 5
     assert result["data"][CONF_INTERVAL_MINUTES] == 30
     assert result["data"][CONF_FORECAST_HORIZON_HOURS] == 48
+
+
+async def test_options_flow_can_disable_low_tariff_windows(hass, config_entry):
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    fields = {marker.schema: marker for marker in result["data_schema"].schema}
+
+    assert isinstance(fields[CONF_NT_WINDOW_1_START], vol.Optional)
+    assert isinstance(fields[CONF_NT_WINDOW_1_END], vol.Optional)
+    assert isinstance(fields[CONF_NT_WINDOW_2_START], vol.Optional)
+    assert isinstance(fields[CONF_NT_WINDOW_2_END], vol.Optional)
+
+    user_input = {
+        **options_flow_input(),
+        CONF_NT_WINDOWS_ENABLED: False,
+        CONF_NT_WINDOW_1_START: "00:00",
+        CONF_NT_WINDOW_1_END: "00:00",
+        CONF_NT_WINDOW_2_START: "00:00",
+        CONF_NT_WINDOW_2_END: "00:00",
+    }
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_NT_WINDOWS] == []
+
+
+async def test_options_flow_preserves_disabled_tariff_choice_after_error(
+    hass,
+    config_entry,
+):
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    user_input = {
+        **options_flow_input(),
+        CONF_INTERVAL_MINUTES: 7,
+        CONF_NT_WINDOWS_ENABLED: False,
+    }
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == CONF_INTERVAL_MINUTES
+    assert _suggested_values(result["data_schema"]) == user_input
 
 
 async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):

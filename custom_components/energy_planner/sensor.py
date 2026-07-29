@@ -71,7 +71,8 @@ def _option_value(key: str) -> Callable[[ConfigEntry], Any]:
 
 
 def _windows_option_value(entry: ConfigEntry) -> str:
-    return serialize_windows(merged_options(dict(entry.options))[CONF_NT_WINDOWS])
+    serialized = serialize_windows(merged_options(dict(entry.options))[CONF_NT_WINDOWS])
+    return serialized or "disabled"
 
 
 def _window_option_value(key: str) -> Callable[[ConfigEntry], str]:

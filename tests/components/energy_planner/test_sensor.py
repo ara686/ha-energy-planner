@@ -14,6 +14,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIPTIONS
 from custom_components.energy_planner.const import (
@@ -39,6 +40,7 @@ from custom_components.energy_planner.sensor import (
     _consumption_history_attributes,
     _consumption_history_value,
     _soc_forecast_attributes,
+    _windows_option_value,
 )
 
 from .conftest import set_source_states
@@ -391,6 +393,16 @@ async def test_runtime_options_are_exposed_as_diagnostic_sensors(hass, config_en
     assert nt_windows.state == "17:00-19:00,22:00-04:00"
     assert charge_window is not None
     assert charge_window.state == "22:00-04:00"
+
+
+def test_low_tariff_windows_sensor_reports_disabled():
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={CONF_NT_WINDOWS: []},
+    )
+
+    assert _windows_option_value(entry) == "disabled"
 
 
 async def test_history_status_sensor_is_disabled_by_default(hass, config_entry):

@@ -21,6 +21,8 @@ and binary sensors that you can use in dashboards or in your own automations.
 
 - See a future battery SoC forecast for the next 24 hours or longer.
 - Decide whether the battery should be charged during a low-tariff period.
+- Disable low-tariff windows entirely for installations without dual-rate
+  electricity pricing.
 - Decide whether battery discharge is currently still safe for the plan.
 - Estimate unused PV surplus that can be used for flexible loads such as hot
   water, pool technology or EV charging.

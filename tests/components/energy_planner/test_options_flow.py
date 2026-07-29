@@ -18,6 +18,7 @@ from custom_components.energy_planner.const import (
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
+    CONF_NT_WINDOWS_ENABLED,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -45,6 +46,7 @@ def _options(**overrides):
         CONF_GRID_CHARGE_EFFICIENCY: 0.92,
         CONF_SOC_RESERVE_PERCENT: 1,
         CONF_SOC_EPS_KWH: 0.02,
+        CONF_NT_WINDOWS_ENABLED: True,
         CONF_NT_WINDOWS: "17:00-19:00,22:00-04:00",
         CONF_CHARGE_WINDOW: "22:00-04:00",
         CONF_SUN_START_REQUIRED_MINUTES: 30,
@@ -105,6 +107,27 @@ def test_normalize_options_accepts_time_selector_fields():
         {"start": "22:00", "end": "04:00"},
     ]
     assert normalized[CONF_CHARGE_WINDOW] == {"start": "22:00", "end": "04:00"}
+
+
+def test_normalize_options_can_disable_low_tariff_windows():
+    normalized = normalize_options(
+        _options(
+            **{
+                CONF_NT_WINDOWS_ENABLED: False,
+                CONF_NT_WINDOWS: None,
+                CONF_NT_WINDOW_1_START: "00:00",
+                CONF_NT_WINDOW_1_END: "00:00",
+                CONF_NT_WINDOW_2_START: "00:00",
+                CONF_NT_WINDOW_2_END: "00:00",
+            }
+        )
+    )
+
+    assert normalized[CONF_NT_WINDOWS] == []
+
+
+def test_parse_windows_accepts_empty_list_as_disabled():
+    assert parse_windows([]) == []
 
 
 @pytest.mark.parametrize(

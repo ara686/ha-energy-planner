@@ -20,6 +20,7 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
 
 - Ukáže predikci SoC baterie na dalších 24 hodin nebo déle.
 - Pomůže rozhodnout, jestli má smysl baterii nabíjet v nízkém tarifu.
+- U instalací bez dvoutarifu umožní okna nízkého tarifu úplně vypnout.
 - Ukáže, jestli je podle plánu ještě povolené vybíjení baterie.
 - Odhadne nevyužitý přebytek z FVE pro bojler, bazén, ohřev vody nebo EV.
 - Doporučí rozdělení úplně pokrytého zítřejšího přebytku mezi řízené spotřebiče

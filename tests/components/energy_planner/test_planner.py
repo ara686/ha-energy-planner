@@ -52,7 +52,11 @@ def _input(
         battery_capacity_kwh=battery_capacity_kwh,
         battery_min_soc=battery_min_soc,
         slots=slots,
-        nt_windows=nt_windows or [TimeWindow(start="22:00", end="04:00")],
+        nt_windows=(
+            nt_windows
+            if nt_windows is not None
+            else [TimeWindow(start="22:00", end="04:00")]
+        ),
         charge_window=charge_window or TimeWindow(start="22:00", end="04:00"),
         interval_minutes=interval_minutes,
         grid_charge_max_kw=10.0,
@@ -237,6 +241,24 @@ def test_equal_start_end_window_is_empty():
     )
 
     assert result.plan["soc_forecast"]["points"][0]["is_nt"] is False
+
+
+def test_no_low_tariff_windows_marks_every_slot_as_standard_tariff():
+    now = datetime(2026, 7, 3, 22, 0)
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=_slots(now, 2, solar_kwh=0.0, consumption_kwh=1.0),
+            nt_windows=[],
+            charge_window=TimeWindow(start="10:00", end="11:00"),
+            forecast_horizon_hours=24,
+        )
+    )
+
+    assert all(
+        point["is_nt"] is False for point in result.plan["soc_forecast"]["points"]
+    )
+    assert result.plan["lock_start"] == now.isoformat()
 
 
 def test_window_start_normalizes_nonexistent_dst_time():

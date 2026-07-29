@@ -19,6 +19,7 @@ from .const import (
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
+    CONF_NT_WINDOWS_ENABLED,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -138,8 +139,6 @@ def parse_windows(value: Any) -> list[dict[str, str]]:
     else:
         raise OptionsValidationError("windows")
 
-    if not windows:
-        raise OptionsValidationError("windows")
     return windows
 
 
@@ -178,6 +177,8 @@ def merged_options(existing: dict[str, Any]) -> dict[str, Any]:
 
 
 def _nt_windows_from_values(values: dict[str, Any]) -> list[dict[str, str]]:
+    if values.get(CONF_NT_WINDOWS_ENABLED) is False:
+        return []
     if {
         CONF_NT_WINDOW_1_START,
         CONF_NT_WINDOW_1_END,

@@ -12,3 +12,6 @@ Important runtime options:
   hourly consumption profile.
 - `min_baseline_kwh_per_hour`: minimum consumption used when the selected target
   hour has no usable history sample.
+- `nt_windows`: low-tariff windows used by tariff-aware planning. Turn off
+  **Enable low-tariff windows** in the Options Flow to store an empty list and
+  disable tariff windows completely.
