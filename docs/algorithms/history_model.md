@@ -5,8 +5,8 @@ maintained hourly energy buckets.
 
 ## Inputs
 
-- Home source: cumulative whole-home kWh sensor.
-- Managed sources: optional cumulative managed-load kWh sensors.
+- Home source: cumulative whole-home energy sensor normalized to kWh.
+- Managed sources: optional cumulative managed-load energy sensors normalized to kWh.
 - Learning window: `history_learning_days`, default 3 days.
 
 ## Aggregation

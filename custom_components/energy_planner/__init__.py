@@ -217,6 +217,7 @@ def _register_energy_source_history(
             entity_id=new_state.entity_id,
             source_type=source_types[new_state.entity_id],
             state=new_state,
+            previous_state=old_state,
         )
         if source_types[new_state.entity_id] == "managed":
             hass.async_create_task(managed_refresh_debouncer.async_call())

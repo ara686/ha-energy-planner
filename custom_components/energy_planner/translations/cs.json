@@ -41,7 +41,7 @@
       "percentage_range": "Vybraná hodnota SoC musí být mezi 0 a 100 %.",
       "battery_capacity_unit": "Kapacita baterie musí být entita v kWh.",
       "battery_capacity_positive": "Kapacita baterie musí být větší než 0 kWh.",
-      "energy_sensor_required": "Vybraná entita spotřeby musí být kumulativní energetický senzor v kWh."
+      "energy_sensor_required": "Vybraná entita spotřeby musí být kumulativní energetický senzor s podporovanou jednotkou energie."
     }
   },
   "config_subentries": {
@@ -69,7 +69,7 @@
       "abort": {"reconfigure_successful": "Řízený odběr byl úspěšně aktualizován."},
       "error": {
         "invalid_numeric_entity": "Vybraná entita musí mít číselný stav.",
-        "energy_sensor_required": "Elektroměr musí být kumulativní energetický senzor v kWh.",
+        "energy_sensor_required": "Elektroměr musí být kumulativní energetický senzor s podporovanou jednotkou energie.",
         "energy_amount_required": "Požadovaná energie musí být nezáporná entita v kWh.",
         "entity_already_configured": "Tento elektroměr je již nakonfigurován."
       }

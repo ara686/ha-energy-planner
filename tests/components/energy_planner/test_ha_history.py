@@ -20,10 +20,12 @@ async def test_recorder_history_uses_keyword_arguments(hass, monkeypatch):
                 {
                     "state": "10",
                     "last_updated": (now - timedelta(hours=2)).isoformat(),
+                    "attributes": {"unit_of_measurement": "kWh"},
                 },
                 {
                     "state": "11.5",
                     "last_updated": (now - timedelta(hours=1)).isoformat(),
+                    "attributes": {"unit_of_measurement": "kWh"},
                 },
             ]
         }
@@ -62,6 +64,50 @@ async def test_recorder_history_uses_keyword_arguments(hass, monkeypatch):
         "no_attributes": False,
         "compressed_state_format": False,
     }
+
+
+async def test_recorder_history_normalizes_mwh_states_to_kwh(hass, monkeypatch):
+    now = datetime(2026, 7, 3, 12, 0)
+
+    def get_significant_states(*args, **kwargs):
+        return {
+            "sensor.inverter_total_load_consumption": [
+                {
+                    "state": "12",
+                    "last_updated": (now - timedelta(hours=2)).isoformat(),
+                    "attributes": {"unit_of_measurement": "MWh"},
+                },
+                {
+                    "state": "12.001",
+                    "last_updated": (now - timedelta(hours=1)).isoformat(),
+                    "attributes": {"unit_of_measurement": "MWh"},
+                },
+            ]
+        }
+
+    class RecorderInstance:
+        async def async_add_executor_job(self, target):
+            return target()
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.history.get_significant_states",
+        get_significant_states,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda _hass: RecorderInstance(),
+    )
+
+    history = await async_get_recorder_energy_history(
+        hass,
+        home_entity_id="sensor.inverter_total_load_consumption",
+        managed_entity_ids=[],
+        now=now,
+        learning_days=3,
+    )
+
+    assert history is not None
+    assert round(sum(bucket.home_kwh for bucket in history.buckets.values()), 6) == 1.0
 
 
 async def test_recorder_statistics_are_preferred_as_hourly_changes(
@@ -108,6 +154,7 @@ async def test_recorder_statistics_are_preferred_as_hourly_changes(
         "sensor.ev_energy_total",
     }
     assert args[4] == "hour"
+    assert args[5] == {"energy": "kWh"}
     assert args[6] == {"change"}
     bucket = next(iter(history.buckets.values()))
     assert bucket.home_kwh == 1.5

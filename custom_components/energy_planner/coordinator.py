@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -60,6 +61,7 @@ from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
+from .units import energy_value_to_kwh, is_supported_energy_unit
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_CONSUMPTION_HISTORY_SENSOR_POINTS = 24 * 7
@@ -75,6 +77,7 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
         self.history = EnergyHistory()
+        self._energy_source_units: dict[str, str] = {}
         self._history_store = EnergyHistoryStore(hass, entry.entry_id)
         super().__init__(
             hass,
@@ -94,9 +97,20 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
         entity_id: str,
         source_type: str,
         state,
+        previous_state=None,
     ) -> None:
         """Record a changed cumulative energy source state."""
-        value = parse_float(state.state)
+        unit = (
+            _state_energy_unit(state)
+            or _state_energy_unit(previous_state)
+            or self._energy_source_units.get(entity_id)
+        )
+        if unit is not None:
+            self._energy_source_units[entity_id] = unit
+        value = energy_value_to_kwh(
+            state.state,
+            unit,
+        )
         if value is None:
             return
         _record_energy_value(
@@ -121,6 +135,7 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             self.history,
             now,
             source_warnings,
+            self._energy_source_units,
         )
         self.history.cleanup(
             now=now,
@@ -496,16 +511,41 @@ def _entity_float(hass: HomeAssistant, entity_id: str) -> float | None:
     return parse_float(state.state)
 
 
+def _state_energy_unit(state) -> str | None:
+    if state is None:
+        return None
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+    return unit if is_supported_energy_unit(unit) else None
+
+
+def _energy_entity_kwh(
+    hass: HomeAssistant,
+    entity_id: str,
+    known_units: dict[str, str],
+) -> float | None:
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    unit = _state_energy_unit(state) or known_units.get(entity_id)
+    if unit is not None:
+        known_units[entity_id] = unit
+    return energy_value_to_kwh(
+        state.state,
+        unit,
+    )
+
+
 def _record_consumption_history(
     hass: HomeAssistant,
     entry: ConfigEntry,
     history: EnergyHistory,
     now,
     warnings: list[str],
+    known_units: dict[str, str],
 ) -> None:
     home_entity_id = entry.data.get(CONF_HOME_ENERGY_ENTITY)
     if home_entity_id:
-        home_value = _entity_float(hass, home_entity_id)
+        home_value = _energy_entity_kwh(hass, home_entity_id, known_units)
         if home_value is None:
             warnings.append(
                 f"Home energy source has no valid numeric state: {home_entity_id}."
@@ -520,7 +560,7 @@ def _record_consumption_history(
             )
 
     for managed_entity_id in managed_energy_entity_ids(entry):
-        managed_value = _entity_float(hass, managed_entity_id)
+        managed_value = _energy_entity_kwh(hass, managed_entity_id, known_units)
         if managed_value is None:
             warnings.append(
                 "Managed energy source has no valid numeric state: "
