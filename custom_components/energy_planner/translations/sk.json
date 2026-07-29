@@ -86,18 +86,25 @@
           "interval_minutes": "Interval plánovania v minútach",
           "history_correction_percent": "Korekcia histórie v percentách",
           "min_baseline_kwh_per_hour": "Minimálna základná spotreba v kWh za hodinu",
+          "grid_charging_enabled": "Používať plánovanie nabíjania zo siete",
           "grid_charge_max_kw": "Maximálne nabíjanie zo siete v kW",
           "grid_charge_efficiency": "Účinnosť nabíjania zo siete",
           "soc_reserve_percent": "Rezerva SoC v percentách",
           "soc_eps_kwh": "Tolerancia SoC v kWh",
+          "nt_windows_enabled": "Používať okná nízkej tarify",
           "nt_window_1_start": "Začiatok okna nízkej tarify 1",
           "nt_window_1_end": "Koniec okna nízkej tarify 1",
           "nt_window_2_start": "Začiatok okna nízkej tarify 2",
           "nt_window_2_end": "Koniec okna nízkej tarify 2",
-          "charge_window_start": "Začiatok nabíjacieho okna",
-          "charge_window_end": "Koniec nabíjacieho okna",
+          "charge_window_start": "Začiatok plánovaného nabíjania zo siete",
+          "charge_window_end": "Koniec plánovaného nabíjania zo siete",
           "sun_start_required_minutes": "Minimálna dĺžka solárneho štartu v minútach",
           "forecast_horizon_hours": "Horizont predikcie v hodinách"
+        },
+        "data_description": {
+          "grid_charging_enabled": "Ide len o odporúčanie plánovača. Energy Planner batériu ani menič neovláda.",
+          "charge_window_start": "Pri vypnutom plánovaní nabíjania zo siete sa ignoruje.",
+          "charge_window_end": "Pri vypnutom plánovaní nabíjania zo siete sa ignoruje."
         }
       }
     },
@@ -114,7 +121,7 @@
       "soc_eps_kwh": "Tolerancia SoC nesmie byť záporná.",
       "sun_start_required_minutes": "Minimálna dĺžka solárneho štartu musí byť väčšia ako 0 minút.",
       "window": "Časové okno musí mať rozdielny začiatok a koniec.",
-      "windows": "Okná musia obsahovať aspoň jedno platné časové okno.",
+      "windows": "Zapnuté okná nízkej tarify musia obsahovať platné časy.",
       "invalid_options": "Možnosti nie sú platné."
     }
   },
@@ -242,7 +249,7 @@
         "name": "Okná nízkej tarify"
       },
       "charge_window": {
-        "name": "Okno pre nabíjanie"
+        "name": "Okno plánovaného nabíjania zo siete"
       },
       "sun_start_required_minutes": {
         "name": "Minimálna dĺžka solárneho štartu"

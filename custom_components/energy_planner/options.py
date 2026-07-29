@@ -10,6 +10,7 @@ from .const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
@@ -19,6 +20,7 @@ from .const import (
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
+    CONF_NT_WINDOWS_ENABLED,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -27,6 +29,7 @@ from .const import (
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
+    DEFAULT_GRID_CHARGING_ENABLED,
     DEFAULT_HISTORY_CORRECTION_PERCENT,
     DEFAULT_HISTORY_LEARNING_DAYS,
     DEFAULT_INTERVAL_MINUTES,
@@ -56,6 +59,7 @@ def default_options() -> dict[str, Any]:
         CONF_INTERVAL_MINUTES: DEFAULT_INTERVAL_MINUTES,
         CONF_HISTORY_CORRECTION_PERCENT: DEFAULT_HISTORY_CORRECTION_PERCENT,
         CONF_MIN_BASELINE_KWH_PER_HOUR: DEFAULT_MIN_BASELINE_KWH_PER_HOUR,
+        CONF_GRID_CHARGING_ENABLED: DEFAULT_GRID_CHARGING_ENABLED,
         CONF_GRID_CHARGE_MAX_KW: DEFAULT_GRID_CHARGE_MAX_KW,
         CONF_GRID_CHARGE_EFFICIENCY: DEFAULT_GRID_CHARGE_EFFICIENCY,
         CONF_SOC_RESERVE_PERCENT: DEFAULT_SOC_RESERVE_PERCENT,
@@ -95,6 +99,11 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
     soc_reserve_percent = _float_value(values, CONF_SOC_RESERVE_PERCENT)
     soc_eps_kwh = _float_value(values, CONF_SOC_EPS_KWH)
     sun_start_required_minutes = _int_value(values, CONF_SUN_START_REQUIRED_MINUTES)
+    grid_charging_enabled = _bool_value(
+        values,
+        CONF_GRID_CHARGING_ENABLED,
+        default=DEFAULT_GRID_CHARGING_ENABLED,
+    )
 
     if min_baseline < 0:
         raise OptionsValidationError("min_baseline_kwh_per_hour")
@@ -117,6 +126,7 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
         CONF_INTERVAL_MINUTES: interval_minutes,
         CONF_HISTORY_CORRECTION_PERCENT: history_correction_percent,
         CONF_MIN_BASELINE_KWH_PER_HOUR: min_baseline,
+        CONF_GRID_CHARGING_ENABLED: grid_charging_enabled,
         CONF_GRID_CHARGE_MAX_KW: grid_charge_max_kw,
         CONF_GRID_CHARGE_EFFICIENCY: grid_charge_efficiency,
         CONF_SOC_RESERVE_PERCENT: soc_reserve_percent,
@@ -138,8 +148,6 @@ def parse_windows(value: Any) -> list[dict[str, str]]:
     else:
         raise OptionsValidationError("windows")
 
-    if not windows:
-        raise OptionsValidationError("windows")
     return windows
 
 
@@ -178,6 +186,8 @@ def merged_options(existing: dict[str, Any]) -> dict[str, Any]:
 
 
 def _nt_windows_from_values(values: dict[str, Any]) -> list[dict[str, str]]:
+    if values.get(CONF_NT_WINDOWS_ENABLED) is False:
+        return []
     if {
         CONF_NT_WINDOW_1_START,
         CONF_NT_WINDOW_1_END,
@@ -204,6 +214,15 @@ def _nt_windows_from_values(values: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def _charge_window_from_values(values: dict[str, Any]) -> dict[str, str]:
+    if values.get(CONF_GRID_CHARGING_ENABLED) is False:
+        try:
+            return _required_charge_window_from_values(values)
+        except OptionsValidationError:
+            return dict(DEFAULT_CHARGE_WINDOW)
+    return _required_charge_window_from_values(values)
+
+
+def _required_charge_window_from_values(values: dict[str, Any]) -> dict[str, str]:
     if {CONF_CHARGE_WINDOW_START, CONF_CHARGE_WINDOW_END}.issubset(values):
         return parse_window(
             {
@@ -214,6 +233,18 @@ def _charge_window_from_values(values: dict[str, Any]) -> dict[str, str]:
     if CONF_CHARGE_WINDOW in values:
         return parse_window(values[CONF_CHARGE_WINDOW])
     raise OptionsValidationError("window")
+
+
+def _bool_value(
+    values: dict[str, Any],
+    key: str,
+    *,
+    default: bool,
+) -> bool:
+    value = values.get(key, default)
+    if not isinstance(value, bool):
+        raise OptionsValidationError(key)
+    return value
 
 
 def _int_value(

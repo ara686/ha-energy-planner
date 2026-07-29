@@ -36,6 +36,8 @@ def _number(value: Any) -> float | None:
 
 
 def _charge_now(result: PlannerResult) -> bool | None:
+    if result.plan.get("grid_charging_enabled") is False:
+        return False
     current_soc = _number(result.plan.get("soc_at_planner_start"))
     charge_to_soc = _number(result.plan.get("charge_to_soc"))
     if current_soc is None or charge_to_soc is None:

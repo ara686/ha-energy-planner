@@ -112,11 +112,9 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
     horizon_end = data.now + timedelta(hours=max(data.forecast_horizon_hours, 24))
     sun_start = _find_sun_start(data, slots, start=lock_start, end=horizon_end)
     sun_start = sun_start or horizon_end
-    planner_start = (
-        data.now
-        if _is_in_window(data.now, data.charge_window)
-        else _next_window_start(data.now, data.charge_window)
-    )
+    planner_start = data.now
+    if data.grid_charging_enabled and not _is_in_window(data.now, data.charge_window):
+        planner_start = _next_window_start(data.now, data.charge_window)
     deficit_until_sun = _vt_deficit_kwh(
         slots=slots,
         data=data,
@@ -154,13 +152,15 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
     )
     kwh_at_lock_start = _soc_to_kwh(soc_at_lock_start, data.battery_capacity_kwh)
 
-    charge_to_soc = _calculate_charge_to_soc(
-        data=data,
-        slots=_slots_between(slots, planner_start, horizon_end),
-        floor_soc=floor_soc,
-        initial_soc=soc_at_planner_start,
-        nt_lock_soc=lock_soc,
-    )
+    charge_to_soc = soc_at_planner_start
+    if data.grid_charging_enabled:
+        charge_to_soc = _calculate_charge_to_soc(
+            data=data,
+            slots=_slots_between(slots, planner_start, horizon_end),
+            floor_soc=floor_soc,
+            initial_soc=soc_at_planner_start,
+            nt_lock_soc=lock_soc,
+        )
     target_soc = max(lock_soc, charge_to_soc)
     safe_discharge_soc = _calculate_safe_discharge_soc(
         data=data,
@@ -218,6 +218,7 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
         state=state,
         updated=data.now,
         plan={
+            "grid_charging_enabled": data.grid_charging_enabled,
             "lock_soc": _round(lock_soc),
             "charge_to_soc": _round(charge_to_soc),
             "target_soc": _round(target_soc),
@@ -393,6 +394,7 @@ def _empty_plan(
 ) -> dict[str, object]:
     current_kwh = _soc_to_kwh(current_soc, data.battery_capacity_kwh)
     return {
+        "grid_charging_enabled": data.grid_charging_enabled,
         "lock_soc": _round(max(current_soc, floor_soc)),
         "charge_to_soc": _round(max(current_soc, floor_soc)),
         "target_soc": _round(max(current_soc, floor_soc)),
@@ -464,7 +466,9 @@ def _simulate(
 
     for slot in slots:
         is_nt = _is_in_windows(slot.start, data.nt_windows)
-        is_charge = _is_in_window(slot.start, data.charge_window)
+        is_charge = data.grid_charging_enabled and _is_in_window(
+            slot.start, data.charge_window
+        )
         solar_kwh = max(0.0, slot.solar_kwh)
         consumption_kwh = max(0.0, slot.consumption_kwh)
         net_kwh = solar_kwh - consumption_kwh

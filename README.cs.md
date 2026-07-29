@@ -20,6 +20,9 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
 
 - Ukáže predikci SoC baterie na dalších 24 hodin nebo déle.
 - Pomůže rozhodnout, jestli má smysl baterii nabíjet v nízkém tarifu.
+- U instalací bez dvoutarifu umožní okna nízkého tarifu úplně vypnout.
+- Plánování nabíjení ze sítě lze vypnout nezávisle, pokud se baterie ze sítě
+  nabíjet nemá.
 - Ukáže, jestli je podle plánu ještě povolené vybíjení baterie.
 - Odhadne nevyužitý přebytek z FVE pro bojler, bazén, ohřev vody nebo EV.
 - Doporučí rozdělení úplně pokrytého zítřejšího přebytku mezi řízené spotřebiče
@@ -112,7 +115,7 @@ Nejužitečnější entity:
 |--------|--------|
 | `sensor.energy_planner_soc_forecast` | Pasivně predikované SoC na konci nastaveného horizontu. Používá aktuální SoC, historii spotřeby a předpověď FVE, bez předpokladu, že automatizace Energy Planneru už baterii nabila nebo zamkla. V atributech obsahuje body pro graf. |
 | `sensor.energy_planner_soc_forecast_24h` | Pasivně predikované SoC přesně za 24 hodin od posledního výpočtu. |
-| `binary_sensor.energy_planner_charge_now` | Zapnuto, když plán říká, že teď má smysl nabíjet. |
+| `binary_sensor.energy_planner_charge_now` | Zapnuto, když povolené plánování nabíjení ze sítě říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |
 | `sensor.energy_planner_target_soc` | Cílové SoC použité plannerem. |
 | `sensor.energy_planner_charge_to_soc` | SoC potřebné pro plánované nabíjení ze sítě. |
@@ -158,6 +161,11 @@ automatizace:
 Příklady automatizací s placeholdery jsou v
 [příkladech automatizací](docs/automations.md). Automatizace vždy nejdřív ručně
 otestujte ve vlastním Home Assistantu.
+
+Plánování nabíjení ze sítě lze vypnout nezávisle v možnostech integrace. Po
+vypnutí planner ignoruje okno plánovaného nabíjení,
+`binary_sensor.energy_planner_charge_now` zůstane vypnutý a simulace plánu
+nezahrne žádné nabíjení ze sítě.
 
 ## Ruční přepočet
 
