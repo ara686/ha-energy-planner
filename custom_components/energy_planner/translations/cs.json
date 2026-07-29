@@ -90,6 +90,7 @@
           "grid_charge_efficiency": "Účinnost nabíjení ze sítě",
           "soc_reserve_percent": "Rezerva SoC v procentech",
           "soc_eps_kwh": "Tolerance SoC v kWh",
+          "nt_windows_enabled": "Používat okna nízkého tarifu",
           "nt_window_1_start": "Začátek okna nízkého tarifu 1",
           "nt_window_1_end": "Konec okna nízkého tarifu 1",
           "nt_window_2_start": "Začátek okna nízkého tarifu 2",
@@ -114,7 +115,7 @@
       "soc_eps_kwh": "Tolerance SoC nesmí být záporná.",
       "sun_start_required_minutes": "Minimální délka solárního startu musí být větší než 0 minut.",
       "window": "Časové okno musí mít rozdílný začátek a konec.",
-      "windows": "Okna musí obsahovat alespoň jedno platné časové okno.",
+      "windows": "Zapnutá okna nízkého tarifu musí obsahovat platné časy.",
       "invalid_options": "Možnosti nejsou platné."
     }
   },

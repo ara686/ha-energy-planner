@@ -38,6 +38,7 @@ from .const import (
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
+    CONF_NT_WINDOWS_ENABLED,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
@@ -322,6 +323,7 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
 
         options = merged_options(dict(self.config_entry.options))
         nt_windows = _nt_window_defaults(options)
+        nt_windows_enabled = bool(options[CONF_NT_WINDOWS])
         charge_window = options[CONF_CHARGE_WINDOW]
         schema = vol.Schema(
             {
@@ -395,18 +397,22 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     unit_of_measurement="kWh",
                 ),
                 vol.Required(
+                    CONF_NT_WINDOWS_ENABLED,
+                    default=nt_windows_enabled,
+                ): selector.BooleanSelector(),
+                vol.Optional(
                     CONF_NT_WINDOW_1_START,
                     default=nt_windows[0]["start"],
                 ): _time_selector(),
-                vol.Required(
+                vol.Optional(
                     CONF_NT_WINDOW_1_END,
                     default=nt_windows[0]["end"],
                 ): _time_selector(),
-                vol.Required(
+                vol.Optional(
                     CONF_NT_WINDOW_2_START,
                     default=nt_windows[1]["start"],
                 ): _time_selector(),
-                vol.Required(
+                vol.Optional(
                     CONF_NT_WINDOW_2_END,
                     default=nt_windows[1]["end"],
                 ): _time_selector(),
@@ -439,7 +445,10 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=schema,
+            data_schema=self.add_suggested_values_to_schema(
+                schema,
+                user_input or {},
+            ),
             errors=errors,
         )
 
