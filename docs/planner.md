@@ -19,6 +19,9 @@ current battery SoC and applies the normalized consumption and PV forecast
 without assuming Energy Planner automations have already charged the battery or
 prevented discharge. Plan-specific target simulations are reported separately by
 the `vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target` outputs.
+When `grid_charging_enabled` is false, the planner does not mark charging-window
+slots, does not add simulated grid charge and keeps the `charge_now` decision
+off. Low-tariff windows remain an independent input.
 
 Each point contains:
 

@@ -67,6 +67,7 @@ class PlannerInput:
     slots: list[ForecastSlot]
     nt_windows: list[TimeWindow]
     charge_window: TimeWindow
+    grid_charging_enabled: bool = True
     interval_minutes: int = 5
     grid_charge_max_kw: float = 5.5
     grid_charge_efficiency: float = 0.92

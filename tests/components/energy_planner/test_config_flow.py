@@ -22,6 +22,7 @@ from custom_components.energy_planner.const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
@@ -758,7 +759,31 @@ async def test_options_flow_can_disable_low_tariff_windows(hass, config_entry):
     assert result["data"][CONF_NT_WINDOWS] == []
 
 
-async def test_options_flow_preserves_disabled_tariff_choice_after_error(
+async def test_options_flow_can_disable_grid_charging_planning(hass, config_entry):
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    fields = {marker.schema: marker for marker in result["data_schema"].schema}
+
+    assert isinstance(fields[CONF_CHARGE_WINDOW_START], vol.Optional)
+    assert isinstance(fields[CONF_CHARGE_WINDOW_END], vol.Optional)
+
+    user_input = {
+        **options_flow_input(),
+        CONF_GRID_CHARGING_ENABLED: False,
+        CONF_CHARGE_WINDOW_START: "00:00",
+        CONF_CHARGE_WINDOW_END: "00:00",
+    }
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_GRID_CHARGING_ENABLED] is False
+
+
+async def test_options_flow_preserves_disabled_choices_after_error(
     hass,
     config_entry,
 ):
@@ -768,6 +793,7 @@ async def test_options_flow_preserves_disabled_tariff_choice_after_error(
     user_input = {
         **options_flow_input(),
         CONF_INTERVAL_MINUTES: 7,
+        CONF_GRID_CHARGING_ENABLED: False,
         CONF_NT_WINDOWS_ENABLED: False,
     }
     result = await hass.config_entries.options.async_configure(
@@ -792,6 +818,7 @@ async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):
         CONF_INTERVAL_MINUTES: "30",
         CONF_HISTORY_CORRECTION_PERCENT: "5.0",
         CONF_MIN_BASELINE_KWH_PER_HOUR: "0.2",
+        CONF_GRID_CHARGING_ENABLED: True,
         CONF_GRID_CHARGE_MAX_KW: "5.5",
         CONF_GRID_CHARGE_EFFICIENCY: "0.92",
         CONF_SOC_RESERVE_PERCENT: 1,

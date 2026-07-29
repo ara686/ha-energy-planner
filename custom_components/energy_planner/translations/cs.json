@@ -86,6 +86,7 @@
           "interval_minutes": "Interval plánování v minutách",
           "history_correction_percent": "Korekce historie v procentech",
           "min_baseline_kwh_per_hour": "Minimální základní spotřeba v kWh za hodinu",
+          "grid_charging_enabled": "Používat plánování nabíjení ze sítě",
           "grid_charge_max_kw": "Maximální nabíjení ze sítě v kW",
           "grid_charge_efficiency": "Účinnost nabíjení ze sítě",
           "soc_reserve_percent": "Rezerva SoC v procentech",
@@ -95,10 +96,15 @@
           "nt_window_1_end": "Konec okna nízkého tarifu 1",
           "nt_window_2_start": "Začátek okna nízkého tarifu 2",
           "nt_window_2_end": "Konec okna nízkého tarifu 2",
-          "charge_window_start": "Začátek nabíjecího okna",
-          "charge_window_end": "Konec nabíjecího okna",
+          "charge_window_start": "Začátek plánovaného nabíjení ze sítě",
+          "charge_window_end": "Konec plánovaného nabíjení ze sítě",
           "sun_start_required_minutes": "Minimální délka solárního startu v minutách",
           "forecast_horizon_hours": "Horizont predikce v hodinách"
+        },
+        "data_description": {
+          "grid_charging_enabled": "Jde jen o doporučení planneru. Energy Planner baterii ani měnič neovládá.",
+          "charge_window_start": "Při vypnutém plánování nabíjení ze sítě se ignoruje.",
+          "charge_window_end": "Při vypnutém plánování nabíjení ze sítě se ignoruje."
         }
       }
     },
@@ -243,7 +249,7 @@
         "name": "Okna nízkého tarifu"
       },
       "charge_window": {
-        "name": "Okno pro nabíjení"
+        "name": "Okno plánovaného nabíjení ze sítě"
       },
       "sun_start_required_minutes": {
         "name": "Minimální délka solárního startu"

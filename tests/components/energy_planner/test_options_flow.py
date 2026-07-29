@@ -9,6 +9,7 @@ from custom_components.energy_planner.const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
@@ -42,6 +43,7 @@ def _options(**overrides):
         CONF_INTERVAL_MINUTES: 5,
         CONF_HISTORY_CORRECTION_PERCENT: 5,
         CONF_MIN_BASELINE_KWH_PER_HOUR: 0.2,
+        CONF_GRID_CHARGING_ENABLED: True,
         CONF_GRID_CHARGE_MAX_KW: 5.5,
         CONF_GRID_CHARGE_EFFICIENCY: 0.92,
         CONF_SOC_RESERVE_PERCENT: 1,
@@ -82,6 +84,7 @@ def test_normalize_options_converts_ui_values_to_typed_options():
     assert normalized[CONF_HISTORY_LEARNING_DAYS] == 3
     assert normalized[CONF_HISTORY_CORRECTION_PERCENT] == 5
     assert normalized[CONF_FORECAST_HORIZON_HOURS] == 36
+    assert normalized[CONF_GRID_CHARGING_ENABLED] is True
     assert normalized[CONF_NT_WINDOWS][1] == {"start": "22:00", "end": "04:00"}
     assert normalized[CONF_CHARGE_WINDOW] == {"start": "22:00", "end": "04:00"}
 
@@ -124,6 +127,29 @@ def test_normalize_options_can_disable_low_tariff_windows():
     )
 
     assert normalized[CONF_NT_WINDOWS] == []
+
+
+def test_normalize_options_can_disable_grid_charging_without_valid_window():
+    normalized = normalize_options(
+        _options(
+            **{
+                CONF_GRID_CHARGING_ENABLED: False,
+                CONF_CHARGE_WINDOW: None,
+                CONF_CHARGE_WINDOW_START: "00:00",
+                CONF_CHARGE_WINDOW_END: "00:00",
+            }
+        )
+    )
+
+    assert normalized[CONF_GRID_CHARGING_ENABLED] is False
+    assert normalized[CONF_CHARGE_WINDOW] == {"start": "22:00", "end": "04:00"}
+
+
+def test_normalize_options_enables_grid_charging_for_legacy_options():
+    values = _options()
+    values.pop(CONF_GRID_CHARGING_ENABLED)
+
+    assert normalize_options(values)[CONF_GRID_CHARGING_ENABLED] is True
 
 
 def test_parse_windows_accepts_empty_list_as_disabled():
