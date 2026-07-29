@@ -26,6 +26,7 @@ from .const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
@@ -324,6 +325,7 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
         options = merged_options(dict(self.config_entry.options))
         nt_windows = _nt_window_defaults(options)
         nt_windows_enabled = bool(options[CONF_NT_WINDOWS])
+        grid_charging_enabled = bool(options[CONF_GRID_CHARGING_ENABLED])
         charge_window = options[CONF_CHARGE_WINDOW]
         schema = vol.Schema(
             {
@@ -367,6 +369,10 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     minimum=0,
                     unit_of_measurement="kWh",
                 ),
+                vol.Required(
+                    CONF_GRID_CHARGING_ENABLED,
+                    default=grid_charging_enabled,
+                ): selector.BooleanSelector(),
                 vol.Required(
                     CONF_GRID_CHARGE_MAX_KW,
                     default=options[CONF_GRID_CHARGE_MAX_KW],
@@ -416,11 +422,11 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     CONF_NT_WINDOW_2_END,
                     default=nt_windows[1]["end"],
                 ): _time_selector(),
-                vol.Required(
+                vol.Optional(
                     CONF_CHARGE_WINDOW_START,
                     default=charge_window["start"],
                 ): _time_selector(),
-                vol.Required(
+                vol.Optional(
                     CONF_CHARGE_WINDOW_END,
                     default=charge_window["end"],
                 ): _time_selector(),

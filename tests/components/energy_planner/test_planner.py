@@ -43,6 +43,7 @@ def _input(
     battery_min_soc: float = 20.0,
     nt_windows: list[TimeWindow] | None = None,
     charge_window: TimeWindow | None = None,
+    grid_charging_enabled: bool = True,
     interval_minutes: int = 60,
     forecast_horizon_hours: int = 36,
 ) -> PlannerInput:
@@ -58,6 +59,7 @@ def _input(
             else [TimeWindow(start="22:00", end="04:00")]
         ),
         charge_window=charge_window or TimeWindow(start="22:00", end="04:00"),
+        grid_charging_enabled=grid_charging_enabled,
         interval_minutes=interval_minutes,
         grid_charge_max_kw=10.0,
         grid_charge_efficiency=1.0,
@@ -365,6 +367,30 @@ def test_charge_to_soc_covers_future_vt_deficit_from_charge_window():
     assert result.plan["target_soc"] >= 60.0
     assert result.plan["vt_grid_import_kwh_at_target"] == 0.0
     assert result.plan["charged_kwh_total_at_target"] > 0.0
+
+
+def test_disabled_grid_charging_does_not_plan_or_mark_charging_slots():
+    now = datetime(2026, 7, 3, 22, 0)
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=_slots(now, 24, solar_kwh=0.0, consumption_kwh=1.0),
+            battery_soc=20,
+            battery_capacity_kwh=10,
+            battery_min_soc=20,
+            grid_charging_enabled=False,
+            forecast_horizon_hours=24,
+        )
+    )
+
+    assert result.plan["grid_charging_enabled"] is False
+    assert result.plan["planner_start"] == now.isoformat()
+    assert result.plan["charge_to_soc"] == 20.0
+    assert result.plan["charged_kwh_total_at_target"] == 0.0
+    assert all(
+        point["is_charge_window"] is False
+        for point in result.plan["soc_forecast"]["points"]
+    )
 
 
 def test_unused_surplus_is_recorded_when_battery_is_full():

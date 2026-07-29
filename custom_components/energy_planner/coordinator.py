@@ -20,6 +20,7 @@ from .const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
@@ -38,6 +39,7 @@ from .const import (
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
+    DEFAULT_GRID_CHARGING_ENABLED,
     DEFAULT_HISTORY_CORRECTION_PERCENT,
     DEFAULT_HISTORY_LEARNING_DAYS,
     DEFAULT_HISTORY_PROFILE_MARGIN_PERCENT,
@@ -459,6 +461,11 @@ def _build_planner_input(
             ),
             charge_window=_time_window(
                 _option(entry, CONF_CHARGE_WINDOW, DEFAULT_CHARGE_WINDOW)
+            ),
+            grid_charging_enabled=_option(
+                entry,
+                CONF_GRID_CHARGING_ENABLED,
+                DEFAULT_GRID_CHARGING_ENABLED,
             ),
             interval_minutes=interval_minutes,
             grid_charge_max_kw=_option(

@@ -23,6 +23,8 @@ and binary sensors that you can use in dashboards or in your own automations.
 - Decide whether the battery should be charged during a low-tariff period.
 - Disable low-tariff windows entirely for installations without dual-rate
   electricity pricing.
+- Disable grid-charging planning independently when the battery must not be
+  charged from the grid.
 - Decide whether battery discharge is currently still safe for the plan.
 - Estimate unused PV surplus that can be used for flexible loads such as hot
   water, pool technology or EV charging.
@@ -116,7 +118,7 @@ Most useful entities:
 |--------|---------------|
 | `sensor.energy_planner_soc_forecast` | Passive forecasted SoC at the configured forecast horizon. It uses current SoC, consumption history and PV forecast, without assuming Energy Planner automations have already charged or locked the battery. Its attributes contain the future forecast points for graphs. |
 | `sensor.energy_planner_soc_forecast_24h` | Passive forecasted SoC exactly 24 hours from the last calculation. |
-| `binary_sensor.energy_planner_charge_now` | On when the plan says charging is currently useful. |
+| `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |
 | `sensor.energy_planner_target_soc` | Target SoC used by the planner. |
 | `sensor.energy_planner_charge_to_soc` | SoC level needed for planned grid charging. |
@@ -163,6 +165,11 @@ for automations:
 Example automations with placeholders are in
 [automation examples](docs/automations.md). Always test automations manually in
 your own Home Assistant before letting them control real devices.
+
+Grid-charging planning can be disabled independently in the integration
+options. When disabled, the planned grid-charging window is ignored,
+`binary_sensor.energy_planner_charge_now` stays off and no grid charging is
+included in plan-specific simulations.
 
 ## Manual Recalculation
 

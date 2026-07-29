@@ -20,6 +20,7 @@ from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIP
 from custom_components.energy_planner.const import (
     CONF_CHARGE_WINDOW,
     CONF_FORECAST_HORIZON_HOURS,
+    CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_NT_WINDOWS,
@@ -37,6 +38,7 @@ from custom_components.energy_planner.sensor import (
     SENSOR_DESCRIPTIONS,
     EnergyPlannerManagedSourceSensor,
     EnergyPlannerSensor,
+    _charge_window_option_value,
     _consumption_history_attributes,
     _consumption_history_value,
     _soc_forecast_attributes,
@@ -338,6 +340,22 @@ async def test_plan_binary_sensors_expose_charge_and_discharge_decisions(
 
     config_entry.runtime_data.async_set_updated_data(
         PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "grid_charging_enabled": False,
+                "soc_at_planner_start": 40,
+                "charge_to_soc": 60,
+                "safe_discharge_soc": 30,
+            },
+        )
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(charge_now_entity_id).state == STATE_OFF
+
+    config_entry.runtime_data.async_set_updated_data(
+        PlannerResult(
             state="insufficient_data",
             updated=dt_util.utcnow(),
             plan={
@@ -403,6 +421,16 @@ def test_low_tariff_windows_sensor_reports_disabled():
     )
 
     assert _windows_option_value(entry) == "disabled"
+
+
+def test_charge_window_sensor_reports_disabled():
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={CONF_GRID_CHARGING_ENABLED: False},
+    )
+
+    assert _charge_window_option_value(entry) == "disabled"
 
 
 async def test_history_status_sensor_is_disabled_by_default(hass, config_entry):

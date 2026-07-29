@@ -31,6 +31,7 @@ from .const import (
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
+    CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_INTERVAL_MINUTES,
@@ -77,6 +78,13 @@ def _windows_option_value(entry: ConfigEntry) -> str:
 
 def _window_option_value(key: str) -> Callable[[ConfigEntry], str]:
     return lambda entry: serialize_window(merged_options(dict(entry.options))[key])
+
+
+def _charge_window_option_value(entry: ConfigEntry) -> str:
+    options = merged_options(dict(entry.options))
+    if not options[CONF_GRID_CHARGING_ENABLED]:
+        return "disabled"
+    return serialize_window(options[CONF_CHARGE_WINDOW])
 
 
 def _history_status_value(result: PlannerResult) -> str:
@@ -549,7 +557,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         translation_key=CONF_CHARGE_WINDOW,
         icon="mdi:battery-clock-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entry_value_fn=_window_option_value(CONF_CHARGE_WINDOW),
+        entry_value_fn=_charge_window_option_value,
         always_available=True,
     ),
     EnergyPlannerSensorDescription(
