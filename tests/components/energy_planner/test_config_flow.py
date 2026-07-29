@@ -95,6 +95,34 @@ async def test_user_flow_allows_no_managed_energy_sources(hass):
     assert CONF_MANAGED_ENERGY_ENTITIES not in result["data"]
 
 
+async def test_user_flow_accepts_generic_number_for_battery_min_soc(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "number.inverter_battery_low_soc",
+        "20",
+        {"unit_of_measurement": PERCENTAGE},
+    )
+    user_input = config_data(
+        **{
+            CONF_BATTERY_MIN_SOC_ENTITY: "number.inverter_battery_low_soc",
+        }
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=user_input,
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert (
+        result["data"][CONF_BATTERY_MIN_SOC_ENTITY] == "number.inverter_battery_low_soc"
+    )
+
+
 async def test_user_flow_rejects_battery_capacity_with_current_unit(hass):
     set_source_states(hass)
     hass.states.async_set(
@@ -242,6 +270,9 @@ async def test_user_schema_filters_entity_choices_by_expected_type():
     )
     home_energy_filter = _plain_filter(fields[CONF_HOME_ENERGY_ENTITY].config["filter"])
     battery_soc_filter = _plain_filter(fields[CONF_BATTERY_SOC_ENTITY].config["filter"])
+    battery_min_soc_filter = _plain_filter(
+        fields[CONF_BATTERY_MIN_SOC_ENTITY].config["filter"]
+    )
     managed_energy_config = fields[CONF_MANAGED_ENERGY_ENTITIES].config
 
     assert {
@@ -263,6 +294,8 @@ async def test_user_schema_filters_entity_choices_by_expected_type():
         "domain": ["number"],
         "device_class": ["battery"],
     } in battery_soc_filter
+    assert {"domain": ["number"]} not in battery_soc_filter
+    assert {"domain": ["number"]} in battery_min_soc_filter
     assert managed_energy_config["multiple"] is True
 
 

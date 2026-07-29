@@ -71,7 +71,7 @@ ENERGY_STATE_CLASSES = {
     "total_increasing",
 }
 
-PERCENTAGE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+BATTERY_SOC_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {
         "domain": "sensor",
         "device_class": SensorDeviceClass.BATTERY,
@@ -79,6 +79,18 @@ PERCENTAGE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {
         "domain": "number",
         "device_class": NumberDeviceClass.BATTERY,
+    },
+    {
+        "domain": "input_number",
+    },
+]
+BATTERY_MIN_SOC_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.BATTERY,
+    },
+    {
+        "domain": "number",
     },
     {
         "domain": "input_number",
@@ -429,7 +441,7 @@ def _user_schema(
         _required(
             CONF_BATTERY_SOC_ENTITY,
             defaults,
-        ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
+        ): _entity_selector(BATTERY_SOC_ENTITY_FILTERS),
         _required(
             CONF_BATTERY_CAPACITY_ENTITY,
             defaults,
@@ -437,7 +449,7 @@ def _user_schema(
         _required(
             CONF_BATTERY_MIN_SOC_ENTITY,
             defaults,
-        ): _entity_selector(PERCENTAGE_ENTITY_FILTERS),
+        ): _entity_selector(BATTERY_MIN_SOC_ENTITY_FILTERS),
         _required(
             CONF_HOME_ENERGY_ENTITY,
             defaults,
