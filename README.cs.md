@@ -65,12 +65,13 @@ Povinné:
 - Kapacita baterie v `kWh`.
 - Minimální nebo rezervní SoC baterie v `%`; podporované jsou i obecné entity
   měniče typu `number`, například `number.inverter_battery_low_soc`.
-- Kumulativní spotřeba celého domu v `kWh`.
+- Kumulativní spotřeba celého domu v podporované jednotce energie, například
+  `kWh` nebo `MWh`; Energy Planner ji normalizuje na `kWh`.
 
 Volitelné:
 
-- Jedna nebo více kumulativních entit řízené spotřeby v `kWh`, například EV,
-  bojler, ohřev vody nebo bazénová technologie.
+- Jedna nebo více kumulativních entit řízené spotřeby v podporované jednotce
+  energie, například EV, bojler, ohřev vody nebo bazénová technologie.
 - Volitelná číselná entita v `kWh` pro každý řízený odběr s energií požadovanou
   na zítřek. Pro daný odběr přepíše historický odhad.
 - Solcast předpověď FVE pro dnešek, zítřek a další dny.

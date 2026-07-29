@@ -57,6 +57,7 @@ from .options import (
     normalize_options,
 )
 from .sources import parse_float
+from .units import is_supported_energy_unit
 
 ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
@@ -205,7 +206,10 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=_user_schema(),
+            data_schema=self.add_suggested_values_to_schema(
+                _user_schema(),
+                user_input or {},
+            ),
             errors=errors,
         )
 
@@ -226,7 +230,10 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_user_schema(dict(entry.data), include_managed=False),
+            data_schema=self.add_suggested_values_to_schema(
+                _user_schema(include_managed=False),
+                user_input if user_input is not None else dict(entry.data),
+            ),
             errors=errors,
         )
 
@@ -255,7 +262,10 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=_managed_load_schema(),
+            data_schema=self.add_suggested_values_to_schema(
+                _managed_load_schema(),
+                user_input or {},
+            ),
             errors=errors,
         )
 
@@ -285,7 +295,10 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_managed_load_schema(dict(subentry.data)),
+            data_schema=self.add_suggested_values_to_schema(
+                _managed_load_schema(),
+                user_input if user_input is not None else dict(subentry.data),
+            ),
             errors=errors,
         )
 
@@ -431,64 +444,44 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
         )
 
 
-def _user_schema(
-    defaults: dict[str, Any] | None = None,
-    *,
-    include_managed: bool = True,
-) -> vol.Schema:
-    defaults = defaults or {}
+def _user_schema(*, include_managed: bool = True) -> vol.Schema:
     fields: dict[vol.Marker, selector.EntitySelector] = {
-        _required(
-            CONF_BATTERY_SOC_ENTITY,
-            defaults,
-        ): _entity_selector(BATTERY_SOC_ENTITY_FILTERS),
-        _required(
-            CONF_BATTERY_CAPACITY_ENTITY,
-            defaults,
-        ): _entity_selector(BATTERY_CAPACITY_ENTITY_FILTERS),
-        _required(
-            CONF_BATTERY_MIN_SOC_ENTITY,
-            defaults,
-        ): _entity_selector(BATTERY_MIN_SOC_ENTITY_FILTERS),
-        _required(
-            CONF_HOME_ENERGY_ENTITY,
-            defaults,
-        ): _entity_selector(ENERGY_SENSOR_FILTERS),
-        _optional(
-            CONF_SOLCAST_TODAY_ENTITY,
-            defaults,
-        ): _entity_selector(SENSOR_ENTITY_FILTERS),
-        _optional(
-            CONF_SOLCAST_TOMORROW_ENTITY,
-            defaults,
-        ): _entity_selector(SENSOR_ENTITY_FILTERS),
-        _optional(
-            CONF_SOLCAST_ADDITIONAL_ENTITIES,
-            defaults,
-        ): _entity_selector(SENSOR_ENTITY_FILTERS, multiple=True),
+        vol.Required(CONF_BATTERY_SOC_ENTITY): _entity_selector(
+            BATTERY_SOC_ENTITY_FILTERS
+        ),
+        vol.Required(CONF_BATTERY_CAPACITY_ENTITY): _entity_selector(
+            BATTERY_CAPACITY_ENTITY_FILTERS
+        ),
+        vol.Required(CONF_BATTERY_MIN_SOC_ENTITY): _entity_selector(
+            BATTERY_MIN_SOC_ENTITY_FILTERS
+        ),
+        vol.Required(CONF_HOME_ENERGY_ENTITY): _entity_selector(ENERGY_SENSOR_FILTERS),
+        vol.Optional(CONF_SOLCAST_TODAY_ENTITY): _entity_selector(
+            SENSOR_ENTITY_FILTERS
+        ),
+        vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY): _entity_selector(
+            SENSOR_ENTITY_FILTERS
+        ),
+        vol.Optional(CONF_SOLCAST_ADDITIONAL_ENTITIES): _entity_selector(
+            SENSOR_ENTITY_FILTERS, multiple=True
+        ),
     }
     if include_managed:
-        fields[
-            _optional(
-                CONF_MANAGED_ENERGY_ENTITIES,
-                defaults,
-            )
-        ] = _entity_selector(ENERGY_SENSOR_FILTERS, multiple=True)
+        fields[vol.Optional(CONF_MANAGED_ENERGY_ENTITIES)] = _entity_selector(
+            ENERGY_SENSOR_FILTERS, multiple=True
+        )
     return vol.Schema(fields)
 
 
-def _managed_load_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    defaults = defaults or {}
+def _managed_load_schema() -> vol.Schema:
     return vol.Schema(
         {
-            _required(
-                CONF_MANAGED_ENERGY_ENTITY,
-                defaults,
-            ): _entity_selector(ENERGY_SENSOR_FILTERS),
-            _optional(
-                CONF_REQUESTED_ENERGY_ENTITY,
-                defaults,
-            ): _entity_selector(REQUESTED_ENERGY_ENTITY_FILTERS),
+            vol.Required(CONF_MANAGED_ENERGY_ENTITY): _entity_selector(
+                ENERGY_SENSOR_FILTERS
+            ),
+            vol.Optional(CONF_REQUESTED_ENERGY_ENTITY): _entity_selector(
+                REQUESTED_ENERGY_ENTITY_FILTERS
+            ),
         }
     )
 
@@ -582,18 +575,6 @@ def _nt_window_defaults(options: dict[str, Any]) -> list[dict[str, str]]:
         windows[index] if index < len(windows) else DEFAULT_NT_WINDOWS[index]
         for index in range(2)
     ]
-
-
-def _required(key: str, defaults: dict[str, Any]) -> vol.Required:
-    if key in defaults:
-        return vol.Required(key, default=defaults[key])
-    return vol.Required(key)
-
-
-def _optional(key: str, defaults: dict[str, Any]) -> vol.Optional:
-    if key in defaults:
-        return vol.Optional(key, default=defaults[key])
-    return vol.Optional(key)
 
 
 def _entity_selector(
@@ -697,8 +678,7 @@ def _validate_energy_sensor_entity(
         return
     attributes = state.attributes
     if (
-        _normalize_unit(attributes.get(ATTR_UNIT_OF_MEASUREMENT))
-        != _normalize_unit(UnitOfEnergy.KILO_WATT_HOUR)
+        not is_supported_energy_unit(attributes.get(ATTR_UNIT_OF_MEASUREMENT))
         or attributes.get("device_class") != SensorDeviceClass.ENERGY
         or attributes.get("state_class") not in ENERGY_STATE_CLASSES
     ):

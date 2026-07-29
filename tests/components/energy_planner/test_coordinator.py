@@ -76,6 +76,35 @@ def test_coordinator_update_interval_is_independent_from_planning_interval(hass)
     assert coordinator.update_interval == timedelta(minutes=45)
 
 
+def test_coordinator_normalizes_mwh_energy_source_states_to_kwh(hass):
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    coordinator = EnergyPlannerCoordinator(hass, entry)
+
+    hass.states.async_set(
+        "sensor.inverter_total_load_consumption",
+        "12",
+        {"unit_of_measurement": "MWh"},
+    )
+    coordinator.record_energy_source_state(
+        entity_id="sensor.inverter_total_load_consumption",
+        source_type="home",
+        state=hass.states.get("sensor.inverter_total_load_consumption"),
+    )
+    hass.states.async_set(
+        "sensor.inverter_total_load_consumption",
+        "12.001",
+        {"unit_of_measurement": "MWh"},
+    )
+    coordinator.record_energy_source_state(
+        entity_id="sensor.inverter_total_load_consumption",
+        source_type="home",
+        state=hass.states.get("sensor.inverter_total_load_consumption"),
+    )
+
+    bucket = next(iter(coordinator.history.buckets.values()))
+    assert round(bucket.home_kwh, 6) == 1.0
+
+
 async def test_recorder_history_includes_live_current_hour(
     hass,
     monkeypatch,

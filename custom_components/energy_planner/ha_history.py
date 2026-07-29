@@ -4,11 +4,18 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Any
 
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import EnergyConverter
 
 from .history import CumulativeEnergySample, EnergyHistory
 from .sources import parse_float
+from .units import energy_value_to_kwh
+
+_KWH_STATISTICS_UNITS = {
+    EnergyConverter.UNIT_CLASS: UnitOfEnergy.KILO_WATT_HOUR,
+}
 
 
 async def async_get_recorder_energy_history(
@@ -48,9 +55,15 @@ async def async_get_recorder_energy_history(
     except (KeyError, RuntimeError, ValueError):
         return None
 
-    home_samples = _samples_from_states(states_by_entity.get(home_entity_id, []))
+    home_samples = _samples_from_states(
+        states_by_entity.get(home_entity_id, []),
+        default_unit=_entity_unit(hass, home_entity_id),
+    )
     managed_samples_by_source = {
-        entity_id: _samples_from_states(states_by_entity.get(entity_id, []))
+        entity_id: _samples_from_states(
+            states_by_entity.get(entity_id, []),
+            default_unit=_entity_unit(hass, entity_id),
+        )
         for entity_id in managed_entity_ids
     }
     if not home_samples:
@@ -91,7 +104,7 @@ async def async_get_recorder_energy_statistics(
             end,
             entity_ids,
             "hour",
-            None,
+            _KWH_STATISTICS_UNITS,
             {"change"},
         )
     except (KeyError, RuntimeError, TypeError, ValueError):
@@ -130,10 +143,15 @@ def _hourly_changes_from_statistics(rows: list[dict[str, Any]]) -> dict[str, flo
 
 def _samples_from_states(
     states: list[State | dict[str, Any]],
+    *,
+    default_unit: str | None,
 ) -> list[CumulativeEnergySample]:
     samples: list[CumulativeEnergySample] = []
     for state in states:
-        value = parse_float(_state_value(state))
+        value = energy_value_to_kwh(
+            _state_value(state),
+            _state_unit(state) or default_unit,
+        )
         timestamp = _state_timestamp(state)
         if value is None or timestamp is None:
             continue
@@ -150,6 +168,24 @@ def _state_value(state: State | dict[str, Any]) -> Any:
     if isinstance(state, State):
         return state.state
     return state.get("state")
+
+
+def _state_unit(state: State | dict[str, Any]) -> str | None:
+    attributes = (
+        state.attributes if isinstance(state, State) else state.get("attributes")
+    )
+    if not isinstance(attributes, dict):
+        return None
+    unit = attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+    return unit if isinstance(unit, str) else None
+
+
+def _entity_unit(hass: HomeAssistant, entity_id: str) -> str | None:
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+    return unit if isinstance(unit, str) else None
 
 
 def _state_timestamp(state: State | dict[str, Any]) -> datetime | None:

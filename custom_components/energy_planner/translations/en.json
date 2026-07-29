@@ -41,7 +41,7 @@
       "percentage_range": "Selected SoC value must be between 0 and 100%.",
       "battery_capacity_unit": "Battery capacity must be an entity in kWh.",
       "battery_capacity_positive": "Battery capacity must be greater than 0 kWh.",
-      "energy_sensor_required": "Selected consumption entity must be a cumulative energy sensor in kWh."
+      "energy_sensor_required": "Selected consumption entity must be a cumulative energy sensor with a supported energy unit."
     }
   },
   "config_subentries": {
@@ -69,7 +69,7 @@
       "abort": {"reconfigure_successful": "Managed load updated successfully."},
       "error": {
         "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
-        "energy_sensor_required": "The energy meter must be a cumulative energy sensor in kWh.",
+        "energy_sensor_required": "The energy meter must be a cumulative energy sensor with a supported energy unit.",
         "energy_amount_required": "Requested energy must be a non-negative entity in kWh.",
         "entity_already_configured": "This energy meter is already configured."
       }
