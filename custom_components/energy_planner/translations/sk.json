@@ -184,6 +184,9 @@
       "soc_forecast": {
         "name": "Predikcia SoC"
       },
+      "soc_forecast_with_managed": {
+        "name": "Predikcia SoC s riadenou spotrebou"
+      },
       "soc_forecast_24h": {
         "name": "Predikcia SoC za 24 h"
       },

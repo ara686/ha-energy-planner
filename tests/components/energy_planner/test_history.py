@@ -264,6 +264,38 @@ def test_hourly_base_consumption_profile_prefers_same_hour_history():
     assert profile[11] == 10.0
 
 
+def test_managed_source_hourly_profile_uses_coverage_qualified_days():
+    now = datetime(2026, 7, 4, 12, 0)
+    history = EnergyHistory()
+    source_id = "sensor.boiler_energy_total"
+    for days_ago in (1, 2):
+        day_start = (now - timedelta(days=days_ago)).replace(hour=0)
+        for hour in range(24):
+            history.add_hourly_sample(
+                day_start + timedelta(hours=hour),
+                home_kwh=1,
+                managed_kwh=2 if hour == 12 else 0,
+                managed_source_id=source_id,
+                observed_source_ids={source_id},
+            )
+    history.add_hourly_sample(
+        now - timedelta(hours=1),
+        home_kwh=5,
+        managed_kwh=4,
+        managed_source_id=source_id,
+        observed_source_ids={source_id},
+    )
+
+    profile = history.managed_source_hourly_profile(
+        source_id,
+        now=now,
+        learning_days=3,
+        minimum_coverage_ratio=0.75,
+    )
+
+    assert profile == {12: 4}
+
+
 def test_hourly_base_profile_can_exclude_incomplete_current_hour():
     now = datetime(2026, 7, 3, 12, 30)
     history = EnergyHistory()

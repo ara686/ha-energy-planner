@@ -358,6 +358,35 @@ class EnergyHistory:
             )
         return result
 
+    def managed_source_hourly_profile(
+        self,
+        source_id: str,
+        *,
+        now: datetime,
+        learning_days: int,
+        minimum_coverage_ratio: float,
+    ) -> dict[int, float]:
+        """Return an hourly shape from coverage-qualified completed days."""
+        eligible_dates = {
+            item.date
+            for item in self.managed_source_daily_usage(
+                source_id,
+                now=now,
+                learning_days=learning_days,
+                minimum_coverage_ratio=minimum_coverage_ratio,
+            )
+        }
+        grouped: dict[int, float] = {}
+        for key, bucket in self.buckets.items():
+            bucket_time = datetime.fromisoformat(key)
+            if bucket_time.date() not in eligible_dates:
+                continue
+            value = bucket.managed_sources.get(source_id, 0.0)
+            if value <= 0:
+                continue
+            grouped[bucket_time.hour] = grouped.get(bucket_time.hour, 0.0) + value
+        return {hour: round(value, 6) for hour, value in sorted(grouped.items())}
+
     def has_observations_for_source(self, source_id: str) -> bool:
         return any(
             source_id in bucket.observed_sources for bucket in self.buckets.values()

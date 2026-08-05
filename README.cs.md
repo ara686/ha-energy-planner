@@ -18,7 +18,8 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
 
 ## S čím pomůže
 
-- Ukáže predikci SoC baterie na dalších 24 hodin nebo déle.
+- Porovná pasivní predikci SoC baterie s druhou predikcí, která započítává
+  očekávanou řízenou spotřebu na zítřek.
 - Pomůže rozhodnout, jestli má smysl baterii nabíjet v nízkém tarifu.
 - U instalací bez dvoutarifu umožní okna nízkého tarifu úplně vypnout.
 - Plánování nabíjení ze sítě lze vypnout nezávisle, pokud se baterie ze sítě
@@ -114,6 +115,7 @@ Nejužitečnější entity:
 | Entita | Význam |
 |--------|--------|
 | `sensor.energy_planner_soc_forecast` | Pasivně predikované SoC na konci nastaveného horizontu. Používá aktuální SoC, historii spotřeby a předpověď FVE, bez předpokladu, že automatizace Energy Planneru už baterii nabila nebo zamkla. V atributech obsahuje body pro graf. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Pasivně predikované SoC na konci nastaveného horizontu se započtenou celou očekávanou řízenou spotřebou na zítřek. Každý odběr používá svůj nedávný hodinový profil; odběr bez použitelného profilu se rozloží rovnoměrně přes zítřek. Atributy obsahují body pro graf a podrobnosti rozložení řízené spotřeby. |
 | `sensor.energy_planner_soc_forecast_24h` | Pasivně predikované SoC přesně za 24 hodin od posledního výpočtu. |
 | `binary_sensor.energy_planner_charge_now` | Zapnuto, když povolené plánování nabíjení ze sítě říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |
@@ -135,6 +137,8 @@ Kompletní seznam entit je v [přehledu entit](docs/entities.md).
 Dobré první dashboardy:
 
 - Graf budoucího SoC z `sensor.energy_planner_soc_forecast`.
+- Porovnávací graf z `sensor.energy_planner_soc_forecast` a
+  `sensor.energy_planner_soc_forecast_with_managed_loads`.
 - Gauge s hodnotou SoC za 24 hodin z `sensor.energy_planner_soc_forecast_24h`.
 - Graf nevyužitého přebytku FVE.
 - Graf spotřeby domu proti řízené spotřebě.

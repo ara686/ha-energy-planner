@@ -19,7 +19,8 @@ and binary sensors that you can use in dashboards or in your own automations.
 
 ## What It Helps With
 
-- See a future battery SoC forecast for the next 24 hours or longer.
+- Compare the passive battery SoC forecast with a second forecast that includes
+  tomorrow's expected managed-load demand.
 - Decide whether the battery should be charged during a low-tariff period.
 - Disable low-tariff windows entirely for installations without dual-rate
   electricity pricing.
@@ -117,6 +118,7 @@ Most useful entities:
 | Entity | What it means |
 |--------|---------------|
 | `sensor.energy_planner_soc_forecast` | Passive forecasted SoC at the configured forecast horizon. It uses current SoC, consumption history and PV forecast, without assuming Energy Planner automations have already charged or locked the battery. Its attributes contain the future forecast points for graphs. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Passive forecasted SoC at the configured horizon with tomorrow's full expected managed-load demand included. Each load follows its recent hourly usage shape; a load without a usable profile is spread evenly across tomorrow. Attributes contain graph points and managed-demand scheduling details. |
 | `sensor.energy_planner_soc_forecast_24h` | Passive forecasted SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |
@@ -138,6 +140,8 @@ See [all created entities](docs/entities.md) for the complete list.
 Start with these dashboard ideas:
 
 - Future SoC chart from `sensor.energy_planner_soc_forecast`.
+- Comparison chart using `sensor.energy_planner_soc_forecast` and
+  `sensor.energy_planner_soc_forecast_with_managed_loads`.
 - 24 hour SoC gauge from `sensor.energy_planner_soc_forecast_24h`.
 - Unused PV surplus chart.
 - Home vs managed consumption history chart.

@@ -11,7 +11,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from .allocation import ManagedLoadDemandInput, calculate_surplus_allocation
+from .allocation import (
+    ManagedLoadDemandInput,
+    SurplusAllocationResult,
+    calculate_surplus_allocation,
+)
 from .const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
@@ -59,9 +63,10 @@ from .ha_history import (
     async_get_recorder_energy_statistics,
 )
 from .history import EnergyHistory, EnergyHistoryStore
+from .managed_forecast import build_managed_demand_schedule
 from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
-from .planner import calculate_plan, generate_forecast_slots
+from .planner import calculate_plan, calculate_soc_forecast, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
 from .units import energy_value_to_kwh, is_supported_energy_unit
 
@@ -229,13 +234,20 @@ def build_planner_result(
         )
 
     result = calculate_plan(planner_input)
-    _add_surplus_allocation(
+    allocation = _add_surplus_allocation(
         hass,
         entry,
         history=history,
         now=now,
         result=result,
         warnings=warnings,
+    )
+    _add_managed_soc_forecast(
+        planner_input=planner_input,
+        history=history,
+        now=now,
+        allocation=allocation,
+        result=result,
     )
     result.forecast["history_status"] = history_status
     result.forecast["consumption_history"] = consumption_history
@@ -256,7 +268,7 @@ def _add_surplus_allocation(
     now,
     result: PlannerResult,
     warnings: list[str],
-) -> None:
+) -> SurplusAllocationResult:
     learning_days = DEFAULT_MANAGED_HISTORY_LEARNING_DAYS
     load_inputs: list[ManagedLoadDemandInput] = []
     for load in managed_load_configs(entry):
@@ -305,6 +317,61 @@ def _add_surplus_allocation(
     result.plan["managed_expected_demand_tomorrow_kwh"] = allocation.expected_demand_kwh
     result.plan["managed_recommended_tomorrow_kwh"] = allocation.recommended_kwh
     result.plan["unallocated_surplus_tomorrow_kwh"] = allocation.unallocated_surplus_kwh
+    return allocation
+
+
+def _add_managed_soc_forecast(
+    *,
+    planner_input: PlannerInput,
+    history: EnergyHistory,
+    now,
+    allocation: SurplusAllocationResult,
+    result: PlannerResult,
+) -> None:
+    """Add a passive SoC forecast including expected managed demand."""
+    expected_by_source = {
+        load.source_id: load.expected_demand_kwh for load in allocation.loads
+    }
+    hourly_profiles = {
+        source_id: history.managed_source_hourly_profile(
+            source_id,
+            now=now,
+            learning_days=DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
+            minimum_coverage_ratio=DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
+        )
+        for source_id in expected_by_source
+    }
+    schedule = build_managed_demand_schedule(
+        slots=planner_input.slots,
+        target_date=allocation.target_date,
+        reference=now,
+        interval_minutes=planner_input.interval_minutes,
+        expected_by_source=expected_by_source,
+        hourly_profiles=hourly_profiles,
+    )
+    forecast = calculate_soc_forecast(
+        planner_input,
+        managed_consumption_by_slot=schedule.energy_by_slot,
+    )
+    points = [point.as_dict() for point in forecast.points]
+    result.plan["soc_forecast_with_managed"] = {
+        "horizon_hours": planner_input.forecast_horizon_hours,
+        "source": "ha_entities_and_managed_estimates",
+        "target_date": allocation.target_date.isoformat(),
+        "managed_expected_kwh": schedule.expected_kwh,
+        "managed_scheduled_kwh": schedule.scheduled_kwh,
+        "managed_scheduled_by_source": schedule.scheduled_by_source,
+        "fallback_source_ids": schedule.fallback_source_ids,
+        "point_24h": (
+            forecast.point_24h.as_dict() if forecast.point_24h is not None else None
+        ),
+        "points": points,
+    }
+    result.plan["soc_at_forecast_horizon_with_managed"] = (
+        forecast.horizon_point.soc_percent
+        if forecast.horizon_point is not None
+        else result.plan.get("soc_at_forecast_horizon")
+    )
 
 
 def _consumption_history_payload(
