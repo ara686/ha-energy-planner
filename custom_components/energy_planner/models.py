@@ -19,6 +19,7 @@ class ForecastSlot:
     solar_kwh: float
     consumption_kwh: float
     solar_coverage: float = 1.0
+    managed_consumption_kwh: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class SocForecastPoint:
     battery_kwh: float
     solar_kwh: float
     consumption_kwh: float
+    managed_consumption_kwh: float = 0.0
     grid_charge_kwh: float = 0.0
     grid_import_kwh: float = 0.0
     unused_surplus_kwh: float = 0.0
@@ -43,7 +45,7 @@ class SocForecastPoint:
     is_charge_window: bool = False
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "timestamp": self.timestamp.isoformat(),
             "soc_percent": self.soc_percent,
             "battery_kwh": self.battery_kwh,
@@ -56,6 +58,9 @@ class SocForecastPoint:
             "is_nt": self.is_nt,
             "is_charge_window": self.is_charge_window,
         }
+        if self.managed_consumption_kwh > 0:
+            payload["managed_consumption_kwh"] = self.managed_consumption_kwh
+        return payload
 
 
 @dataclass(frozen=True)

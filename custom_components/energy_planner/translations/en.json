@@ -184,6 +184,9 @@
       "soc_forecast": {
         "name": "SoC forecast"
       },
+      "soc_forecast_with_managed": {
+        "name": "SoC forecast with managed loads"
+      },
       "soc_forecast_24h": {
         "name": "SoC forecast 24h"
       },

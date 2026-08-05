@@ -457,3 +457,69 @@ def test_surplus_allocation_uses_daily_history_and_requested_override(hass):
     assert loads["sensor.ev_energy_total"]["recommended_kwh"] == 6
     assert result.plan["managed_recommended_tomorrow_kwh"] == 8
     assert warnings == []
+
+
+def test_build_planner_result_adds_soc_forecast_with_managed_estimates(hass):
+    now = datetime(2026, 7, 21, 12, 0)
+    source_id = "sensor.boiler_energy_total"
+    history = EnergyHistory()
+    for days_ago in range(1, 8):
+        day_start = (now - timedelta(days=days_ago)).replace(hour=0)
+        for hour in range(24):
+            managed_kwh = 3 if hour == 12 else 0
+            history.add_hourly_sample(
+                day_start + timedelta(hours=hour),
+                home_kwh=1 + managed_kwh,
+                managed_kwh=managed_kwh,
+                managed_source_id=source_id,
+                observed_source_ids={source_id},
+            )
+
+    hass.states.async_set("sensor.battery_soc", "100")
+    hass.states.async_set("sensor.battery_capacity", "100")
+    hass.states.async_set("sensor.battery_min_soc", "0")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_BATTERY_SOC_ENTITY: "sensor.battery_soc",
+            CONF_BATTERY_CAPACITY_ENTITY: "sensor.battery_capacity",
+            CONF_BATTERY_MIN_SOC_ENTITY: "sensor.battery_min_soc",
+            CONF_HOME_ENERGY_ENTITY: "sensor.home_energy_total",
+        },
+        options={
+            CONF_FORECAST_HORIZON_HOURS: 48,
+            CONF_HISTORY_LEARNING_DAYS: 7,
+            CONF_HISTORY_CORRECTION_PERCENT: 0,
+            CONF_INTERVAL_MINUTES: 60,
+            CONF_MIN_BASELINE_KWH_PER_HOUR: 0,
+        },
+        version=2,
+        subentries_data=(
+            {
+                "data": {CONF_MANAGED_ENERGY_ENTITY: source_id},
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Boiler",
+                "unique_id": source_id,
+            },
+        ),
+    )
+
+    result = build_planner_result(hass, entry, history=history, now=now)
+
+    managed_forecast = result.plan["soc_forecast_with_managed"]
+    assert result.plan["managed_expected_demand_tomorrow_kwh"] == 3
+    assert result.plan["soc_at_forecast_horizon_with_managed"] == (
+        result.plan["soc_at_forecast_horizon"] - 3
+    )
+    assert managed_forecast["managed_expected_kwh"] == 3
+    assert managed_forecast["managed_scheduled_kwh"] == 3
+    assert managed_forecast["managed_scheduled_by_source"] == {source_id: 3}
+    assert managed_forecast["fallback_source_ids"] == []
+    managed_points = [
+        point
+        for point in managed_forecast["points"]
+        if point.get("managed_consumption_kwh", 0) > 0
+    ]
+    assert len(managed_points) == 1
+    assert managed_points[0]["timestamp"] == "2026-07-22T12:00:00"
+    assert managed_points[0]["managed_consumption_kwh"] == 3

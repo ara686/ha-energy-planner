@@ -42,6 +42,7 @@ from custom_components.energy_planner.sensor import (
     _consumption_history_attributes,
     _consumption_history_value,
     _soc_forecast_attributes,
+    _soc_forecast_with_managed_attributes,
     _windows_option_value,
 )
 
@@ -198,10 +199,11 @@ async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
     assert categories[CONF_FORECAST_HORIZON_HOURS] is EntityCategory.DIAGNOSTIC
     assert categories["target_soc"] is None
     assert categories["soc_forecast"] is None
+    assert categories["soc_forecast_with_managed"] is None
     assert categories["soc_forecast_24h"] is None
 
 
-async def test_only_soc_forecast_uses_battery_device_class(hass, config_entry):
+async def test_horizon_soc_forecasts_use_battery_device_class(hass, config_entry):
     set_source_states(hass)
     config_entry.add_to_hass(hass)
 
@@ -217,6 +219,14 @@ async def test_only_soc_forecast_uses_battery_device_class(hass, config_entry):
     assert soc_forecast.attributes["device_class"] == "battery"
     assert soc_forecast.attributes["unit_of_measurement"] == "%"
     assert "state_class" not in soc_forecast.attributes
+
+    managed_soc_forecast = hass.states.get(
+        entity_ids[f"{config_entry.entry_id}_soc_forecast_with_managed"]
+    )
+    assert managed_soc_forecast is not None
+    assert managed_soc_forecast.attributes["device_class"] == "battery"
+    assert managed_soc_forecast.attributes["unit_of_measurement"] == "%"
+    assert "state_class" not in managed_soc_forecast.attributes
 
     non_battery_soc_keys = (
         "lock_soc",
@@ -538,6 +548,55 @@ def test_soc_forecast_attributes_stay_under_recorder_limit_with_five_minute_poin
         "unused_surplus_kwh": 0.1,
     }
     assert len(json.dumps(attributes, separators=(",", ":"))) < 16_384
+
+
+def test_managed_soc_forecast_attributes_include_compact_managed_energy():
+    now = datetime(2026, 7, 5, 16, 30, tzinfo=UTC)
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "soc_forecast_with_managed": {
+                "horizon_hours": 24,
+                "source": "ha_entities_and_managed_estimates",
+                "managed_expected_kwh": 2,
+                "managed_scheduled_kwh": 2,
+                "points": [
+                    {
+                        "timestamp": (now + timedelta(minutes=5)).isoformat(),
+                        "soc_percent": 70,
+                        "unused_surplus_kwh": 0,
+                        "managed_consumption_kwh": 0.4,
+                    },
+                    {
+                        "timestamp": (now + timedelta(minutes=10)).isoformat(),
+                        "soc_percent": 68,
+                        "unused_surplus_kwh": 0,
+                        "managed_consumption_kwh": 0.6,
+                    },
+                    {
+                        "timestamp": (now + timedelta(minutes=15)).isoformat(),
+                        "soc_percent": 66,
+                        "unused_surplus_kwh": 0,
+                        "managed_consumption_kwh": 1.0,
+                    },
+                ],
+            }
+        },
+    )
+
+    attributes = _soc_forecast_with_managed_attributes(result)
+
+    assert attributes["managed_expected_kwh"] == 2
+    assert attributes["managed_scheduled_kwh"] == 2
+    assert attributes["points"] == [
+        {
+            "timestamp": "2026-07-05T16:45:00+00:00",
+            "soc_percent": 66,
+            "unused_surplus_kwh": 0.0,
+            "managed_consumption_kwh": 2.0,
+        }
+    ]
 
 
 def test_consumption_history_attributes_omit_per_source_breakdown():

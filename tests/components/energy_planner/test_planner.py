@@ -12,6 +12,7 @@ from custom_components.energy_planner.models import (
 )
 from custom_components.energy_planner.planner import (
     calculate_plan,
+    calculate_soc_forecast,
     generate_forecast_slots,
 )
 
@@ -206,6 +207,32 @@ def test_soc_forecast_contains_24h_point_and_longer_horizon():
         for point in result.plan["soc_forecast"]["points"]
     )
     assert result.plan["soc_at_forecast_horizon"] < 90
+
+
+def test_soc_forecast_can_include_managed_consumption_by_slot():
+    now = datetime(2026, 7, 3, 0, 0)
+    data = _input(
+        now=now,
+        slots=_slots(now, 24, solar_kwh=0.0, consumption_kwh=0.0),
+        battery_soc=100,
+        battery_capacity_kwh=10,
+        battery_min_soc=0,
+        forecast_horizon_hours=24,
+    )
+
+    passive = calculate_soc_forecast(data)
+    managed = calculate_soc_forecast(
+        data,
+        managed_consumption_by_slot={now + timedelta(hours=12): 2.0},
+    )
+
+    assert passive.horizon_point is not None
+    assert managed.horizon_point is not None
+    assert passive.horizon_point.soc_percent == 100
+    assert managed.horizon_point.soc_percent == 80
+    managed_point = managed.points[12].as_dict()
+    assert managed_point["managed_consumption_kwh"] == 2
+    assert managed_point["consumption_kwh"] == 2
 
 
 def test_soc_forecast_uses_battery_in_nt_until_minimum_soc():

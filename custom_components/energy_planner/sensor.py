@@ -136,7 +136,17 @@ def _consumption_history_attributes(result: PlannerResult) -> dict[str, Any]:
 
 
 def _soc_forecast_attributes(result: PlannerResult) -> dict[str, Any]:
-    forecast = result.plan.get("soc_forecast")
+    return _forecast_attributes(result, "soc_forecast")
+
+
+def _soc_forecast_with_managed_attributes(
+    result: PlannerResult,
+) -> dict[str, Any]:
+    return _forecast_attributes(result, "soc_forecast_with_managed")
+
+
+def _forecast_attributes(result: PlannerResult, key: str) -> dict[str, Any]:
+    forecast = result.plan.get(key)
     if not isinstance(forecast, dict):
         return {}
     attributes = {key: value for key, value in forecast.items() if key != "points"}
@@ -168,13 +178,21 @@ def _compact_forecast_points(points: list[Any]) -> list[dict[str, Any]]:
             for value in (item.get("unused_surplus_kwh") for item in chunk)
             if isinstance(value, (int, float))
         )
-        compact_points.append(
-            {
-                "timestamp": point.get("timestamp"),
-                "soc_percent": _int_or_none(point.get("soc_percent")),
-                "unused_surplus_kwh": _round_energy(unused_surplus_kwh),
-            }
+        compact_point = {
+            "timestamp": point.get("timestamp"),
+            "soc_percent": _int_or_none(point.get("soc_percent")),
+            "unused_surplus_kwh": _round_energy(unused_surplus_kwh),
+        }
+        managed_consumption_kwh = sum(
+            value
+            for value in (item.get("managed_consumption_kwh") for item in chunk)
+            if isinstance(value, (int, float))
         )
+        if managed_consumption_kwh > 0:
+            compact_point["managed_consumption_kwh"] = _round_energy(
+                managed_consumption_kwh
+            )
+        compact_points.append(compact_point)
     return compact_points
 
 
@@ -414,6 +432,14 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         value_fn=lambda result: result.plan.get("soc_at_forecast_horizon"),
         attr_fn=_soc_forecast_attributes,
+    ),
+    EnergyPlannerSensorDescription(
+        key="soc_forecast_with_managed",
+        translation_key="soc_forecast_with_managed",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        value_fn=lambda result: result.plan.get("soc_at_forecast_horizon_with_managed"),
+        attr_fn=_soc_forecast_with_managed_attributes,
     ),
     EnergyPlannerSensorDescription(
         key="soc_forecast_24h",

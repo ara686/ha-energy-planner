@@ -33,6 +33,7 @@ Entities**.
 | `sensor.energy_planner_soc_at_planner_start` | `soc_at_planner_start` | Diagnostic | `%` | Predicted SoC at the start of the planning window. |
 | `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | Diagnostic | `%` | Predicted SoC at the start of the lock/protection window. |
 | `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is passive predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and a recorder-safe future `points` array for graph cards. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | `soc_forecast_with_managed` | Standard | `%` | State is passive predicted SoC at the configured horizon with tomorrow's expected managed demand added to consumption. Historical hourly load shapes determine timing; loads without a usable shape are spread evenly. Attributes include compact graph points and scheduled-demand details. |
 | `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Passive predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
@@ -40,9 +41,9 @@ Entities**.
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
 | `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest usable hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh`, `base_kwh` and `base_usable` values for graph cards. |
 
-Only `sensor.energy_planner_soc_forecast` uses Home Assistant's `battery`
-device class. The other SoC outputs are planning setpoints, limits or future
-helper values, so they remain plain percentage sensors.
+The two horizon forecast sensors use Home Assistant's `battery` device class.
+The other SoC outputs are planning setpoints, limits or future helper values, so
+they remain plain percentage sensors.
 
 Forecast `soc_percent` values are rounded to whole integer percentages because
 most PV and battery systems do not provide meaningful decimal SoC precision.
@@ -53,6 +54,12 @@ current battery SoC, consumption history and PV forecast. They do not assume
 Energy Planner automations have already charged the battery or prevented
 discharge. Plan-specific simulations are exposed separately by
 `vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target`.
+
+`soc_forecast_with_managed` starts from the same passive simulation but adds the
+full `managed_expected_demand_tomorrow_kwh` estimate. It intentionally does not
+use the surplus-limited recommendation, so it also shows the battery impact when
+expected managed demand is greater than forecast surplus. Its compact `points`
+include `managed_consumption_kwh` where managed demand is scheduled.
 
 ## Managed Source Entities
 
