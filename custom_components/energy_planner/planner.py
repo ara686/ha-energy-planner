@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from math import ceil
@@ -73,6 +73,58 @@ class _Simulation:
         if not self.points:
             return 0.0
         return self.points[-1].soc_percent
+
+
+@dataclass(frozen=True)
+class SocForecastSimulation:
+    """Passive SoC forecast calculated from plain planner inputs."""
+
+    points: list[SocForecastPoint]
+    point_24h: SocForecastPoint | None
+    horizon_point: SocForecastPoint | None
+
+
+def calculate_soc_forecast(
+    data: PlannerInput,
+    *,
+    managed_consumption_by_slot: Mapping[datetime, float] | None = None,
+) -> SocForecastSimulation:
+    """Calculate a passive SoC forecast with optional managed consumption."""
+    slots = _normalized_slots(data)
+    if managed_consumption_by_slot:
+        slots = [
+            replace(
+                slot,
+                managed_consumption_kwh=max(
+                    0.0,
+                    managed_consumption_by_slot.get(slot.start, 0.0),
+                ),
+            )
+            for slot in slots
+        ]
+    simulation = _simulate(
+        data=data,
+        slots=slots,
+        initial_soc=_clamp(data.battery_soc, 0.0, 100.0),
+        grid_charge_target_soc=None,
+        nt_lock_soc=_clamp(data.battery_min_soc, 0.0, 100.0),
+    )
+    horizon_end = data.now + timedelta(hours=max(data.forecast_horizon_hours, 24))
+    point_24h = _point_at_or_project_end(
+        simulation.points,
+        data.now + timedelta(hours=24),
+        data.interval_minutes,
+    )
+    horizon_point = _point_at_or_project_end(
+        simulation.points,
+        horizon_end,
+        data.interval_minutes,
+    ) or (simulation.points[-1] if simulation.points else None)
+    return SocForecastSimulation(
+        points=simulation.points,
+        point_24h=point_24h,
+        horizon_point=horizon_point,
+    )
 
 
 def calculate_plan(data: PlannerInput) -> PlannerResult:
@@ -305,6 +357,7 @@ def _normalized_slots(data: PlannerInput) -> list[ForecastSlot]:
                 solar_kwh=max(0.0, slot.solar_kwh),
                 consumption_kwh=max(0.0, slot.consumption_kwh),
                 solar_coverage=_clamp(slot.solar_coverage, 0.0, 1.0),
+                managed_consumption_kwh=max(0.0, slot.managed_consumption_kwh),
             )
             for slot in data.slots
             if data.now <= slot.start < horizon_end
@@ -470,7 +523,8 @@ def _simulate(
             slot.start, data.charge_window
         )
         solar_kwh = max(0.0, slot.solar_kwh)
-        consumption_kwh = max(0.0, slot.consumption_kwh)
+        managed_consumption_kwh = max(0.0, slot.managed_consumption_kwh)
+        consumption_kwh = max(0.0, slot.consumption_kwh) + managed_consumption_kwh
         net_kwh = solar_kwh - consumption_kwh
         grid_import_kwh = 0.0
         grid_charge_kwh = 0.0
@@ -512,6 +566,7 @@ def _simulate(
                 battery_kwh=_round(battery_kwh),
                 solar_kwh=_round(solar_kwh),
                 consumption_kwh=_round(consumption_kwh),
+                managed_consumption_kwh=_round(managed_consumption_kwh),
                 grid_charge_kwh=_round(grid_charge_kwh),
                 grid_import_kwh=_round(grid_import_kwh),
                 unused_surplus_kwh=_round(slot_unused_surplus),

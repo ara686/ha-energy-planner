@@ -184,6 +184,9 @@
       "soc_forecast": {
         "name": "Predikce SoC"
       },
+      "soc_forecast_with_managed": {
+        "name": "Predikce SoC s řízenou spotřebou"
+      },
       "soc_forecast_24h": {
         "name": "Predikce SoC za 24 h"
       },

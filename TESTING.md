@@ -54,6 +54,7 @@ Planner tests:
 - history correction
 - partial current hour and forecast horizon boundary
 - SoC forecast for exactly 24 hours and longer horizons
+- separate SoC forecast with expected managed demand and hourly-profile fallback
 - SoC forecast using Solcast attributes from HA entities
 - `lock_soc`, `charge_to_soc`, `safe_discharge_soc` and unused surplus
 
