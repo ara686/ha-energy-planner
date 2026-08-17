@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .allocation import (
     ManagedLoadDemandInput,
-    SurplusAllocationResult,
-    calculate_surplus_allocation,
+    estimate_managed_load,
 )
 from .const import (
     CONF_BATTERY_CAPACITY_ENTITY,
@@ -63,6 +65,16 @@ from .ha_history import (
     async_get_recorder_energy_statistics,
 )
 from .history import EnergyHistory, EnergyHistoryStore
+from .hot_water import HotWaterInput, calculate_hot_water_demand
+from .managed_allocation import (
+    GenericAllocationInput,
+    HotWaterAllocationInput,
+    ManagedAllocationInput,
+    ManagedDayAllocation,
+    SurplusSlot,
+    UnavailableAllocationInput,
+    allocate_managed_day,
+)
 from .managed_forecast import build_managed_demand_schedule
 from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
@@ -234,7 +246,7 @@ def build_planner_result(
         )
 
     result = calculate_plan(planner_input)
-    allocation = _add_surplus_allocation(
+    allocations = _add_managed_allocations(
         hass,
         entry,
         history=history,
@@ -246,7 +258,7 @@ def build_planner_result(
         planner_input=planner_input,
         history=history,
         now=now,
-        allocation=allocation,
+        allocations=allocations,
         result=result,
     )
     result.forecast["history_status"] = history_status
@@ -260,7 +272,7 @@ def build_planner_result(
     return result
 
 
-def _add_surplus_allocation(
+def _add_managed_allocations(
     hass: HomeAssistant,
     entry: ConfigEntry,
     *,
@@ -268,10 +280,134 @@ def _add_surplus_allocation(
     now,
     result: PlannerResult,
     warnings: list[str],
-) -> SurplusAllocationResult:
+) -> list[ManagedDayAllocation]:
+    """Build typed managed-load allocations for every future forecast day."""
+    load_inputs = _managed_allocation_inputs(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        warnings=warnings,
+    )
+    daily_summaries = {
+        item.get("date"): item
+        for item in result.plan.get("unused_surplus_by_day", [])
+        if isinstance(item, dict) and isinstance(item.get("date"), str)
+    }
+    tomorrow = now.date() + timedelta(days=1)
+    if tomorrow.isoformat() not in daily_summaries:
+        tomorrow_surplus = result.plan.get("unused_surplus_tomorrow_kwh")
+        tomorrow_complete = (
+            result.plan.get("unused_surplus_tomorrow_coverage_percent") == 100
+            and result.plan.get("unused_surplus_tomorrow_solar_coverage_percent") == 100
+        )
+        if isinstance(tomorrow_surplus, int | float):
+            daily_summaries[tomorrow.isoformat()] = {
+                "date": tomorrow.isoformat(),
+                "complete": tomorrow_complete,
+                "unused_surplus_kwh": float(tomorrow_surplus),
+            }
+    repeating_hot_water_inputs = [
+        load
+        for load in load_inputs
+        if isinstance(load, HotWaterAllocationInput)
+        or (
+            isinstance(load, UnavailableAllocationInput)
+            and load.load_type == "hot_water"
+        )
+    ]
+    additional_dates = (
+        {
+            parsed_date
+            for raw_date in daily_summaries
+            if (parsed_date := _parse_date(raw_date)) is not None
+            and parsed_date > tomorrow
+        }
+        if repeating_hot_water_inputs
+        else set()
+    )
+    future_dates = sorted(additional_dates | {tomorrow})
+    forecast = result.plan.get("soc_forecast")
+    points = forecast.get("points", []) if isinstance(forecast, dict) else []
+    allocations: list[ManagedDayAllocation] = []
+    for target_date in future_dates:
+        summary = daily_summaries.get(target_date.isoformat(), {})
+        complete = bool(summary.get("complete"))
+        surplus_slots = _surplus_slots_for_date(
+            points,
+            target_date=target_date,
+            reference=now,
+        )
+        if (
+            complete
+            and not surplus_slots
+            and isinstance(summary.get("unused_surplus_kwh"), int | float)
+        ):
+            surplus_slots = [
+                SurplusSlot(
+                    datetime.combine(target_date, datetime.min.time()),
+                    float(summary["unused_surplus_kwh"]),
+                )
+            ]
+        allocations.append(
+            allocate_managed_day(
+                target_date=target_date,
+                interval_minutes=_interval_minutes(entry),
+                surplus_complete=complete,
+                surplus_slots=surplus_slots,
+                loads=(
+                    load_inputs
+                    if target_date == tomorrow
+                    else repeating_hot_water_inputs
+                ),
+            )
+        )
+
+    allocation_payload = [allocation.as_dict() for allocation in allocations]
+    tomorrow_allocation = next(
+        (
+            allocation
+            for allocation in allocations
+            if allocation.target_date == tomorrow
+        ),
+        allocate_managed_day(
+            target_date=tomorrow,
+            interval_minutes=_interval_minutes(entry),
+            surplus_complete=False,
+            surplus_slots=[],
+            loads=load_inputs,
+        ),
+    )
+    result.plan["managed_allocation_by_day"] = allocation_payload
+    result.plan["surplus_allocation"] = tomorrow_allocation.as_dict()
+    result.plan["managed_expected_demand_tomorrow_kwh"] = (
+        tomorrow_allocation.expected_demand_kwh
+    )
+    result.plan["managed_recommended_tomorrow_kwh"] = (
+        tomorrow_allocation.recommended_kwh
+    )
+    result.plan["unallocated_surplus_tomorrow_kwh"] = (
+        tomorrow_allocation.unallocated_surplus_kwh
+    )
+    return allocations
+
+
+def _managed_allocation_inputs(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    history: EnergyHistory,
+    now,
+    warnings: list[str],
+) -> list[ManagedAllocationInput]:
+    """Build runtime inputs for generic and hot-water load strategies."""
     learning_days = DEFAULT_MANAGED_HISTORY_LEARNING_DAYS
-    load_inputs: list[ManagedLoadDemandInput] = []
+    load_inputs: list[ManagedAllocationInput] = []
     for load in managed_load_configs(entry):
+        if load.is_hot_water:
+            hot_water_input = _hot_water_allocation_input(hass, load, warnings)
+            load_inputs.append(hot_water_input)
+            continue
         daily_usage = history.managed_source_daily_usage(
             load.source_entity_id,
             now=now,
@@ -290,34 +426,108 @@ def _add_surplus_allocation(
                     f"{load.requested_energy_entity_id}. Using history instead."
                 )
                 requested_energy_kwh = None
-        load_inputs.append(
+        estimate = estimate_managed_load(
             ManagedLoadDemandInput(
-                source_id=load.source_entity_id,
-                daily_kwh=[item.energy_kwh for item in daily_usage],
-                requested_energy_kwh=requested_energy_kwh,
+                load.source_entity_id,
+                [item.energy_kwh for item in daily_usage],
+                requested_energy_kwh,
             )
         )
+        load_inputs.append(
+            GenericAllocationInput(
+                source_id=load.source_entity_id,
+                priority=load.priority,
+                estimate=estimate,
+            )
+        )
+    return load_inputs
 
-    tomorrow_surplus = result.plan.get("unused_surplus_tomorrow_kwh")
-    available_surplus_kwh = (
-        float(tomorrow_surplus) if isinstance(tomorrow_surplus, int | float) else None
+
+_add_surplus_allocation = _add_managed_allocations
+
+
+def _hot_water_allocation_input(
+    hass: HomeAssistant,
+    load,
+    warnings: list[str],
+) -> ManagedAllocationInput:
+    """Build one hot-water input or an explicit unavailable result."""
+    required_config = (
+        load.top_temperature_entity_id,
+        load.bottom_temperature_entity_id,
+        load.minimum_temperature_c,
+        load.tank_volume_liters,
+        load.heater_power_kw,
     )
-    surplus_complete = (
-        result.plan.get("unused_surplus_tomorrow_coverage_percent") == 100
-        and result.plan.get("unused_surplus_tomorrow_solar_coverage_percent") == 100
+    if any(value is None for value in required_config):
+        reason = "invalid_hot_water_configuration"
+        warnings.append(
+            f"Hot-water load has incomplete configuration: {load.source_entity_id}."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id, "hot_water", load.priority, reason
+        )
+    if not math.isfinite(load.heater_power_kw) or load.heater_power_kw <= 0:
+        warnings.append(
+            f"Hot-water load has invalid physical parameters: {load.source_entity_id}."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id,
+            "hot_water",
+            load.priority,
+            "invalid_hot_water_parameters",
+        )
+    top_temperature = _temperature_entity_celsius(hass, load.top_temperature_entity_id)
+    bottom_temperature = _temperature_entity_celsius(
+        hass, load.bottom_temperature_entity_id
     )
-    allocation = calculate_surplus_allocation(
-        target_date=now.date() + timedelta(days=1),
-        available_surplus_kwh=available_surplus_kwh,
-        surplus_complete=surplus_complete,
-        loads=load_inputs,
+    if top_temperature is None or bottom_temperature is None:
+        invalid_entities = [
+            entity_id
+            for entity_id, value in (
+                (load.top_temperature_entity_id, top_temperature),
+                (load.bottom_temperature_entity_id, bottom_temperature),
+            )
+            if value is None
+        ]
+        warnings.append(
+            "Hot-water temperature source has no valid state: "
+            + ", ".join(invalid_entities)
+            + "."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id,
+            "hot_water",
+            load.priority,
+            "invalid_temperature_source",
+        )
+    try:
+        demand = calculate_hot_water_demand(
+            HotWaterInput(
+                top_temperature_c=top_temperature,
+                bottom_temperature_c=bottom_temperature,
+                minimum_temperature_c=load.minimum_temperature_c,
+                maximum_temperature_c=load.maximum_temperature_c,
+                tank_volume_liters=load.tank_volume_liters,
+                thermal_conversion_factor=load.thermal_conversion_factor,
+            )
+        )
+    except ValueError:
+        warnings.append(
+            f"Hot-water load has invalid physical parameters: {load.source_entity_id}."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id,
+            "hot_water",
+            load.priority,
+            "invalid_hot_water_parameters",
+        )
+    return HotWaterAllocationInput(
+        source_id=load.source_entity_id,
+        priority=load.priority,
+        heater_power_kw=load.heater_power_kw,
+        demand=demand,
     )
-    allocation_payload = allocation.as_dict()
-    result.plan["surplus_allocation"] = allocation_payload
-    result.plan["managed_expected_demand_tomorrow_kwh"] = allocation.expected_demand_kwh
-    result.plan["managed_recommended_tomorrow_kwh"] = allocation.recommended_kwh
-    result.plan["unallocated_surplus_tomorrow_kwh"] = allocation.unallocated_surplus_kwh
-    return allocation
 
 
 def _add_managed_soc_forecast(
@@ -325,43 +535,68 @@ def _add_managed_soc_forecast(
     planner_input: PlannerInput,
     history: EnergyHistory,
     now,
-    allocation: SurplusAllocationResult,
+    allocations: list[ManagedDayAllocation],
     result: PlannerResult,
 ) -> None:
     """Add a passive SoC forecast including expected managed demand."""
-    expected_by_source = {
-        load.source_id: load.expected_demand_kwh for load in allocation.loads
-    }
-    hourly_profiles = {
-        source_id: history.managed_source_hourly_profile(
-            source_id,
-            now=now,
-            learning_days=DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
-            minimum_coverage_ratio=DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
+    energy_by_slot: dict[datetime, float] = {}
+    scheduled_by_source: dict[str, float] = {}
+    fallback_source_ids: set[str] = set()
+    total_expected = 0.0
+    tomorrow = now.date() + timedelta(days=1)
+    for allocation in allocations:
+        expected_by_source = {
+            load.source_id: load.expected_demand_kwh
+            for load in allocation.loads
+            if load.load_type == "generic" and allocation.target_date == tomorrow
+        }
+        hourly_profiles = {
+            source_id: history.managed_source_hourly_profile(
+                source_id,
+                now=now,
+                learning_days=DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
+                minimum_coverage_ratio=DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
+            )
+            for source_id in expected_by_source
+        }
+        generic_schedule = build_managed_demand_schedule(
+            slots=planner_input.slots,
+            target_date=allocation.target_date,
+            reference=now,
+            interval_minutes=planner_input.interval_minutes,
+            expected_by_source=expected_by_source,
+            hourly_profiles=hourly_profiles,
         )
-        for source_id in expected_by_source
-    }
-    schedule = build_managed_demand_schedule(
-        slots=planner_input.slots,
-        target_date=allocation.target_date,
-        reference=now,
-        interval_minutes=planner_input.interval_minutes,
-        expected_by_source=expected_by_source,
-        hourly_profiles=hourly_profiles,
-    )
+        _merge_slot_energy(energy_by_slot, generic_schedule.energy_by_slot)
+        _merge_source_energy(scheduled_by_source, generic_schedule.scheduled_by_source)
+        fallback_source_ids.update(generic_schedule.fallback_source_ids)
+        _merge_slot_energy(energy_by_slot, allocation.hot_water_energy_by_slot)
+        _merge_source_energy(
+            scheduled_by_source, allocation.hot_water_scheduled_by_source
+        )
+        total_expected += generic_schedule.expected_kwh + sum(
+            allocation.hot_water_scheduled_by_source.values()
+        )
+
     forecast = calculate_soc_forecast(
         planner_input,
-        managed_consumption_by_slot=schedule.energy_by_slot,
+        managed_consumption_by_slot=energy_by_slot,
     )
     points = [point.as_dict() for point in forecast.points]
     result.plan["soc_forecast_with_managed"] = {
         "horizon_hours": planner_input.forecast_horizon_hours,
         "source": "ha_entities_and_managed_estimates",
-        "target_date": allocation.target_date.isoformat(),
-        "managed_expected_kwh": schedule.expected_kwh,
-        "managed_scheduled_kwh": schedule.scheduled_kwh,
-        "managed_scheduled_by_source": schedule.scheduled_by_source,
-        "fallback_source_ids": schedule.fallback_source_ids,
+        "target_date": tomorrow.isoformat(),
+        "managed_expected_kwh": round(total_expected, 6),
+        "managed_scheduled_kwh": round(sum(energy_by_slot.values()), 6),
+        "managed_scheduled_by_source": {
+            source_id: round(value, 6)
+            for source_id, value in sorted(scheduled_by_source.items())
+        },
+        "fallback_source_ids": sorted(fallback_source_ids),
+        "managed_allocation_by_day": [
+            allocation.as_dict() for allocation in allocations
+        ],
         "point_24h": (
             forecast.point_24h.as_dict() if forecast.point_24h is not None else None
         ),
@@ -372,6 +607,90 @@ def _add_managed_soc_forecast(
         if forecast.horizon_point is not None
         else result.plan.get("soc_at_forecast_horizon")
     )
+
+
+def _merge_slot_energy(
+    target: dict[datetime, float], source: dict[datetime, float]
+) -> None:
+    for slot_start, value in source.items():
+        target[slot_start] = target.get(slot_start, 0.0) + value
+
+
+def _merge_source_energy(target: dict[str, float], source: dict[str, float]) -> None:
+    for source_id, value in source.items():
+        target[source_id] = target.get(source_id, 0.0) + value
+
+
+def _parse_date(value: object) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _surplus_slots_for_date(
+    points: object,
+    *,
+    target_date: date,
+    reference: datetime,
+) -> list[SurplusSlot]:
+    if not isinstance(points, list):
+        return []
+    slots: list[SurplusSlot] = []
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        timestamp = _datetime_from_value(point.get("timestamp"))
+        surplus = point.get("unused_surplus_kwh")
+        if (
+            timestamp is None
+            or not isinstance(surplus, int | float)
+            or _local_date(timestamp, reference) != target_date
+        ):
+            continue
+        slots.append(SurplusSlot(timestamp, max(float(surplus), 0.0)))
+    return slots
+
+
+def _datetime_from_value(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _local_date(timestamp: datetime, reference: datetime) -> date:
+    if timestamp.tzinfo is not None and reference.tzinfo is not None:
+        timestamp = timestamp.astimezone(reference.tzinfo)
+    return timestamp.date()
+
+
+def _temperature_entity_celsius(hass: HomeAssistant, entity_id: str) -> float | None:
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    if state.attributes.get("device_class") != SensorDeviceClass.TEMPERATURE:
+        return None
+    value = parse_float(state.state)
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+    if value is None or unit is None:
+        return None
+    try:
+        return float(
+            TemperatureConverter.convert(
+                value,
+                str(unit),
+                UnitOfTemperature.CELSIUS,
+            )
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _consumption_history_payload(
@@ -812,6 +1131,10 @@ def _history_days(entry: ConfigEntry) -> int:
     return int(
         _option(entry, CONF_HISTORY_LEARNING_DAYS, DEFAULT_HISTORY_LEARNING_DAYS)
     )
+
+
+def _interval_minutes(entry: ConfigEntry) -> int:
+    return int(_option(entry, CONF_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES))
 
 
 def _coordinator_update_interval(entry: ConfigEntry) -> timedelta:

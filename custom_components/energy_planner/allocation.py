@@ -83,7 +83,7 @@ def calculate_surplus_allocation(
     loads: list[ManagedLoadDemandInput],
 ) -> SurplusAllocationResult:
     """Allocate forecast surplus across generic managed-load demand estimates."""
-    estimates = [_estimate_load(load) for load in loads]
+    estimates = [estimate_managed_load(load) for load in loads]
     total_expected = _round_energy(
         sum(estimate.expected_demand_kwh for estimate in estimates)
     )
@@ -143,7 +143,8 @@ def calculate_surplus_allocation(
     )
 
 
-def _estimate_load(load: ManagedLoadDemandInput) -> ManagedLoadEstimate:
+def estimate_managed_load(load: ManagedLoadDemandInput) -> ManagedLoadEstimate:
+    """Estimate one generic managed load from history or an explicit request."""
     values = [max(float(value), 0.0) for value in load.daily_kwh]
     observed_days = len(values)
     active_values = [value for value in values if value >= ACTIVE_DAY_MIN_KWH]

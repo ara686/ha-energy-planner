@@ -10,7 +10,6 @@
           "battery_capacity_entity": "Kapacita batérie",
           "battery_min_soc_entity": "Minimálny stav nabitia batérie",
           "home_energy_entity": "Zdroj energie spotreby domu",
-          "managed_energy_entities": "Zdroje riadenej spotreby",
           "solcast_today_entity": "Predpoveď Solcast na dnes",
           "solcast_tomorrow_entity": "Predpoveď Solcast na zajtra",
           "solcast_additional_entities": "Ďalšie dni predpovede Solcast"
@@ -24,7 +23,6 @@
           "battery_capacity_entity": "Kapacita batérie",
           "battery_min_soc_entity": "Minimálny stav nabitia batérie",
           "home_energy_entity": "Zdroj energie spotreby domu",
-          "managed_energy_entities": "Zdroje riadenej spotreby",
           "solcast_today_entity": "Predpoveď Solcast na dnes",
           "solcast_tomorrow_entity": "Predpoveď Solcast na zajtra",
           "solcast_additional_entities": "Ďalšie dni predpovede Solcast"
@@ -51,18 +49,64 @@
       "step": {
         "user": {
           "title": "Pridať riadený odber",
-          "description": "Vyberte kumulatívny elektromer a voliteľne entitu s požadovanou energiou na zajtra v kWh.",
+          "description": "Vyberte spôsob modelovania riadeného odberu.",
           "data": {
-            "managed_energy_entity": "Kumulatívny elektromer",
-            "requested_energy_entity": "Požadovaná energia na zajtra"
+            "managed_load_type": "Typ riadeného odberu"
           }
         },
         "reconfigure": {
           "title": "Upraviť riadený odber",
-          "description": "Upravte elektromer odberu alebo voliteľnú požadovanú energiu.",
+          "description": "Vyberte model odberu. Pri zmene typu sa odstránia polia, ktoré už neplatia.",
+          "data": {
+            "managed_load_type": "Typ riadeného odberu"
+          }
+        },
+        "generic": {
+          "title": "Nastaviť všeobecný riadený odber",
+          "description": "Spotreba sa odhaduje z histórie, pokiaľ entita požadovanej energie neposkytne platnú hodnotu.",
           "data": {
             "managed_energy_entity": "Kumulatívny elektromer",
+            "priority": "Priorita",
             "requested_energy_entity": "Požadovaná energia na zajtra"
+          }
+        },
+        "reconfigure_generic": {
+          "title": "Upraviť všeobecný riadený odber",
+          "description": "Upravte elektromer alebo voliteľnú požadovanú energiu.",
+          "data": {
+            "managed_energy_entity": "Kumulatívny elektromer",
+            "priority": "Priorita",
+            "requested_energy_entity": "Požadovaná energia na zajtra"
+          }
+        },
+        "hot_water": {
+          "title": "Nastaviť zásobník TÚV",
+          "description": "Minimum a maximum sú cieľové priemerné teploty nádrže. Plánovač iba odporúča využitie predpovedaného solárneho prebytku.",
+          "data": {
+            "managed_energy_entity": "Kumulatívny elektromer",
+            "priority": "Priorita",
+            "top_temperature_entity": "Horná teplota vody",
+            "bottom_temperature_entity": "Dolná teplota vody",
+            "minimum_temperature_c": "Minimálna priemerná teplota",
+            "maximum_temperature_c": "Maximálna priemerná teplota",
+            "tank_volume_liters": "Objem nádrže",
+            "heater_power_kw": "Elektrický príkon ohrevu",
+            "thermal_conversion_factor": "Faktor premeny na teplo"
+          }
+        },
+        "reconfigure_hot_water": {
+          "title": "Upraviť zásobník TÚV",
+          "description": "Upravte teplotné snímače a fyzikálne parametre zásobníka.",
+          "data": {
+            "managed_energy_entity": "Kumulatívny elektromer",
+            "priority": "Priorita",
+            "top_temperature_entity": "Horná teplota vody",
+            "bottom_temperature_entity": "Dolná teplota vody",
+            "minimum_temperature_c": "Minimálna priemerná teplota",
+            "maximum_temperature_c": "Maximálna priemerná teplota",
+            "tank_volume_liters": "Objem nádrže",
+            "heater_power_kw": "Elektrický príkon ohrevu",
+            "thermal_conversion_factor": "Faktor premeny na teplo"
           }
         }
       },
@@ -71,7 +115,20 @@
         "invalid_numeric_entity": "Vybraná entita musí mať číselný stav.",
         "energy_sensor_required": "Elektromer musí byť kumulatívny energetický senzor s podporovanou jednotkou energie.",
         "energy_amount_required": "Požadovaná energia musí byť nezáporná entita v kWh.",
-        "entity_already_configured": "Tento elektromer je už nakonfigurovaný."
+        "entity_already_configured": "Tento elektromer je už nakonfigurovaný.",
+        "temperature_entities_distinct": "Horný a dolný teplotný snímač musia byť rozdielne.",
+        "temperature_sensor_required": "Vyberte číselný teplotný senzor s podporovanou jednotkou teploty.",
+        "temperature_range": "Minimálna teplota musí byť nižšia ako maximálna teplota.",
+        "priority_invalid": "Priorita musí byť celé číslo aspoň 1.",
+        "value_positive": "Objem nádrže, príkon ohrevu a faktor premeny musia byť väčšie než nula."
+      }
+    }
+  },
+  "selector": {
+    "managed_load_type": {
+      "options": {
+        "generic": "Všeobecný (história alebo požiadavka)",
+        "hot_water": "Teplá úžitková voda"
       }
     }
   },

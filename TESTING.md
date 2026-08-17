@@ -49,8 +49,13 @@ Planner tests:
 - no Solcast data, malformed Solcast data and missing optional Solcast entities
 - managed load subtraction
 - managed-load daily coverage, true zero days and cumulative meter resets
-- history-based demand, requested-energy override and proportional allocation
-- complete and incomplete next-day forecast coverage
+- typed managed-load configuration, type switching and v1/v2 migration
+- history-based generic demand and requested-energy override
+- hot-water temperature average, thermal targets and conversion factor
+- three-phase allocation, priority ordering, equal-priority proportional
+  shortage and per-slot heater power limits
+- complete and incomplete future-day coverage, repeated hot-water demand and
+  23/25-hour DST days
 - history correction
 - partial current hour and forecast horizon boundary
 - SoC forecast for exactly 24 hours and longer horizons
@@ -64,6 +69,7 @@ Home Assistant integration tests:
 - Options Flow defaults, updates and invalid values
 - `async_setup_entry`, `async_unload_entry` and `ConfigEntry.runtime_data`
 - DataUpdateCoordinator refresh, update interval and invalid source recovery
+- unavailable hot-water temperature behavior without a history fallback
 - all sensors created with stable unique IDs, translated names, units and device classes
 - required-data failure marks dependent sensors unavailable
 - main state attributes stay compact and recorder-friendly

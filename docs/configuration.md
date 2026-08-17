@@ -18,7 +18,6 @@ The `Key` column is the internal configuration key visible in diagnostics.
 | Battery capacity | `battery_capacity_entity` | Required | Numeric battery capacity sensor in `kWh`. | Use an inverter/BMS entity if it exists. If capacity is fixed and not exposed by the inverter, create a Home Assistant helper with the configured capacity value. |
 | Battery minimum state of charge | `battery_min_soc_entity` | Required | Numeric minimum/reserve SoC `sensor`, `number` or `input_number` entity in `%`. | Generic inverter `number` entities without the battery device class are supported, for example `number.inverter_battery_low_soc`. If your system only has a fixed reserve value, create a Home Assistant helper for that value. |
 | Home energy source | `home_energy_entity` | Required | Cumulative whole-home energy sensor in a Home Assistant-supported energy unit, such as `Wh`, `kWh` or `MWh`. | Use a total/total-increasing energy sensor for house consumption. Energy Planner normalizes source values to `kWh` and builds the hourly history internally. |
-| Managed energy sources | `managed_energy_entities` | Optional | Zero, one or more cumulative energy sensors in a supported energy unit. | Source values are normalized to `kWh`. Initial setup converts each selection into a separate managed-load item. Existing installations are migrated automatically. |
 | Solcast forecast for today | `solcast_today_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_today`. Energy Planner reads Home Assistant data only and does not call Solcast directly. |
 | Solcast forecast for tomorrow | `solcast_tomorrow_entity` | Optional | Solcast forecast sensor from Home Assistant. | Example: `sensor.solcast_pv_forecast_forecast_tomorrow`. If the today entity uses the standard Solcast naming pattern, Energy Planner can auto-detect this sibling entity. |
 | Additional Solcast forecast days | `solcast_additional_entities` | Optional | One or more Solcast forecast sensors from Home Assistant. | Examples: `sensor.solcast_pv_forecast_forecast_day_3`, `sensor.solcast_pv_forecast_forecast_day_4`. Standard `forecast_day_3` through `forecast_day_7` siblings can be auto-detected when they exist. |
@@ -30,12 +29,12 @@ For the home source, select a sensor that represents total house consumption in
 `kWh`. Good sources are grid/import plus PV self-consumption totals from your
 energy meter or inverter, depending on what your installation exposes.
 
-For `Managed energy sources`, select only loads that are intentionally
-controlled outside the baseline house profile, for example EV charging, boiler
-heating, water heating or another managed load. Managed consumption must already
-be part of the home consumption total; Energy Planner subtracts it per hour to
-learn the uncontrollable baseline. Do not use a net-after-managed house sensor,
-otherwise managed consumption would be subtracted twice.
+Add managed loads as separate items under the integration entry after completing
+the shared setup. Select only loads that are intentionally controlled outside
+the baseline house profile. Managed consumption must already be part of the home
+consumption total; Energy Planner subtracts it per hour to learn the
+uncontrollable baseline. Do not use a net-after-managed house sensor, otherwise
+managed consumption would be subtracted twice.
 
 Each managed source is tracked separately as well as in the combined
 `managed_kwh` total. This lets you see values such as EV charging today, water
@@ -44,17 +43,54 @@ entities should have useful Home Assistant friendly names before you add the
 integration, because those names are used when the per-source entities are first
 created.
 
-Each managed-load item has these fields:
+Every managed-load item first asks for these common fields:
 
 | Field | Key | Required | Description |
 |-------|-----|----------|-------------|
+| Managed load type | `managed_load_type` | Required | `generic` uses history or an explicit request. `hot_water` uses the physical tank model. EV and pool types are intentionally not offered until they have dedicated models. |
+| Priority | `priority` | Required | Positive whole number, default `100`. Lower numbers are allocated first within an allocation phase. Loads with equal priority share shortages proportionally. |
 | Cumulative energy meter | `managed_energy_entity` | Required | A `total` or `total_increasing` energy sensor in a supported energy unit such as `Wh`, `kWh` or `MWh`. Its values are normalized to `kWh`; hourly and daily deltas are used for history. |
+
+The cumulative meter remains required for both types so managed consumption can
+be removed from the house profile and exposed by the historical sensors.
+
+### Generic managed load
+
+| Field | Key | Required | Description |
+|-------|-----|----------|-------------|
 | Requested energy tomorrow | `requested_energy_entity` | Optional | A numeric sensor, number or input-number entity in `kWh`. A valid non-negative state replaces this load's historical demand estimate for tomorrow. |
 
-The requested-energy input is deliberately generic. It can be filled by a
-helper or template that already knows the boiler temperature, EV state of
-charge, pool temperature or another device-specific condition. Energy Planner
-does not interpret those physical values and does not control the device.
+Without a valid request, the `generic` strategy estimates demand from historical
+daily consumption. The requested-energy input can be filled by a helper or
+template that already understands a device-specific condition. Energy Planner
+does not control the device.
+
+### Hot-water managed load
+
+| Field | Key | Required | Description |
+|-------|-----|----------|-------------|
+| Top water temperature | `top_temperature_entity` | Required | Numeric Home Assistant temperature sensor near 80% of the upright tank height. Supported temperature units are converted to Celsius. |
+| Bottom water temperature | `bottom_temperature_entity` | Required | A different numeric temperature sensor near 20% of the tank height. |
+| Minimum average temperature | `minimum_temperature_c` | Required | Minimum target for the calculated average tank temperature in °C. Solar shortage can leave this target unmet. |
+| Maximum average temperature | `maximum_temperature_c` | Required | Maximum flexible solar target in °C; default `70`. Must be greater than the minimum and remain within the safe limits of the installation. |
+| Tank volume | `tank_volume_liters` | Required | Positive total water volume in liters. |
+| Heater input power | `heater_power_kw` | Required | Positive electrical input power in kW. It caps allocation in every planner slot. |
+| Thermal conversion factor | `thermal_conversion_factor` | Required | Positive delivered heat / consumed electricity ratio; default `1.0` for a resistive heater. A value above `1` can represent heat-pump COP. |
+
+For the assumed upright cylindrical tank with sensors at 20% and 80%, symmetry
+gives this model:
+
+```text
+average temperature = (top temperature + bottom temperature) / 2
+thermal kWh = 0.001163 × tank volume liters × max(target - average, 0)
+electrical kWh = thermal kWh / thermal conversion factor
+```
+
+The tank diameter is not required. The minimum and maximum both apply to the
+average temperature, not to either individual sensor. The model currently does
+not include water draw, standing losses, sensor delay or temperature transfer
+between forecast days. Invalid or unavailable temperature input withholds this
+load's recommendation; it never falls back to history.
 
 If you only have a power sensor, for example `sensor.home_power` in `W`, create
 a Home Assistant Integral helper first to convert power to energy in `kWh`, then
@@ -121,9 +157,9 @@ runtime behavior.
 | Minimum solar start duration in minutes | `sun_start_required_minutes` | `sensor.energy_planner_minimum_solar_start_duration` | `30` | Greater than `0`. | Minimum continuous forecasted solar period before the planner treats solar production as started. |
 | Forecast horizon in hours | `forecast_horizon_hours` | `sensor.energy_planner_forecast_horizon` | `48` | At least `24`. | The 48-hour default leaves room for a complete next local day. A shorter horizon can make tomorrow's recommendation unavailable. Longer horizons require matching future Solcast data. |
 
-## Tomorrow Allocation
+## Managed-load Allocation
 
-For each managed load without a valid requested-energy value, Energy Planner
+For each `generic` load without a valid requested-energy value, Energy Planner
 uses up to seven completed local calendar days with at least 75% hourly source
 coverage. A recorded zero is a real zero-use day; missing hours are not treated
 as zero. At least three qualified days are required.
@@ -134,7 +170,21 @@ active-day energy = median of days with at least 0.05 kWh
 expected demand = active probability × active-day energy
 ```
 
-If expected demand exceeds tomorrow's unused surplus, every load is reduced by
-the same proportional factor. If demand is lower, the remainder is reported as
-unallocated surplus. No recommendation is published unless the planner covers
-the complete next local day and has complete solar input for it.
+Allocation runs directly over passive-forecast `unused_surplus_kwh` slots in
+three phases:
+
+1. `hot_water` electrical energy needed to reach the configured minimum.
+2. Historical or explicitly requested `generic` energy.
+3. Flexible `hot_water` capacity from the minimum to the maximum.
+
+Within each phase, lower priorities run first and equal priorities share a
+shortage proportionally. Hot-water allocation is limited by remaining demand,
+remaining surplus and `heater_power_kw × slot duration`. The configured minimum
+is a solar target, not a guarantee; `minimum_shortfall_kwh` reports any unmet
+part.
+
+No recommendation is published for a local day unless both forecast slots and
+solar inputs cover that complete day. For every complete future local day in the
+horizon, the current hot-water deficit is repeated unchanged while that day's
+solar surplus and allocation remain separate. This deliberately simple model
+does not carry simulated tank temperature between days.

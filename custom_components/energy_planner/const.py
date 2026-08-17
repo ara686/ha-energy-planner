@@ -8,7 +8,16 @@ CONF_BATTERY_MIN_SOC_ENTITY = "battery_min_soc_entity"
 CONF_HOME_ENERGY_ENTITY = "home_energy_entity"
 CONF_MANAGED_ENERGY_ENTITIES = "managed_energy_entities"
 CONF_MANAGED_ENERGY_ENTITY = "managed_energy_entity"
+CONF_MANAGED_LOAD_TYPE = "managed_load_type"
+CONF_PRIORITY = "priority"
 CONF_REQUESTED_ENERGY_ENTITY = "requested_energy_entity"
+CONF_TOP_TEMPERATURE_ENTITY = "top_temperature_entity"
+CONF_BOTTOM_TEMPERATURE_ENTITY = "bottom_temperature_entity"
+CONF_MINIMUM_TEMPERATURE_C = "minimum_temperature_c"
+CONF_MAXIMUM_TEMPERATURE_C = "maximum_temperature_c"
+CONF_TANK_VOLUME_LITERS = "tank_volume_liters"
+CONF_HEATER_POWER_KW = "heater_power_kw"
+CONF_THERMAL_CONVERSION_FACTOR = "thermal_conversion_factor"
 CONF_SOLCAST_TODAY_ENTITY = "solcast_today_entity"
 CONF_SOLCAST_TOMORROW_ENTITY = "solcast_tomorrow_entity"
 CONF_SOLCAST_ADDITIONAL_ENTITIES = "solcast_additional_entities"
@@ -53,6 +62,13 @@ DEFAULT_SUN_START_REQUIRED_MINUTES = 30
 DEFAULT_FORECAST_HORIZON_HOURS = 48
 
 MANAGED_LOAD_SUBENTRY = "managed_load"
+MANAGED_LOAD_TYPE_GENERIC = "generic"
+MANAGED_LOAD_TYPE_HOT_WATER = "hot_water"
+
+DEFAULT_MANAGED_LOAD_TYPE = MANAGED_LOAD_TYPE_GENERIC
+DEFAULT_MANAGED_LOAD_PRIORITY = 100
+DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C = 70.0
+DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR = 1.0
 
 DEFAULT_NT_WINDOWS = [
     {"start": "17:00", "end": "19:00"},

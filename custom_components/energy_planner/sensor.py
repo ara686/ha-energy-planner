@@ -150,6 +150,11 @@ def _forecast_attributes(result: PlannerResult, key: str) -> dict[str, Any]:
     if not isinstance(forecast, dict):
         return {}
     attributes = {key: value for key, value in forecast.items() if key != "points"}
+    daily_allocations = attributes.get("managed_allocation_by_day")
+    if isinstance(daily_allocations, list):
+        attributes["managed_allocation_by_day"] = _compact_daily_allocations(
+            daily_allocations
+        )
     points = forecast.get("points")
     if isinstance(points, list):
         compact_points = _compact_forecast_points(points)
@@ -162,6 +167,45 @@ def _forecast_attributes(result: PlannerResult, key: str) -> dict[str, Any]:
         )
         attributes["points"] = compact_points
     return attributes
+
+
+def _compact_daily_allocations(values: list[Any]) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        loads = value.get("loads")
+        compact_loads: dict[str, dict[str, Any]] = {}
+        if isinstance(loads, dict):
+            for source_id, load in loads.items():
+                if not isinstance(source_id, str) or not isinstance(load, dict):
+                    continue
+                compact_loads[source_id] = {
+                    field: load.get(field)
+                    for field in (
+                        "load_type",
+                        "priority",
+                        "state",
+                        "recommended_kwh",
+                        "minimum_shortfall_kwh",
+                    )
+                    if field in load
+                }
+        compact.append(
+            {
+                field: value.get(field)
+                for field in (
+                    "state",
+                    "target_date",
+                    "available_surplus_kwh",
+                    "expected_demand_kwh",
+                    "recommended_kwh",
+                    "unallocated_surplus_kwh",
+                )
+            }
+            | {"loads": compact_loads}
+        )
+    return compact
 
 
 def _compact_forecast_points(points: list[Any]) -> list[dict[str, Any]]:
@@ -302,6 +346,13 @@ def _tomorrow_surplus_attributes(result: PlannerResult) -> dict[str, Any]:
     }
 
 
+def _managed_allocation_attributes(result: PlannerResult) -> dict[str, Any]:
+    allocations = result.plan.get("managed_allocation_by_day")
+    if not isinstance(allocations, list):
+        return {}
+    return {"managed_allocation_by_day": _compact_daily_allocations(allocations)}
+
+
 SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
     EnergyPlannerSensorDescription(
         key="state",
@@ -386,6 +437,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         translation_key="managed_recommended_tomorrow_kwh",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda result: result.plan.get("managed_recommended_tomorrow_kwh"),
+        attr_fn=_managed_allocation_attributes,
     ),
     EnergyPlannerSensorDescription(
         key="unallocated_surplus_tomorrow_kwh",
@@ -703,7 +755,7 @@ class EnergyPlannerSensor(CoordinatorEntity[EnergyPlannerCoordinator], SensorEnt
     """Energy Planner output sensor."""
 
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"points"})
+    _unrecorded_attributes = frozenset({"managed_allocation_by_day", "points"})
 
     def __init__(
         self,
@@ -760,7 +812,7 @@ class EnergyPlannerManagedSourceSensor(
     """Energy Planner per-managed-source history sensor."""
 
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"points"})
+    _unrecorded_attributes = frozenset({"managed_allocation_by_day", "points"})
 
     def __init__(
         self,
@@ -792,7 +844,15 @@ class EnergyPlannerManagedSourceSensor(
 
     @property
     def available(self) -> bool:
-        return self.coordinator.data is not None
+        result = self.coordinator.data
+        if result is None:
+            return False
+        if self.entity_description.key != "suggested_tomorrow":
+            return True
+        allocation = _managed_source_allocation(result, self._source_entity_id)
+        return allocation.get("state") == "ok" and isinstance(
+            allocation.get("recommended_kwh"), int | float
+        )
 
     @property
     def native_value(self) -> float | None:
