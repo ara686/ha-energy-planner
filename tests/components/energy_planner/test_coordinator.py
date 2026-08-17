@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -9,25 +10,36 @@ from custom_components.energy_planner.const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
+    CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_FORECAST_HORIZON_HOURS,
+    CONF_HEATER_POWER_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_MINIMUM_TEMPERATURE_C,
+    CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
+    CONF_TANK_VOLUME_LITERS,
+    CONF_THERMAL_CONVERSION_FACTOR,
+    CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_HOT_WATER,
 )
 from custom_components.energy_planner.coordinator import (
     EnergyPlannerCoordinator,
+    _add_managed_soc_forecast,
     _add_surplus_allocation,
     _async_planner_history_from_ha,
     _consumption_from_hourly_profile,
@@ -36,7 +48,12 @@ from custom_components.energy_planner.coordinator import (
     build_planner_result,
 )
 from custom_components.energy_planner.history import EnergyHistory
-from custom_components.energy_planner.models import PlannerResult
+from custom_components.energy_planner.models import (
+    ForecastSlot,
+    PlannerInput,
+    PlannerResult,
+    TimeWindow,
+)
 from custom_components.energy_planner.sources import (
     parse_float,
     parse_solcast_attributes,
@@ -507,6 +524,7 @@ def test_build_planner_result_adds_soc_forecast_with_managed_estimates(hass):
     result = build_planner_result(hass, entry, history=history, now=now)
 
     managed_forecast = result.plan["soc_forecast_with_managed"]
+    assert len(result.plan["managed_allocation_by_day"]) == 1
     assert result.plan["managed_expected_demand_tomorrow_kwh"] == 3
     assert result.plan["soc_at_forecast_horizon_with_managed"] == (
         result.plan["soc_at_forecast_horizon"] - 3
@@ -523,3 +541,242 @@ def test_build_planner_result_adds_soc_forecast_with_managed_estimates(hass):
     assert len(managed_points) == 1
     assert managed_points[0]["timestamp"] == "2026-07-22T12:00:00"
     assert managed_points[0]["managed_consumption_kwh"] == 3
+
+
+def test_hot_water_allocation_repeats_demand_for_complete_future_days(hass):
+    now = datetime(2026, 8, 18, 12)
+    entry = _hot_water_entry()
+    _set_hot_water_temperatures(hass, top="122", bottom="86", unit="°F")
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [
+                {"date": "2026-08-19", "complete": True},
+                {"date": "2026-08-20", "complete": True},
+            ],
+            "soc_forecast": {
+                "points": [
+                    {
+                        "timestamp": "2026-08-19T10:00:00",
+                        "unused_surplus_kwh": 5,
+                    },
+                    {
+                        "timestamp": "2026-08-20T10:00:00",
+                        "unused_surplus_kwh": 1,
+                    },
+                ]
+            },
+        },
+    )
+    warnings: list[str] = []
+
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=warnings,
+    )
+
+    first, second = allocations
+    first_load = first.as_dict()["loads"]["sensor.boiler_energy_total"]
+    second_load = second.as_dict()["loads"]["sensor.boiler_energy_total"]
+    assert first_load["method"] == "thermal_model"
+    assert first_load["average_temperature"] == 40
+    assert first_load["minimum_required_kwh"] == 1.163
+    assert second_load["minimum_required_kwh"] == 1.163
+    assert first_load["recommended_kwh"] == 5
+    assert second_load["recommended_kwh"] == 1
+    assert second_load["minimum_shortfall_kwh"] == 0.163
+    assert result.plan["surplus_allocation"] == first.as_dict()
+    assert warnings == []
+
+
+def test_hot_water_missing_temperature_withholds_only_its_recommendation(hass):
+    now = datetime(2026, 8, 18, 12)
+    entry = _hot_water_entry()
+    _set_hot_water_temperatures(hass, top="50", bottom="unavailable")
+    history = EnergyHistory()
+    history.add_hourly_sample(
+        now - timedelta(days=1),
+        home_kwh=12,
+        managed_kwh=10,
+        managed_source_id="sensor.boiler_energy_total",
+        observed_source_ids={"sensor.boiler_energy_total"},
+    )
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_tomorrow_kwh": 8,
+            "unused_surplus_tomorrow_coverage_percent": 100,
+            "unused_surplus_tomorrow_solar_coverage_percent": 100,
+        },
+    )
+    warnings: list[str] = []
+
+    _add_surplus_allocation(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        result=result,
+        warnings=warnings,
+    )
+
+    load = result.plan["surplus_allocation"]["loads"]["sensor.boiler_energy_total"]
+    assert load["state"] == "insufficient_data"
+    assert load["method"] == "insufficient_data"
+    assert load["recommended_kwh"] is None
+    assert load["reason"] == "invalid_temperature_source"
+    assert any("sensor.boiler_bottom_temperature" in item for item in warnings)
+
+
+def test_hot_water_allocation_covers_all_25_hours_of_fall_dst_day(hass):
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 10, 24, 12, tzinfo=timezone)
+    entry = _hot_water_entry(
+        minimum_temperature_c=1,
+        maximum_temperature_c=70,
+        tank_volume_liters=1000,
+        heater_power_kw=1,
+    )
+    _set_hot_water_temperatures(hass, top="0", bottom="0")
+    first_utc = datetime(2026, 10, 24, 22, tzinfo=UTC)
+    points = [
+        {
+            "timestamp": (first_utc + timedelta(hours=index)).astimezone(timezone),
+            "unused_surplus_kwh": 1,
+        }
+        for index in range(25)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-10-25", "complete": True}],
+            "soc_forecast": {"points": points},
+        },
+    )
+
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    assert allocations[0].available_surplus_kwh == 25
+    assert allocations[0].recommended_kwh == 25
+    assert len(allocations[0].hot_water_energy_by_slot) == 25
+
+
+def test_hot_water_soc_forecast_uses_only_allocated_surplus_slots(hass):
+    now = datetime(2026, 8, 18, 12)
+    slot_starts = [datetime(2026, 8, 19, 10), datetime(2026, 8, 19, 11)]
+    entry = _hot_water_entry(heater_power_kw=1)
+    _set_hot_water_temperatures(hass, top="50", bottom="30")
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": True}],
+            "soc_forecast": {
+                "points": [
+                    {"timestamp": start, "unused_surplus_kwh": 1}
+                    for start in slot_starts
+                ]
+            },
+        },
+    )
+    history = EnergyHistory()
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        result=result,
+        warnings=[],
+    )
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=100,
+        battery_capacity_kwh=10,
+        battery_min_soc=0,
+        slots=[ForecastSlot(start, 0, 0) for start in slot_starts],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        grid_charging_enabled=False,
+        interval_minutes=60,
+        forecast_horizon_hours=24,
+    )
+
+    _add_managed_soc_forecast(
+        planner_input=planner_input,
+        history=history,
+        now=now,
+        allocations=allocations,
+        result=result,
+    )
+
+    forecast = result.plan["soc_forecast_with_managed"]
+    assert forecast["managed_expected_kwh"] == 2
+    assert forecast["managed_scheduled_kwh"] == 2
+    assert forecast["managed_scheduled_by_source"] == {"sensor.boiler_energy_total": 2}
+    assert [point["managed_consumption_kwh"] for point in forecast["points"]] == [
+        1,
+        1,
+    ]
+    assert result.plan["soc_at_forecast_horizon_with_managed"] == 80
+
+
+def _hot_water_entry(
+    *,
+    minimum_temperature_c: float = 45,
+    maximum_temperature_c: float = 70,
+    tank_volume_liters: float = 200,
+    heater_power_kw: float = 10,
+) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={CONF_INTERVAL_MINUTES: 60},
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.boiler_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_HOT_WATER,
+                    CONF_PRIORITY: 10,
+                    CONF_TOP_TEMPERATURE_ENTITY: "sensor.boiler_top_temperature",
+                    CONF_BOTTOM_TEMPERATURE_ENTITY: (
+                        "sensor.boiler_bottom_temperature"
+                    ),
+                    CONF_MINIMUM_TEMPERATURE_C: minimum_temperature_c,
+                    CONF_MAXIMUM_TEMPERATURE_C: maximum_temperature_c,
+                    CONF_TANK_VOLUME_LITERS: tank_volume_liters,
+                    CONF_HEATER_POWER_KW: heater_power_kw,
+                    CONF_THERMAL_CONVERSION_FACTOR: 1,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Boiler",
+                "unique_id": "sensor.boiler_energy_total",
+            },
+        ),
+    )
+
+
+def _set_hot_water_temperatures(
+    hass,
+    *,
+    top: str,
+    bottom: str,
+    unit: str = "°C",
+) -> None:
+    attributes = {"device_class": "temperature", "unit_of_measurement": unit}
+    hass.states.async_set("sensor.boiler_top_temperature", top, attributes)
+    hass.states.async_set("sensor.boiler_bottom_temperature", bottom, attributes)

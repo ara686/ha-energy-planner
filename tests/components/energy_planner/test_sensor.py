@@ -18,14 +18,25 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIPTIONS
 from custom_components.energy_planner.const import (
+    CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGING_ENABLED,
+    CONF_HEATER_POWER_KW,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_TEMPERATURE_C,
+    CONF_MINIMUM_TEMPERATURE_C,
     CONF_NT_WINDOWS,
+    CONF_PRIORITY,
+    CONF_TANK_VOLUME_LITERS,
+    CONF_THERMAL_CONVERSION_FACTOR,
+    CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_HOT_WATER,
 )
 from custom_components.energy_planner.history import (
     EnergyHistory,
@@ -46,7 +57,7 @@ from custom_components.energy_planner.sensor import (
     _windows_option_value,
 )
 
-from .conftest import set_source_states
+from .conftest import config_data, options_data, set_source_states
 
 
 async def test_setup_entry_creates_all_sensors(hass, config_entry):
@@ -162,9 +173,10 @@ async def test_point_payloads_are_excluded_from_recorder(hass, config_entry):
     assert soc_forecast is not None
     assert soc_forecast.state_info is not None
     assert "points" in soc_forecast.state_info["unrecorded_attributes"]
-    assert EnergyPlannerSensor._unrecorded_attributes == frozenset({"points"})
+    expected_unrecorded = frozenset({"managed_allocation_by_day", "points"})
+    assert EnergyPlannerSensor._unrecorded_attributes == expected_unrecorded
     assert EnergyPlannerManagedSourceSensor._unrecorded_attributes == frozenset(
-        {"points"}
+        {"managed_allocation_by_day", "points"}
     )
 
 
@@ -561,6 +573,27 @@ def test_managed_soc_forecast_attributes_include_compact_managed_energy():
                 "source": "ha_entities_and_managed_estimates",
                 "managed_expected_kwh": 2,
                 "managed_scheduled_kwh": 2,
+                "managed_allocation_by_day": [
+                    {
+                        "state": "ok",
+                        "target_date": "2026-07-06",
+                        "available_surplus_kwh": 4,
+                        "expected_demand_kwh": 2,
+                        "recommended_kwh": 2,
+                        "unallocated_surplus_kwh": 2,
+                        "warnings": ["omitted from compact attributes"],
+                        "loads": {
+                            "sensor.boiler": {
+                                "load_type": "hot_water",
+                                "priority": 10,
+                                "state": "ok",
+                                "recommended_kwh": 2,
+                                "minimum_shortfall_kwh": 0,
+                                "average_temperature": 40,
+                            }
+                        },
+                    }
+                ],
                 "points": [
                     {
                         "timestamp": (now + timedelta(minutes=5)).isoformat(),
@@ -589,6 +622,25 @@ def test_managed_soc_forecast_attributes_include_compact_managed_energy():
 
     assert attributes["managed_expected_kwh"] == 2
     assert attributes["managed_scheduled_kwh"] == 2
+    assert attributes["managed_allocation_by_day"] == [
+        {
+            "state": "ok",
+            "target_date": "2026-07-06",
+            "available_surplus_kwh": 4,
+            "expected_demand_kwh": 2,
+            "recommended_kwh": 2,
+            "unallocated_surplus_kwh": 2,
+            "loads": {
+                "sensor.boiler": {
+                    "load_type": "hot_water",
+                    "priority": 10,
+                    "state": "ok",
+                    "recommended_kwh": 2,
+                    "minimum_shortfall_kwh": 0,
+                }
+            },
+        }
+    ]
     assert attributes["points"] == [
         {
             "timestamp": "2026-07-05T16:45:00+00:00",
@@ -733,6 +785,9 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
                 "surplus_allocation": {
                     "loads": {
                         "sensor.ev_energy_total": {
+                            "state": "ok",
+                            "load_type": "generic",
+                            "priority": 100,
                             "method": "history",
                             "expected_demand_kwh": 6.0,
                             "recommended_kwh": 4.0,
@@ -751,6 +806,40 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     assert ev_suggested.attributes["method"] == "history"
     assert ev_suggested.attributes["expected_demand_kwh"] == 6
 
+    config_entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "surplus_allocation": {
+                    "loads": {
+                        "sensor.ev_energy_total": {
+                            "state": "ok",
+                            "load_type": "hot_water",
+                            "priority": 5,
+                            "method": "thermal_model",
+                            "average_temperature": 40,
+                            "minimum_required_kwh": 1.163,
+                            "flexible_capacity_kwh": 5.815,
+                            "minimum_shortfall_kwh": 0.163,
+                            "recommended_kwh": 1,
+                        }
+                    }
+                }
+            },
+        )
+    )
+    await hass.async_block_till_done()
+
+    ev_suggested = hass.states.get(ev_suggested_entity_id)
+    assert ev_suggested is not None
+    assert float(ev_suggested.state) == 1
+    assert ev_suggested.attributes["method"] == "thermal_model"
+    assert ev_suggested.attributes["average_temperature"] == 40
+    assert ev_suggested.attributes["minimum_required_kwh"] == 1.163
+    assert ev_suggested.attributes["flexible_capacity_kwh"] == 5.815
+    assert ev_suggested.attributes["minimum_shortfall_kwh"] == 0.163
+
     ev_history_entity_id = registry.async_get_entity_id(
         "sensor",
         DOMAIN,
@@ -759,6 +848,64 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     ev_history_registry_entry = registry.async_get(ev_history_entity_id)
     assert ev_history_registry_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
     assert hass.states.get(ev_history_entity_id) is None
+
+
+async def test_missing_hot_water_temperature_only_unavailable_suggested_sensor(hass):
+    set_source_states(hass)
+    temperature_attributes = {
+        "device_class": "temperature",
+        "unit_of_measurement": "°C",
+    }
+    hass.states.async_set("sensor.boiler_top", "50", temperature_attributes)
+    hass.states.async_set("sensor.boiler_bottom", "unavailable", temperature_attributes)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config_data(),
+        options=options_data(),
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_HOT_WATER,
+                    CONF_PRIORITY: 10,
+                    CONF_TOP_TEMPERATURE_ENTITY: "sensor.boiler_top",
+                    CONF_BOTTOM_TEMPERATURE_ENTITY: "sensor.boiler_bottom",
+                    CONF_MINIMUM_TEMPERATURE_C: 45,
+                    CONF_MAXIMUM_TEMPERATURE_C: 70,
+                    CONF_TANK_VOLUME_LITERS: 200,
+                    CONF_HEATER_POWER_KW: 2,
+                    CONF_THERMAL_CONVERSION_FACTOR: 1,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Water heater energy",
+                "unique_id": "sensor.water_heater_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    prefix = f"{entry.entry_id}_managed_{slugify('sensor.water_heater_energy_total')}"
+    suggested = hass.states.get(
+        registry.async_get_entity_id("sensor", DOMAIN, f"{prefix}_suggested_tomorrow")
+    )
+    today = hass.states.get(
+        registry.async_get_entity_id("sensor", DOMAIN, f"{prefix}_today")
+    )
+
+    assert suggested is not None
+    assert suggested.state == STATE_UNAVAILABLE
+    allocation = entry.runtime_data.data.plan["surplus_allocation"]["loads"][
+        "sensor.water_heater_energy_total"
+    ]
+    assert allocation["load_type"] == "hot_water"
+    assert allocation["reason"] == "invalid_temperature_source"
+    assert today is not None
+    assert today.state != STATE_UNAVAILABLE
 
 
 async def test_sensors_are_unavailable_when_required_data_is_invalid(

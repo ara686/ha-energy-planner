@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import voluptuous as vol
@@ -8,18 +9,24 @@ from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import (
     ConfigEntry,
-    ConfigSubentryData,
     ConfigSubentryFlow,
     SubentryFlowResult,
 )
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, PERCENTAGE, UnitOfEnergy
+from homeassistant.const import (
+    ATTR_UNIT_OF_MEASUREMENT,
+    PERCENTAGE,
+    UnitOfEnergy,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
+    CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
@@ -27,19 +34,24 @@ from .const import (
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_GRID_CHARGING_ENABLED,
+    CONF_HEATER_POWER_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_MINIMUM_TEMPERATURE_C,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
     CONF_NT_WINDOWS_ENABLED,
+    CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
@@ -47,11 +59,20 @@ from .const import (
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_TANK_VOLUME_LITERS,
+    CONF_THERMAL_CONVERSION_FACTOR,
+    CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
+    DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C,
+    DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
+    DEFAULT_MANAGED_LOAD_PRIORITY,
+    DEFAULT_MANAGED_LOAD_TYPE,
     DEFAULT_NAME,
     DEFAULT_NT_WINDOWS,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_GENERIC,
+    MANAGED_LOAD_TYPE_HOT_WATER,
 )
 from .options import (
     OptionsValidationError,
@@ -69,6 +90,11 @@ ERR_ENERGY_SENSOR_REQUIRED = "energy_sensor_required"
 ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
 ERR_PERCENTAGE_ENTITY_REQUIRED = "percentage_entity_required"
 ERR_PERCENTAGE_RANGE = "percentage_range"
+ERR_PRIORITY_INVALID = "priority_invalid"
+ERR_TEMPERATURE_ENTITIES_DISTINCT = "temperature_entities_distinct"
+ERR_TEMPERATURE_RANGE = "temperature_range"
+ERR_TEMPERATURE_SENSOR_REQUIRED = "temperature_sensor_required"
+ERR_VALUE_POSITIVE = "value_positive"
 ENERGY_STATE_CLASSES = {
     "total",
     "total_increasing",
@@ -131,6 +157,12 @@ SENSOR_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
         "domain": "sensor",
     },
 ]
+TEMPERATURE_SENSOR_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.TEMPERATURE,
+    },
+]
 REQUESTED_ENERGY_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {
         "domain": "sensor",
@@ -175,7 +207,7 @@ def _number_selector(
 class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Energy Planner."""
 
-    VERSION = 2
+    VERSION = 3
 
     @staticmethod
     def async_get_options_flow(
@@ -203,7 +235,7 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title=DEFAULT_NAME,
                     data=_without_managed_entities(user_input),
-                    subentries=_managed_load_subentries(self.hass, user_input),
+                    subentries=[],
                 )
 
         return self.async_show_form(
@@ -233,7 +265,7 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
-                _user_schema(include_managed=False),
+                _user_schema(),
                 user_input if user_input is not None else dict(entry.data),
             ),
             errors=errors,
@@ -243,63 +275,119 @@ class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
     """Add or reconfigure one managed load."""
 
+    _selected_load_type: str = DEFAULT_MANAGED_LOAD_TYPE
+
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> SubentryFlowResult:
-        errors: dict[str, str] = {}
         if user_input is not None:
-            errors = _validate_managed_load_input(
-                self.hass,
-                self._get_entry(),
-                user_input,
-            )
-            if not errors:
-                source_id = user_input[CONF_MANAGED_ENERGY_ENTITY]
-                return self.async_create_entry(
-                    title=_source_display_name(self.hass, source_id),
-                    data=_clean_managed_load_data(user_input),
-                    unique_id=source_id,
-                )
+            self._selected_load_type = str(user_input[CONF_MANAGED_LOAD_TYPE])
+            return await self._async_step_details()
 
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                _managed_load_schema(),
+                _managed_load_type_schema(),
                 user_input or {},
             ),
-            errors=errors,
         )
+
+    async def async_step_generic(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Configure a generic managed load."""
+        return await self._async_step_details(user_input)
+
+    async def async_step_hot_water(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Configure a hot-water managed load."""
+        return await self._async_step_details(user_input)
 
     async def async_step_reconfigure(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> SubentryFlowResult:
-        entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
-        errors: dict[str, str] = {}
         if user_input is not None:
-            errors = _validate_managed_load_input(
-                self.hass,
-                entry,
-                user_input,
-                current_subentry_id=subentry.subentry_id,
-            )
-            if not errors:
-                source_id = user_input[CONF_MANAGED_ENERGY_ENTITY]
-                return self.async_update_and_abort(
-                    entry,
-                    subentry,
-                    title=_source_display_name(self.hass, source_id),
-                    data=_clean_managed_load_data(user_input),
-                    unique_id=source_id,
-                )
+            self._selected_load_type = str(user_input[CONF_MANAGED_LOAD_TYPE])
+            return await self._async_step_details(reconfigure=True)
 
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
-                _managed_load_schema(),
-                user_input if user_input is not None else dict(subentry.data),
+                _managed_load_type_schema(),
+                {
+                    CONF_MANAGED_LOAD_TYPE: subentry.data.get(
+                        CONF_MANAGED_LOAD_TYPE, DEFAULT_MANAGED_LOAD_TYPE
+                    ),
+                },
+            ),
+        )
+
+    async def async_step_reconfigure_generic(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Reconfigure a generic managed load."""
+        return await self._async_step_details(user_input, reconfigure=True)
+
+    async def async_step_reconfigure_hot_water(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Reconfigure a hot-water managed load."""
+        return await self._async_step_details(user_input, reconfigure=True)
+
+    async def _async_step_details(
+        self,
+        user_input: dict[str, Any] | None = None,
+        *,
+        reconfigure: bool = False,
+    ) -> SubentryFlowResult:
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry() if reconfigure else None
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            complete_input = {
+                **user_input,
+                CONF_MANAGED_LOAD_TYPE: self._selected_load_type,
+            }
+            errors = _validate_managed_load_input(
+                self.hass,
+                entry,
+                complete_input,
+                current_subentry_id=subentry.subentry_id if subentry else None,
+            )
+            if not errors:
+                source_id = complete_input[CONF_MANAGED_ENERGY_ENTITY]
+                data = _clean_managed_load_data(complete_input)
+                if subentry is not None:
+                    return self.async_update_and_abort(
+                        entry,
+                        subentry,
+                        title=_source_display_name(self.hass, source_id),
+                        data=data,
+                        unique_id=source_id,
+                    )
+                return self.async_create_entry(
+                    title=_source_display_name(self.hass, source_id),
+                    data=data,
+                    unique_id=source_id,
+                )
+
+        step_id = (
+            f"reconfigure_{self._selected_load_type}"
+            if reconfigure
+            else self._selected_load_type
+        )
+        suggested = (
+            dict(subentry.data) if subentry is not None and user_input is None else {}
+        )
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(
+                _managed_load_details_schema(self._selected_load_type),
+                user_input if user_input is not None else suggested,
             ),
             errors=errors,
         )
@@ -459,7 +547,7 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
         )
 
 
-def _user_schema(*, include_managed: bool = True) -> vol.Schema:
+def _user_schema() -> vol.Schema:
     fields: dict[vol.Marker, selector.EntitySelector] = {
         vol.Required(CONF_BATTERY_SOC_ENTITY): _entity_selector(
             BATTERY_SOC_ENTITY_FILTERS
@@ -481,24 +569,79 @@ def _user_schema(*, include_managed: bool = True) -> vol.Schema:
             SENSOR_ENTITY_FILTERS, multiple=True
         ),
     }
-    if include_managed:
-        fields[vol.Optional(CONF_MANAGED_ENERGY_ENTITIES)] = _entity_selector(
-            ENERGY_SENSOR_FILTERS, multiple=True
+    return vol.Schema(fields)
+
+
+def _managed_load_type_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_MANAGED_LOAD_TYPE,
+                default=DEFAULT_MANAGED_LOAD_TYPE,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        MANAGED_LOAD_TYPE_GENERIC,
+                        MANAGED_LOAD_TYPE_HOT_WATER,
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key="managed_load_type",
+                )
+            )
+        }
+    )
+
+
+def _managed_load_details_schema(load_type: str) -> vol.Schema:
+    fields: dict[vol.Marker, Any] = {
+        vol.Required(CONF_MANAGED_ENERGY_ENTITY): _entity_selector(
+            ENERGY_SENSOR_FILTERS
+        ),
+        vol.Required(
+            CONF_PRIORITY,
+            default=DEFAULT_MANAGED_LOAD_PRIORITY,
+        ): _number_selector(minimum=1, step=1),
+    }
+    if load_type == MANAGED_LOAD_TYPE_HOT_WATER:
+        fields.update(
+            {
+                vol.Required(CONF_TOP_TEMPERATURE_ENTITY): _entity_selector(
+                    TEMPERATURE_SENSOR_FILTERS
+                ),
+                vol.Required(CONF_BOTTOM_TEMPERATURE_ENTITY): _entity_selector(
+                    TEMPERATURE_SENSOR_FILTERS
+                ),
+                vol.Required(CONF_MINIMUM_TEMPERATURE_C): _number_selector(
+                    unit_of_measurement=UnitOfTemperature.CELSIUS
+                ),
+                vol.Required(
+                    CONF_MAXIMUM_TEMPERATURE_C,
+                    default=DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C,
+                ): _number_selector(unit_of_measurement=UnitOfTemperature.CELSIUS),
+                vol.Required(CONF_TANK_VOLUME_LITERS): _number_selector(
+                    minimum=0.001,
+                    unit_of_measurement="L",
+                ),
+                vol.Required(CONF_HEATER_POWER_KW): _number_selector(
+                    minimum=0.001,
+                    unit_of_measurement="kW",
+                ),
+                vol.Required(
+                    CONF_THERMAL_CONVERSION_FACTOR,
+                    default=DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
+                ): _number_selector(minimum=0.001),
+            }
+        )
+    else:
+        fields[vol.Optional(CONF_REQUESTED_ENERGY_ENTITY)] = _entity_selector(
+            REQUESTED_ENERGY_ENTITY_FILTERS
         )
     return vol.Schema(fields)
 
 
 def _managed_load_schema() -> vol.Schema:
-    return vol.Schema(
-        {
-            vol.Required(CONF_MANAGED_ENERGY_ENTITY): _entity_selector(
-                ENERGY_SENSOR_FILTERS
-            ),
-            vol.Optional(CONF_REQUESTED_ENERGY_ENTITY): _entity_selector(
-                REQUESTED_ENERGY_ENTITY_FILTERS
-            ),
-        }
-    )
+    """Return the legacy generic detail schema for compatibility tests."""
+    return _managed_load_details_schema(MANAGED_LOAD_TYPE_GENERIC)
 
 
 def _without_managed_entities(user_input: dict[str, Any]) -> dict[str, Any]:
@@ -508,29 +651,37 @@ def _without_managed_entities(user_input: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _managed_load_subentries(
-    hass: HomeAssistant,
-    user_input: dict[str, Any],
-) -> list[ConfigSubentryData]:
-    """Convert managed entities selected during initial setup to subentries."""
-    return [
-        ConfigSubentryData(
-            data={CONF_MANAGED_ENERGY_ENTITY: entity_id},
-            subentry_type=MANAGED_LOAD_SUBENTRY,
-            title=_source_display_name(hass, entity_id),
-            unique_id=entity_id,
+def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Normalize persisted managed-load data and remove old type-specific keys."""
+    load_type = str(user_input[CONF_MANAGED_LOAD_TYPE])
+    data: dict[str, Any] = {
+        CONF_MANAGED_ENERGY_ENTITY: str(user_input[CONF_MANAGED_ENERGY_ENTITY]),
+        CONF_MANAGED_LOAD_TYPE: load_type,
+        CONF_PRIORITY: int(user_input[CONF_PRIORITY]),
+    }
+    if load_type == MANAGED_LOAD_TYPE_HOT_WATER:
+        data.update(
+            {
+                CONF_TOP_TEMPERATURE_ENTITY: str(
+                    user_input[CONF_TOP_TEMPERATURE_ENTITY]
+                ),
+                CONF_BOTTOM_TEMPERATURE_ENTITY: str(
+                    user_input[CONF_BOTTOM_TEMPERATURE_ENTITY]
+                ),
+                CONF_MINIMUM_TEMPERATURE_C: float(
+                    user_input[CONF_MINIMUM_TEMPERATURE_C]
+                ),
+                CONF_MAXIMUM_TEMPERATURE_C: float(
+                    user_input[CONF_MAXIMUM_TEMPERATURE_C]
+                ),
+                CONF_TANK_VOLUME_LITERS: float(user_input[CONF_TANK_VOLUME_LITERS]),
+                CONF_HEATER_POWER_KW: float(user_input[CONF_HEATER_POWER_KW]),
+                CONF_THERMAL_CONVERSION_FACTOR: float(
+                    user_input[CONF_THERMAL_CONVERSION_FACTOR]
+                ),
+            }
         )
-        for entity_id in dict.fromkeys(
-            _as_entity_list(user_input.get(CONF_MANAGED_ENERGY_ENTITIES))
-        )
-    ]
-
-
-def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, str]:
-    """Normalize persisted managed-load data."""
-    data = {CONF_MANAGED_ENERGY_ENTITY: str(user_input[CONF_MANAGED_ENERGY_ENTITY])}
-    requested_entity_id = user_input.get(CONF_REQUESTED_ENERGY_ENTITY)
-    if requested_entity_id:
+    elif requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
         data[CONF_REQUESTED_ENERGY_ENTITY] = str(requested_entity_id)
     return data
 
@@ -548,8 +699,11 @@ def _validate_managed_load_input(
     *,
     current_subentry_id: str | None = None,
 ) -> dict[str, str]:
-    """Validate one managed load and its optional demand override."""
+    """Validate common and type-specific managed-load configuration."""
     errors: dict[str, str] = {}
+    priority = _finite_float(user_input.get(CONF_PRIORITY))
+    if priority is None or priority < 1 or not priority.is_integer():
+        errors[CONF_PRIORITY] = ERR_PRIORITY_INVALID
     source_id = str(user_input[CONF_MANAGED_ENERGY_ENTITY])
     _validate_energy_sensor_entity(
         hass,
@@ -565,7 +719,10 @@ def _validate_managed_load_input(
     ):
         errors[CONF_MANAGED_ENERGY_ENTITY] = ERR_ENTITY_ALREADY_CONFIGURED
 
-    if requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
+    load_type = user_input[CONF_MANAGED_LOAD_TYPE]
+    if load_type == MANAGED_LOAD_TYPE_HOT_WATER:
+        _validate_hot_water_input(hass, user_input, errors)
+    elif requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
         requested_input = {CONF_REQUESTED_ENERGY_ENTITY: requested_entity_id}
         value = _validate_numeric_entity(
             hass,
@@ -578,6 +735,63 @@ def _validate_managed_load_input(
         ):
             errors[CONF_REQUESTED_ENERGY_ENTITY] = ERR_ENERGY_AMOUNT_REQUIRED
     return errors
+
+
+def _validate_hot_water_input(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    top_entity = str(user_input[CONF_TOP_TEMPERATURE_ENTITY])
+    bottom_entity = str(user_input[CONF_BOTTOM_TEMPERATURE_ENTITY])
+    _validate_temperature_entity(hass, top_entity, CONF_TOP_TEMPERATURE_ENTITY, errors)
+    _validate_temperature_entity(
+        hass, bottom_entity, CONF_BOTTOM_TEMPERATURE_ENTITY, errors
+    )
+    if top_entity == bottom_entity:
+        errors[CONF_BOTTOM_TEMPERATURE_ENTITY] = ERR_TEMPERATURE_ENTITIES_DISTINCT
+
+    minimum = _finite_float(user_input.get(CONF_MINIMUM_TEMPERATURE_C))
+    maximum = _finite_float(user_input.get(CONF_MAXIMUM_TEMPERATURE_C))
+    if minimum is None or maximum is None or minimum >= maximum:
+        errors[CONF_MAXIMUM_TEMPERATURE_C] = ERR_TEMPERATURE_RANGE
+    for key in (
+        CONF_TANK_VOLUME_LITERS,
+        CONF_HEATER_POWER_KW,
+        CONF_THERMAL_CONVERSION_FACTOR,
+    ):
+        value = _finite_float(user_input.get(key))
+        if value is None or value <= 0:
+            errors[key] = ERR_VALUE_POSITIVE
+
+
+def _validate_temperature_entity(
+    hass: HomeAssistant,
+    entity_id: str,
+    key: str,
+    errors: dict[str, str],
+) -> None:
+    state = hass.states.get(entity_id)
+    value = parse_float(state.state if state else None)
+    if value is None or not math.isfinite(value):
+        errors[key] = ERR_INVALID_NUMERIC_ENTITY
+        return
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) if state else None
+    if (
+        state is None
+        or state.domain != "sensor"
+        or state.attributes.get("device_class") != SensorDeviceClass.TEMPERATURE
+        or unit not in TemperatureConverter.VALID_UNITS
+    ):
+        errors[key] = ERR_TEMPERATURE_SENSOR_REQUIRED
+
+
+def _finite_float(value: object) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _time_selector() -> selector.TimeSelector:
@@ -626,13 +840,6 @@ def _validate_config_input(
         CONF_HOME_ENERGY_ENTITY,
         errors,
     )
-    for entity_id in _as_entity_list(user_input.get(CONF_MANAGED_ENERGY_ENTITIES)):
-        _validate_energy_sensor_entity(
-            hass,
-            entity_id,
-            CONF_MANAGED_ENERGY_ENTITIES,
-            errors,
-        )
     return errors
 
 

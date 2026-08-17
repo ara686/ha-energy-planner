@@ -29,8 +29,9 @@ and binary sensors that you can use in dashboards or in your own automations.
 - Decide whether battery discharge is currently still safe for the plan.
 - Estimate unused PV surplus that can be used for flexible loads such as hot
   water, pool technology or EV charging.
-- Recommend how tomorrow's fully covered surplus can be divided among managed
-  loads from their recent daily usage or an optional requested-energy entity.
+- Recommend how fully covered future surplus can be divided among typed managed
+  loads. Generic loads use recent usage or a requested-energy entity; hot-water
+  tanks use their current temperatures and physical parameters.
 - Keep managed loads out of the normal house consumption profile, so the planner
   learns the base household load more realistically.
 - Track managed loads separately, so you can see how much energy went into EV
@@ -77,10 +78,11 @@ Required:
 
 Optional:
 
-- One or more managed-load cumulative energy entities with a supported energy
-  unit, such as EV charging, water heater, boiler or pool technology.
-- An optional numeric `kWh` entity for each managed load with the energy you
-  want to supply tomorrow. It overrides that load's historical estimate.
+- Managed loads added after the shared setup as separate items. The available
+  types are `generic` and `hot_water`; each still requires its own cumulative
+  energy meter so its consumption can be removed from the house profile.
+- A numeric requested-energy entity for a `generic` load, or two temperature
+  sensors and the tank parameters for a `hot_water` load.
 - Solcast PV forecast entities for today, tomorrow and additional days.
 
 If your home consumption is only available as a power sensor, for example
@@ -100,8 +102,10 @@ Energy Planner builds an hourly consumption profile from Home Assistant history.
   about 24 hours.
 - Results become more accurate after about 48 hours because the planner has seen
   repeated samples for the same hour of day.
-- Managed-load recommendations require at least three coverage-qualified
-  completed days. The normal estimate uses up to seven recent days.
+- Generic history-based recommendations require at least three
+  coverage-qualified completed days and use up to seven recent days. Hot-water
+  recommendations do not require consumption history, but both temperature
+  sensors and complete solar coverage must be available.
 
 Reconfigure keeps the stored history. If you change a source entity, check the
 results for a while and only remove the integration if you intentionally want to
@@ -118,7 +122,7 @@ Most useful entities:
 | Entity | What it means |
 |--------|---------------|
 | `sensor.energy_planner_soc_forecast` | Passive forecasted SoC at the configured forecast horizon. It uses current SoC, consumption history and PV forecast, without assuming Energy Planner automations have already charged or locked the battery. Its attributes contain the future forecast points for graphs. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Passive forecasted SoC at the configured horizon with tomorrow's full expected managed-load demand included. Each load follows its recent hourly usage shape; a load without a usable profile is spread evenly across tomorrow. Attributes contain graph points and managed-demand scheduling details. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Passive forecasted SoC at the configured horizon with generic demand and actually allocated hot-water solar slots included. Attributes contain compact graph points, per-day allocations and managed-demand scheduling details. |
 | `sensor.energy_planner_soc_forecast_24h` | Passive forecasted SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |
@@ -127,9 +131,9 @@ Most useful entities:
 | `sensor.energy_planner_safe_discharge_soc` | Lowest SoC that should still preserve the plan. |
 | `sensor.energy_planner_unused_surplus_today` | Estimated unused PV surplus for today from the passive forecast. |
 | `sensor.energy_planner_unused_surplus_tomorrow` | Tomorrow's allocatable surplus. It has a value only when the complete local day and its solar input are covered. |
-| `sensor.energy_planner_recommended_managed_energy_tomorrow` | Total energy recommended for all managed loads tomorrow. |
+| `sensor.energy_planner_recommended_managed_energy_tomorrow` | Total energy recommended for all managed loads tomorrow. Its attributes include compact allocations for every complete future local day in the horizon. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Complete tomorrow surplus remaining after all recommendations. |
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load, with method, confidence and historical inputs in attributes. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Generic attributes describe the history/request; hot-water attributes include average temperature, minimum need, flexible capacity and minimum shortfall. |
 | `sensor.energy_planner_managed_<source>_today` | Energy used today by one managed load, for example EV charging or water heating. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Energy Planner's tracked total for one managed load. |
 
@@ -192,6 +196,9 @@ energy_planner.recalculate
 - If the home source is in `W`, convert it to `kWh` with an Integral helper.
 - `warning` usually means a configured optional source, such as a selected
   Solcast entity, is missing or has no usable forecast data.
+- An unavailable hot-water temperature sensor withholds only that tank's
+  recommendation. Energy Planner never falls back to consumption history for a
+  `hot_water` load.
 - If forecast graphs are empty, check that
   `sensor.energy_planner_soc_forecast` has a `points` attribute in
   **Developer Tools > States**.

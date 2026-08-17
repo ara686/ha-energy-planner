@@ -19,6 +19,10 @@ from .const import (
     CONF_HOME_ENERGY_ENTITY,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
+    CONF_PRIORITY,
+    DEFAULT_MANAGED_LOAD_PRIORITY,
+    DEFAULT_MANAGED_LOAD_TYPE,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
 )
@@ -96,39 +100,58 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate legacy managed-load lists to config subentries."""
-    if entry.version > 2:
+    """Migrate legacy managed loads to typed config subentries."""
+    if entry.version > 3:
         return False
-    if entry.version == 2:
+    if entry.version == 3:
         return True
 
     data = dict(entry.data)
-    raw_entity_ids = data.pop(CONF_MANAGED_ENERGY_ENTITIES, []) or []
-    if isinstance(raw_entity_ids, str):
-        raw_entity_ids = [raw_entity_ids]
-    existing_source_ids = {
-        subentry.data.get(CONF_MANAGED_ENERGY_ENTITY)
-        for subentry in entry.subentries.values()
-        if subentry.subentry_type == MANAGED_LOAD_SUBENTRY
-    }
-    for entity_id in dict.fromkeys(raw_entity_ids):
-        if (
-            not isinstance(entity_id, str)
-            or not entity_id
-            or entity_id in existing_source_ids
-        ):
+    if entry.version == 1:
+        raw_entity_ids = data.pop(CONF_MANAGED_ENERGY_ENTITIES, []) or []
+        if isinstance(raw_entity_ids, str):
+            raw_entity_ids = [raw_entity_ids]
+        existing_source_ids = {
+            subentry.data.get(CONF_MANAGED_ENERGY_ENTITY)
+            for subentry in entry.subentries.values()
+            if subentry.subentry_type == MANAGED_LOAD_SUBENTRY
+        }
+        for entity_id in dict.fromkeys(raw_entity_ids):
+            if (
+                not isinstance(entity_id, str)
+                or not entity_id
+                or entity_id in existing_source_ids
+            ):
+                continue
+            state = hass.states.get(entity_id)
+            hass.config_entries.async_add_subentry(
+                entry,
+                ConfigSubentry(
+                    data=MappingProxyType(
+                        {
+                            CONF_MANAGED_ENERGY_ENTITY: entity_id,
+                            CONF_MANAGED_LOAD_TYPE: DEFAULT_MANAGED_LOAD_TYPE,
+                            CONF_PRIORITY: DEFAULT_MANAGED_LOAD_PRIORITY,
+                        }
+                    ),
+                    subentry_type=MANAGED_LOAD_SUBENTRY,
+                    title=state.name if state is not None else entity_id,
+                    unique_id=entity_id,
+                ),
+            )
+
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != MANAGED_LOAD_SUBENTRY:
             continue
-        state = hass.states.get(entity_id)
-        hass.config_entries.async_add_subentry(
+        subentry_data = dict(subentry.data)
+        subentry_data.setdefault(CONF_MANAGED_LOAD_TYPE, DEFAULT_MANAGED_LOAD_TYPE)
+        subentry_data.setdefault(CONF_PRIORITY, DEFAULT_MANAGED_LOAD_PRIORITY)
+        hass.config_entries.async_update_subentry(
             entry,
-            ConfigSubentry(
-                data=MappingProxyType({CONF_MANAGED_ENERGY_ENTITY: entity_id}),
-                subentry_type=MANAGED_LOAD_SUBENTRY,
-                title=state.name if state is not None else entity_id,
-                unique_id=entity_id,
-            ),
+            subentry,
+            data=subentry_data,
         )
-    hass.config_entries.async_update_entry(entry, data=data, version=2)
+    hass.config_entries.async_update_entry(entry, data=data, version=3)
     return True
 
 
