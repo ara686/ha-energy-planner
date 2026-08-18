@@ -97,7 +97,7 @@ load's recommendation; it never falls back to history.
 | Field | Key | Required | Description |
 |-------|-----|----------|-------------|
 | Remaining battery energy | `required_energy_entity` | Required | Current non-negative energy still storable in the vehicle battery. `sensor`, `number` and `input_number` entities with units convertible to `kWh` are supported. For example, use `sensor.enyaq_charge_kwh`. |
-| Maximum charging input power | `maximum_charging_power_entity` | Required | Positive future charger-input limit from a `sensor`, `number` or `input_number` entity with units convertible to `kW`. It must not be an instantaneous zero-power reading from an idle charger. |
+| Maximum charger power | `maximum_charging_power_kw` | Required | Fixed positive technical input limit in `kW`, for example `11`. Available solar surplus separately limits the actual recommendation in every slot. |
 | Charging efficiency | `charging_efficiency` | Required | Battery energy divided by charger electrical input, greater than zero and at most `1`; default `0.90`. |
 
 The request is converted to charger-input energy:
@@ -106,12 +106,17 @@ The request is converted to charger-input energy:
 electrical required kWh = battery required kWh / charging efficiency
 ```
 
-A zero request is valid. The integration watches both EV input entities and
-requests a debounced recalculation when either state changes. Invalid or
-unavailable EV input withholds only this load's recommendation; an
+A zero request is valid. The integration watches the EV energy-request entity
+and requests a debounced recalculation when its state changes. An invalid or
+unavailable EV request, or an invalid maximum power, withholds only this load's recommendation; an
 `electric_vehicle` load never falls back to history. Energy Planner assumes the
 vehicle can charge in every planned slot and does not model connection state,
 departure time, driving or target-SoC changes.
+
+When upgrading a version that used a maximum-power entity, migration copies its
+current positive state into the fixed `kW` value and removes the entity reference.
+If that state is unavailable during migration, reconfigure the managed load and
+enter the charger limit before EV recommendations resume.
 
 If you only have a power sensor, for example `sensor.home_power` in `W`, create
 a Home Assistant Integral helper first to convert power to energy in `kWh`, then

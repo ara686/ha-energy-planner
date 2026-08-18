@@ -13,7 +13,7 @@ from .const import (
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
-    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
+    CONF_MAXIMUM_CHARGING_POWER_KW,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MINIMUM_TEMPERATURE_C,
     CONF_PRIORITY,
@@ -42,7 +42,7 @@ class ManagedLoadConfig:
     priority: int = DEFAULT_MANAGED_LOAD_PRIORITY
     requested_energy_entity_id: str | None = None
     required_energy_entity_id: str | None = None
-    maximum_charging_power_entity_id: str | None = None
+    maximum_charging_power_kw: float | None = None
     charging_efficiency: float = DEFAULT_EV_CHARGING_EFFICIENCY
     top_temperature_entity_id: str | None = None
     bottom_temperature_entity_id: str | None = None
@@ -81,8 +81,8 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             required_energy_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_REQUIRED_ENERGY_ENTITY)
             ),
-            maximum_charging_power_entity_id=_optional_entity_id(
-                subentry.data.get(CONF_MAXIMUM_CHARGING_POWER_ENTITY)
+            maximum_charging_power_kw=_optional_float(
+                subentry.data.get(CONF_MAXIMUM_CHARGING_POWER_KW)
             ),
             charging_efficiency=_float_or_default(
                 subentry.data.get(CONF_CHARGING_EFFICIENCY),

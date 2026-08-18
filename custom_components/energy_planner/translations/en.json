@@ -111,23 +111,23 @@
         },
         "electric_vehicle": {
           "title": "Configure electric vehicle charging",
-          "description": "Required energy is the current battery-side remainder. Maximum charging power is a positive future input limit. The planner only recommends forecast solar surplus.",
+          "description": "Required energy is the current battery-side remainder. Maximum charger power is the fixed technical input limit in kW; available solar surplus separately limits every slot.",
           "data": {
             "managed_energy_entity": "Cumulative energy meter",
             "priority": "Priority",
             "required_energy_entity": "Remaining battery energy",
-            "maximum_charging_power_entity": "Maximum charging input power",
+            "maximum_charging_power_kw": "Maximum charger power",
             "charging_efficiency": "Charging efficiency"
           }
         },
         "reconfigure_electric_vehicle": {
           "title": "Edit electric vehicle charging",
-          "description": "Update the energy request, future charging-power limit or charging efficiency.",
+          "description": "Update the energy request, fixed charger-power limit or charging efficiency.",
           "data": {
             "managed_energy_entity": "Cumulative energy meter",
             "priority": "Priority",
             "required_energy_entity": "Remaining battery energy",
-            "maximum_charging_power_entity": "Maximum charging input power",
+            "maximum_charging_power_kw": "Maximum charger power",
             "charging_efficiency": "Charging efficiency"
           }
         }
@@ -137,7 +137,7 @@
         "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
         "energy_sensor_required": "The energy meter must be a cumulative energy sensor with a supported energy unit.",
         "energy_amount_required": "Requested energy must be a non-negative entity in kWh.",
-        "power_amount_required": "Maximum charging power must be a positive entity in kW.",
+        "power_amount_required": "Maximum charger power must be a positive value in kW.",
         "charging_efficiency_range": "Charging efficiency must be greater than zero and at most one.",
         "entity_already_configured": "This energy meter is already configured.",
         "temperature_entities_distinct": "Top and bottom temperature sensors must be different.",
