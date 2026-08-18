@@ -111,7 +111,7 @@ actions:
       entity_id: switch.your_ev_charger_enable
 ```
 
-The entity is unavailable if the EV request, maximum-power input or remaining
+The entity is unavailable if the EV request, configured maximum power or remaining
 solar coverage is invalid. Its value is an energy budget, not an instantaneous
 power setpoint. Add your own stop logic, connection checks and safety conditions
 for the charger.

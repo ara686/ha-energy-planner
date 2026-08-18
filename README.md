@@ -85,9 +85,9 @@ Optional:
   house profile.
 - A numeric requested-energy entity for a `generic` load, or two temperature
   sensors and the tank parameters for a `hot_water` load. An
-  `electric_vehicle` load needs the remaining battery-side energy and a future
-  maximum charging-power entity; `sensor.enyaq_charge_kwh` is a typical
-  template-sensor input.
+  `electric_vehicle` load needs the remaining battery-side energy and a fixed
+  maximum charger power in `kW`; `sensor.enyaq_charge_kwh` is a typical
+  template-sensor input for the energy request.
 - Solcast PV forecast entities for today, tomorrow and additional days.
 
 If your home consumption is only available as a power sensor, for example
@@ -191,7 +191,7 @@ included in plan-specific simulations.
 ## Manual Recalculation
 
 Energy Planner recalculates automatically. It also reacts to battery SoC and EV
-request or maximum-power entity changes.
+energy-request changes.
 
 You can force a recalculation from **Developer Tools > Services**:
 
@@ -209,9 +209,9 @@ energy_planner.recalculate
 - An unavailable hot-water temperature sensor withholds only that tank's
   recommendation. Energy Planner never falls back to consumption history for a
   `hot_water` load.
-- An unavailable EV energy request or maximum-power entity withholds only that
-  vehicle's recommendation. An `electric_vehicle` load never falls back to
-  consumption history and never plans grid charging.
+- An unavailable EV energy request or an invalid maximum charger power
+  withholds only that vehicle's recommendation. An `electric_vehicle` load
+  never falls back to consumption history and never plans grid charging.
 - If forecast graphs are empty, check that
   `sensor.energy_planner_soc_forecast` has a `points` attribute in
   **Developer Tools > States**.

@@ -113,7 +113,7 @@ def config_entry() -> MockConfigEntry:
         data=config_data(),
         options=options_data(),
         unique_id=DOMAIN,
-        version=3,
+        version=4,
         subentries_data=(
             {
                 "data": {

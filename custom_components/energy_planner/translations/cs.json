@@ -111,23 +111,23 @@
         },
         "electric_vehicle": {
           "title": "Nastavit nabíjení elektromobilu",
-          "description": "Požadovaná energie je aktuální zbytek na straně baterie auta. Maximální nabíjecí příkon je kladný budoucí limit vstupu. Plánovač pouze doporučuje využití předpovězeného solárního přebytku.",
+          "description": "Požadovaná energie je aktuální zbytek na straně baterie auta. Maximální výkon nabíječky je pevný technický limit v kW; dostupný solární přebytek omezuje každý slot samostatně.",
           "data": {
             "managed_energy_entity": "Kumulativní elektroměr",
             "priority": "Priorita",
             "required_energy_entity": "Zbývající energie do baterie",
-            "maximum_charging_power_entity": "Maximální nabíjecí příkon",
+            "maximum_charging_power_kw": "Maximální výkon nabíječky",
             "charging_efficiency": "Účinnost nabíjení"
           }
         },
         "reconfigure_electric_vehicle": {
           "title": "Upravit nabíjení elektromobilu",
-          "description": "Upravte požadovanou energii, budoucí limit nabíjecího příkonu nebo účinnost nabíjení.",
+          "description": "Upravte požadovanou energii, pevný limit výkonu nabíječky nebo účinnost nabíjení.",
           "data": {
             "managed_energy_entity": "Kumulativní elektroměr",
             "priority": "Priorita",
             "required_energy_entity": "Zbývající energie do baterie",
-            "maximum_charging_power_entity": "Maximální nabíjecí příkon",
+            "maximum_charging_power_kw": "Maximální výkon nabíječky",
             "charging_efficiency": "Účinnost nabíjení"
           }
         }
@@ -137,7 +137,7 @@
         "invalid_numeric_entity": "Vybraná entita musí mít číselný stav.",
         "energy_sensor_required": "Elektroměr musí být kumulativní energetický senzor s podporovanou jednotkou energie.",
         "energy_amount_required": "Požadovaná energie musí být nezáporná entita v kWh.",
-        "power_amount_required": "Maximální nabíjecí příkon musí být kladná entita v kW.",
+        "power_amount_required": "Maximální výkon nabíječky musí být kladná hodnota v kW.",
         "charging_efficiency_range": "Účinnost nabíjení musí být větší než nula a nejvýše jedna.",
         "entity_already_configured": "Tento elektroměr je již nakonfigurován.",
         "temperature_entities_distinct": "Horní a dolní teplotní čidlo musí být rozdílné.",

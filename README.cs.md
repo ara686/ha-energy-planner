@@ -81,8 +81,8 @@ Volitelné:
   vlastní kumulativní elektroměr, aby šlo jeho spotřebu odečíst z profilu domu.
 - Číselná entita požadované energie pro `generic`, nebo dvě teplotní čidla a
   parametry zásobníku pro `hot_water`. Typ `electric_vehicle` potřebuje entitu
-  zbývající energie na straně baterie auta a entitu budoucího maximálního
-  nabíjecího příkonu; typickým vstupem je template senzor
+  zbývající energie na straně baterie auta a pevný maximální výkon nabíječky v
+  `kW`; typickým vstupem požadavku je template senzor
   `sensor.enyaq_charge_kwh`.
 - Solcast předpověď FVE pro dnešek, zítřek a další dny.
 
@@ -185,8 +185,8 @@ nezahrne žádné nabíjení ze sítě.
 
 ## Ruční přepočet
 
-Energy Planner se přepočítává automaticky a reaguje také na změny SoC baterie,
-EV požadavku a entity maximálního nabíjecího příkonu.
+Energy Planner se přepočítává automaticky a reaguje také na změny SoC baterie a
+EV požadavku energie.
 
 Ruční přepočet spustíte přes **Developer Tools > Services**:
 
@@ -204,9 +204,9 @@ energy_planner.recalculate
 - Nedostupné teplotní čidlo TUV zneplatní pouze doporučení daného zásobníku.
   Energy Planner u typu `hot_water` nikdy nepoužije jako náhradu historii
   spotřeby.
-- Nedostupný požadavek energie EV nebo entita maximálního příkonu zneplatní jen
-  doporučení daného auta. Typ `electric_vehicle` nikdy nepoužije náhradní
-  historii ani neplánuje nabíjení ze sítě.
+- Nedostupný požadavek energie EV nebo neplatný maximální výkon nabíječky
+  zneplatní jen doporučení daného auta. Typ `electric_vehicle` nikdy nepoužije
+  náhradní historii ani neplánuje nabíjení ze sítě.
 - Pokud jsou grafy prázdné, zkontrolujte v **Developer Tools > States**, že
   `sensor.energy_planner_soc_forecast` má atribut `points`.
 - Pokud hodnoty po první instalaci vypadají zvláštně, počkejte alespoň 24 až 48

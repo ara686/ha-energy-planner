@@ -111,23 +111,23 @@
         },
         "electric_vehicle": {
           "title": "Nastaviť nabíjanie elektromobilu",
-          "description": "Požadovaná energia je aktuálny zvyšok na strane batérie auta. Maximálny nabíjací príkon je kladný budúci limit vstupu. Plánovač iba odporúča využitie predpovedaného solárneho prebytku.",
+          "description": "Požadovaná energia je aktuálny zvyšok na strane batérie auta. Maximálny výkon nabíjačky je pevný technický limit v kW; dostupný solárny prebytok obmedzuje každý slot samostatne.",
           "data": {
             "managed_energy_entity": "Kumulatívny elektromer",
             "priority": "Priorita",
             "required_energy_entity": "Zostávajúca energia do batérie",
-            "maximum_charging_power_entity": "Maximálny nabíjací príkon",
+            "maximum_charging_power_kw": "Maximálny výkon nabíjačky",
             "charging_efficiency": "Účinnosť nabíjania"
           }
         },
         "reconfigure_electric_vehicle": {
           "title": "Upraviť nabíjanie elektromobilu",
-          "description": "Upravte požadovanú energiu, budúci limit nabíjacieho príkonu alebo účinnosť nabíjania.",
+          "description": "Upravte požadovanú energiu, pevný limit výkonu nabíjačky alebo účinnosť nabíjania.",
           "data": {
             "managed_energy_entity": "Kumulatívny elektromer",
             "priority": "Priorita",
             "required_energy_entity": "Zostávajúca energia do batérie",
-            "maximum_charging_power_entity": "Maximálny nabíjací príkon",
+            "maximum_charging_power_kw": "Maximálny výkon nabíjačky",
             "charging_efficiency": "Účinnosť nabíjania"
           }
         }
@@ -137,7 +137,7 @@
         "invalid_numeric_entity": "Vybraná entita musí mať číselný stav.",
         "energy_sensor_required": "Elektromer musí byť kumulatívny energetický senzor s podporovanou jednotkou energie.",
         "energy_amount_required": "Požadovaná energia musí byť nezáporná entita v kWh.",
-        "power_amount_required": "Maximálny nabíjací príkon musí byť kladná entita v kW.",
+        "power_amount_required": "Maximálny výkon nabíjačky musí byť kladná hodnota v kW.",
         "charging_efficiency_range": "Účinnosť nabíjania musí byť väčšia než nula a najviac jedna.",
         "entity_already_configured": "Tento elektromer je už nakonfigurovaný.",
         "temperature_entities_distinct": "Horný a dolný teplotný snímač musia byť rozdielne.",

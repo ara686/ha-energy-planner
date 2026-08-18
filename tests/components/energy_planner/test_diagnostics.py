@@ -10,7 +10,7 @@ from custom_components.energy_planner.const import (
     CONF_HEATER_POWER_KW,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
-    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
+    CONF_MAXIMUM_CHARGING_POWER_KW,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MINIMUM_TEMPERATURE_C,
     CONF_PRIORITY,
@@ -92,7 +92,7 @@ async def test_diagnostics_include_hot_water_model_configuration(hass):
             "priority": 5,
             "requested_energy_entity_id": None,
             "required_energy_entity_id": None,
-            "maximum_charging_power_entity_id": None,
+            "maximum_charging_power_kw": None,
             "charging_efficiency": 0.9,
             "top_temperature_entity_id": "sensor.boiler_top",
             "bottom_temperature_entity_id": "sensor.boiler_bottom",
@@ -109,7 +109,7 @@ async def test_diagnostics_include_electric_vehicle_model_configuration(hass):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={},
-        version=3,
+        version=4,
         subentries_data=(
             {
                 "data": {
@@ -117,7 +117,7 @@ async def test_diagnostics_include_electric_vehicle_model_configuration(hass):
                     CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
                     CONF_PRIORITY: 10,
                     CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
-                    CONF_MAXIMUM_CHARGING_POWER_ENTITY: "number.ev_max_power",
+                    CONF_MAXIMUM_CHARGING_POWER_KW: 11,
                     CONF_CHARGING_EFFICIENCY: 0.92,
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
@@ -133,5 +133,5 @@ async def test_diagnostics_include_electric_vehicle_model_configuration(hass):
     load = diagnostics["entry"]["managed_loads"][0]
     assert load["load_type"] == "electric_vehicle"
     assert load["required_energy_entity_id"] == "sensor.enyaq_charge_kwh"
-    assert load["maximum_charging_power_entity_id"] == "number.ev_max_power"
+    assert load["maximum_charging_power_kw"] == 11
     assert load["charging_efficiency"] == 0.92
