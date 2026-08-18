@@ -10,7 +10,6 @@
           "battery_capacity_entity": "Battery capacity",
           "battery_min_soc_entity": "Battery minimum state of charge",
           "home_energy_entity": "Home energy source",
-          "managed_energy_entities": "Managed energy sources",
           "solcast_today_entity": "Solcast forecast for today",
           "solcast_tomorrow_entity": "Solcast forecast for tomorrow",
           "solcast_additional_entities": "Additional Solcast forecast days"
@@ -24,7 +23,6 @@
           "battery_capacity_entity": "Battery capacity",
           "battery_min_soc_entity": "Battery minimum state of charge",
           "home_energy_entity": "Home energy source",
-          "managed_energy_entities": "Managed energy sources",
           "solcast_today_entity": "Solcast forecast for today",
           "solcast_tomorrow_entity": "Solcast forecast for tomorrow",
           "solcast_additional_entities": "Additional Solcast forecast days"
@@ -51,18 +49,64 @@
       "step": {
         "user": {
           "title": "Add managed load",
-          "description": "Select its cumulative energy meter and, optionally, an entity containing tomorrow's requested energy in kWh.",
+          "description": "Select how this managed load is modeled.",
           "data": {
-            "managed_energy_entity": "Cumulative energy meter",
-            "requested_energy_entity": "Requested energy tomorrow"
+            "managed_load_type": "Managed load type"
           }
         },
         "reconfigure": {
           "title": "Edit managed load",
-          "description": "Update the load's energy meter or optional requested energy.",
+          "description": "Select the load model. Changing the type removes fields that no longer apply.",
+          "data": {
+            "managed_load_type": "Managed load type"
+          }
+        },
+        "generic": {
+          "title": "Configure generic managed load",
+          "description": "Demand is estimated from history unless a requested-energy entity provides a valid value.",
           "data": {
             "managed_energy_entity": "Cumulative energy meter",
+            "priority": "Priority",
             "requested_energy_entity": "Requested energy tomorrow"
+          }
+        },
+        "reconfigure_generic": {
+          "title": "Edit generic managed load",
+          "description": "Update the energy meter or optional requested energy.",
+          "data": {
+            "managed_energy_entity": "Cumulative energy meter",
+            "priority": "Priority",
+            "requested_energy_entity": "Requested energy tomorrow"
+          }
+        },
+        "hot_water": {
+          "title": "Configure hot-water tank",
+          "description": "The minimum and maximum are target average tank temperatures. The planner only recommends use of forecast solar surplus.",
+          "data": {
+            "managed_energy_entity": "Cumulative energy meter",
+            "priority": "Priority",
+            "top_temperature_entity": "Top water temperature",
+            "bottom_temperature_entity": "Bottom water temperature",
+            "minimum_temperature_c": "Minimum average temperature",
+            "maximum_temperature_c": "Maximum average temperature",
+            "tank_volume_liters": "Tank volume",
+            "heater_power_kw": "Heater input power",
+            "thermal_conversion_factor": "Thermal conversion factor"
+          }
+        },
+        "reconfigure_hot_water": {
+          "title": "Edit hot-water tank",
+          "description": "Update the tank sensors and physical parameters.",
+          "data": {
+            "managed_energy_entity": "Cumulative energy meter",
+            "priority": "Priority",
+            "top_temperature_entity": "Top water temperature",
+            "bottom_temperature_entity": "Bottom water temperature",
+            "minimum_temperature_c": "Minimum average temperature",
+            "maximum_temperature_c": "Maximum average temperature",
+            "tank_volume_liters": "Tank volume",
+            "heater_power_kw": "Heater input power",
+            "thermal_conversion_factor": "Thermal conversion factor"
           }
         }
       },
@@ -71,7 +115,20 @@
         "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
         "energy_sensor_required": "The energy meter must be a cumulative energy sensor with a supported energy unit.",
         "energy_amount_required": "Requested energy must be a non-negative entity in kWh.",
-        "entity_already_configured": "This energy meter is already configured."
+        "entity_already_configured": "This energy meter is already configured.",
+        "temperature_entities_distinct": "Top and bottom temperature sensors must be different.",
+        "temperature_sensor_required": "Select a numeric temperature sensor with a supported temperature unit.",
+        "temperature_range": "Minimum temperature must be below maximum temperature.",
+        "priority_invalid": "Priority must be a whole number of at least 1.",
+        "value_positive": "Tank volume, heater power and thermal conversion factor must be greater than zero."
+      }
+    }
+  },
+  "selector": {
+    "managed_load_type": {
+      "options": {
+        "generic": "Generic (history or request)",
+        "hot_water": "Hot water"
       }
     }
   },

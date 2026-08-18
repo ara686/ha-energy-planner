@@ -24,12 +24,15 @@ from custom_components.energy_planner.const import (
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
+    CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS_ENABLED,
+    CONF_PRIORITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
@@ -38,6 +41,8 @@ from custom_components.energy_planner.const import (
     CONF_SUN_START_REQUIRED_MINUTES,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_GENERIC,
 )
 from custom_components.energy_planner.options import normalize_options
 
@@ -47,21 +52,22 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Enable custom integrations for Home Assistant integration tests."""
 
 
-def config_data(**overrides: Any) -> dict[str, Any]:
+def config_data(*, include_managed: bool = False, **overrides: Any) -> dict[str, Any]:
     """Return valid config flow data."""
     data = {
         CONF_BATTERY_SOC_ENTITY: "sensor.battery_soc",
         CONF_BATTERY_CAPACITY_ENTITY: "sensor.battery_capacity",
         CONF_BATTERY_MIN_SOC_ENTITY: "sensor.battery_min_soc",
         CONF_HOME_ENERGY_ENTITY: "sensor.home_energy_total",
-        CONF_MANAGED_ENERGY_ENTITIES: [
-            "sensor.ev_energy_total",
-            "sensor.water_heater_energy_total",
-        ],
         CONF_SOLCAST_TODAY_ENTITY: "sensor.solcast_today",
         CONF_SOLCAST_TOMORROW_ENTITY: "sensor.solcast_tomorrow",
         CONF_SOLCAST_ADDITIONAL_ENTITIES: ["sensor.solcast_day_3"],
     }
+    if include_managed:
+        data[CONF_MANAGED_ENERGY_ENTITIES] = [
+            "sensor.ev_energy_total",
+            "sensor.water_heater_energy_total",
+        ]
     data.update(overrides)
     return data
 
@@ -107,6 +113,29 @@ def config_entry() -> MockConfigEntry:
         data=config_data(),
         options=options_data(),
         unique_id=DOMAIN,
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+                    CONF_PRIORITY: 100,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+                    CONF_PRIORITY: 100,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Water heater energy",
+                "unique_id": "sensor.water_heater_energy_total",
+            },
+        ),
     )
 
 

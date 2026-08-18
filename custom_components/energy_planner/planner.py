@@ -92,12 +92,16 @@ def calculate_soc_forecast(
     """Calculate a passive SoC forecast with optional managed consumption."""
     slots = _normalized_slots(data)
     if managed_consumption_by_slot:
+        normalized_managed_consumption = {
+            _timeline_time(slot_start): value
+            for slot_start, value in managed_consumption_by_slot.items()
+        }
         slots = [
             replace(
                 slot,
                 managed_consumption_kwh=max(
                     0.0,
-                    managed_consumption_by_slot.get(slot.start, 0.0),
+                    normalized_managed_consumption.get(_timeline_time(slot.start), 0.0),
                 ),
             )
             for slot in slots

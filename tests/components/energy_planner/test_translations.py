@@ -11,24 +11,29 @@ from custom_components.energy_planner.const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
+    CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_GRID_CHARGING_ENABLED,
+    CONF_HEATER_POWER_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
-    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_MINIMUM_TEMPERATURE_C,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS_ENABLED,
+    CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
@@ -36,6 +41,9 @@ from custom_components.energy_planner.const import (
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_TANK_VOLUME_LITERS,
+    CONF_THERMAL_CONVERSION_FACTOR,
+    CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
@@ -50,7 +58,6 @@ CONFIG_FIELD_KEYS = {
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_HOME_ENERGY_ENTITY,
-    CONF_MANAGED_ENERGY_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
@@ -76,9 +83,24 @@ OPTION_FIELD_KEYS = {
     CONF_SUN_START_REQUIRED_MINUTES,
     CONF_FORECAST_HORIZON_HOURS,
 }
-MANAGED_LOAD_FIELD_KEYS = {
+MANAGED_LOAD_TYPE_FIELD_KEYS = {
+    CONF_MANAGED_LOAD_TYPE,
+}
+GENERIC_MANAGED_LOAD_FIELD_KEYS = {
     CONF_MANAGED_ENERGY_ENTITY,
+    CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
+}
+HOT_WATER_MANAGED_LOAD_FIELD_KEYS = {
+    CONF_MANAGED_ENERGY_ENTITY,
+    CONF_PRIORITY,
+    CONF_TOP_TEMPERATURE_ENTITY,
+    CONF_BOTTOM_TEMPERATURE_ENTITY,
+    CONF_MINIMUM_TEMPERATURE_C,
+    CONF_MAXIMUM_TEMPERATURE_C,
+    CONF_TANK_VOLUME_LITERS,
+    CONF_HEATER_POWER_KW,
+    CONF_THERMAL_CONVERSION_FACTOR,
 }
 
 
@@ -106,7 +128,13 @@ def test_supported_translation_files_share_the_same_keys() -> None:
 
 
 def test_config_and_options_fields_have_human_readable_labels() -> None:
-    raw_keys = CONFIG_FIELD_KEYS | OPTION_FIELD_KEYS | MANAGED_LOAD_FIELD_KEYS
+    raw_keys = (
+        CONFIG_FIELD_KEYS
+        | OPTION_FIELD_KEYS
+        | MANAGED_LOAD_TYPE_FIELD_KEYS
+        | GENERIC_MANAGED_LOAD_FIELD_KEYS
+        | HOT_WATER_MANAGED_LOAD_FIELD_KEYS
+    )
 
     for language in SUPPORTED_LANGUAGES:
         translations = _flatten(_load_translation(language))
@@ -115,7 +143,15 @@ def test_config_and_options_fields_have_human_readable_labels() -> None:
         } | {translations[f"options.step.init.data.{key}"] for key in OPTION_FIELD_KEYS}
         labels |= {
             translations[f"config_subentries.managed_load.step.user.data.{key}"]
-            for key in MANAGED_LOAD_FIELD_KEYS
+            for key in MANAGED_LOAD_TYPE_FIELD_KEYS
+        }
+        labels |= {
+            translations[f"config_subentries.managed_load.step.generic.data.{key}"]
+            for key in GENERIC_MANAGED_LOAD_FIELD_KEYS
+        }
+        labels |= {
+            translations[f"config_subentries.managed_load.step.hot_water.data.{key}"]
+            for key in HOT_WATER_MANAGED_LOAD_FIELD_KEYS
         }
 
         assert labels.isdisjoint(raw_keys)
@@ -186,7 +222,7 @@ async def test_home_assistant_loads_managed_load_subentry_translations(hass) -> 
 
         assert (
             translations[
-                f"component.{DOMAIN}.config_subentries.managed_load.step.user.data."
+                f"component.{DOMAIN}.config_subentries.managed_load.step.generic.data."
                 f"{CONF_MANAGED_ENERGY_ENTITY}"
             ]
             == expected_label

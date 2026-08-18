@@ -83,7 +83,8 @@ def build_managed_demand_schedule(
             slot_kwh = expected_kwh * weight / denominator
             if slot_kwh <= 0:
                 continue
-            energy_by_slot[slot.start] = energy_by_slot.get(slot.start, 0.0) + slot_kwh
+            slot_key = _timeline_time(slot.start)
+            energy_by_slot[slot_key] = energy_by_slot.get(slot_key, 0.0) + slot_kwh
             scheduled += slot_kwh
         scheduled_by_source[source_id] = round(scheduled, 6)
 

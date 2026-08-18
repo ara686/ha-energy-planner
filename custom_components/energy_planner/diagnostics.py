@@ -30,7 +30,16 @@ async def async_get_config_entry_diagnostics(
             "managed_loads": [
                 {
                     "source_entity_id": load.source_entity_id,
+                    "load_type": load.load_type,
+                    "priority": load.priority,
                     "requested_energy_entity_id": load.requested_energy_entity_id,
+                    "top_temperature_entity_id": load.top_temperature_entity_id,
+                    "bottom_temperature_entity_id": (load.bottom_temperature_entity_id),
+                    "minimum_temperature_c": load.minimum_temperature_c,
+                    "maximum_temperature_c": load.maximum_temperature_c,
+                    "tank_volume_liters": load.tank_volume_liters,
+                    "heater_power_kw": load.heater_power_kw,
+                    "thermal_conversion_factor": load.thermal_conversion_factor,
                 }
                 for load in managed_load_configs(entry)
             ],

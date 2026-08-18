@@ -3,47 +3,60 @@ from __future__ import annotations
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import PERCENTAGE, UnitOfEnergy
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfTemperature
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner import async_migrate_entry
 from custom_components.energy_planner.config_flow import (
+    _managed_load_details_schema,
     _managed_load_schema,
     _user_schema,
+    _validate_managed_load_input,
 )
 from custom_components.energy_planner.const import (
     CONF_BATTERY_CAPACITY_ENTITY,
     CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
+    CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_GRID_CHARGING_ENABLED,
+    CONF_HEATER_POWER_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
+    CONF_MINIMUM_TEMPERATURE_C,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
     CONF_NT_WINDOW_2_START,
     CONF_NT_WINDOWS,
     CONF_NT_WINDOWS_ENABLED,
+    CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
+    CONF_TANK_VOLUME_LITERS,
+    CONF_THERMAL_CONVERSION_FACTOR,
+    CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_NAME,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_GENERIC,
+    MANAGED_LOAD_TYPE_HOT_WATER,
 )
 from custom_components.energy_planner.history import EnergyHistory, EnergyHistoryStore
 
@@ -69,22 +82,14 @@ async def test_user_flow_creates_entry(hass):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == DEFAULT_NAME
     expected_data = config_data()
-    expected_data.pop(CONF_MANAGED_ENERGY_ENTITIES)
     assert result["data"] == expected_data
-    assert [subentry["data"] for subentry in result["subentries"]] == [
-        {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
-        {CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total"},
-    ]
-    assert all(
-        subentry["subentry_type"] == MANAGED_LOAD_SUBENTRY
-        for subentry in result["subentries"]
-    )
+    assert result["subentries"] == ()
 
 
 async def test_user_flow_allows_no_managed_energy_sources(hass):
     set_source_states(hass)
     user_input = config_data()
-    user_input.pop(CONF_MANAGED_ENERGY_ENTITIES)
+    user_input.pop(CONF_MANAGED_ENERGY_ENTITIES, None)
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
@@ -272,7 +277,7 @@ async def test_user_flow_rejects_power_sensor_as_home_energy_source(hass):
     assert result["errors"][CONF_HOME_ENERGY_ENTITY] == "energy_sensor_required"
 
 
-async def test_user_flow_rejects_power_sensor_as_managed_energy_source(hass):
+async def test_managed_load_flow_rejects_power_sensor_as_energy_source(hass):
     set_source_states(hass)
     hass.states.async_set(
         "sensor.managed_power",
@@ -283,19 +288,34 @@ async def test_user_flow_rejects_power_sensor_as_managed_energy_source(hass):
             "unit_of_measurement": "W",
         },
     )
-    user_input = config_data(**{CONF_MANAGED_ENERGY_ENTITIES: ["sensor.managed_power"]})
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, version=3)
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await _select_managed_type(hass, result)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.managed_power",
+            CONF_PRIORITY: 100,
+        },
+    )
 
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_MANAGED_ENERGY_ENTITY] == "energy_sensor_required"
+
+
+async def test_user_flow_does_not_offer_untyped_managed_sources(hass):
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": config_entries.SOURCE_USER},
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input=user_input,
-    )
-
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"][CONF_MANAGED_ENERGY_ENTITIES] == "energy_sensor_required"
+    fields = {
+        marker.schema: value for marker, value in result["data_schema"].schema.items()
+    }
+    assert CONF_MANAGED_ENERGY_ENTITIES not in fields
 
 
 async def test_user_schema_filters_entity_choices_by_expected_type():
@@ -310,7 +330,6 @@ async def test_user_schema_filters_entity_choices_by_expected_type():
     battery_min_soc_filter = _plain_filter(
         fields[CONF_BATTERY_MIN_SOC_ENTITY].config["filter"]
     )
-    managed_energy_config = fields[CONF_MANAGED_ENERGY_ENTITIES].config
 
     assert {
         "domain": ["sensor"],
@@ -333,7 +352,7 @@ async def test_user_schema_filters_entity_choices_by_expected_type():
     } in battery_soc_filter
     assert {"domain": ["number"]} not in battery_soc_filter
     assert {"domain": ["number"]} in battery_min_soc_filter
-    assert managed_energy_config["multiple"] is True
+    assert CONF_MANAGED_ENERGY_ENTITIES not in fields
 
 
 def _plain_filter(items):
@@ -380,7 +399,7 @@ async def test_reconfigure_updates_config_entry_entities(hass, config_entry):
     user_input = config_data(
         **{CONF_BATTERY_CAPACITY_ENTITY: "sensor.installed_battery_capacity"}
     )
-    user_input.pop(CONF_MANAGED_ENERGY_ENTITIES)
+    user_input.pop(CONF_MANAGED_ENERGY_ENTITIES, None)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         user_input=user_input,
@@ -493,7 +512,7 @@ async def test_managed_load_subentry_flow_accepts_requested_energy(hass):
             if key != CONF_MANAGED_ENERGY_ENTITIES
         },
         unique_id=DOMAIN,
-        version=2,
+        version=3,
     )
     entry.add_to_hass(hass)
 
@@ -504,10 +523,13 @@ async def test_managed_load_subentry_flow_accepts_requested_energy(hass):
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
 
+    result = await _select_managed_type(hass, result)
+
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         user_input={
             CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_PRIORITY: 100,
             CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
         },
     )
@@ -516,8 +538,133 @@ async def test_managed_load_subentry_flow_accepts_requested_energy(hass):
     assert result["title"] == "EV charging energy"
     assert result["data"] == {
         CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+        CONF_PRIORITY: 100,
         CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
     }
+
+
+async def test_managed_load_subentry_flow_accepts_hot_water_model(hass):
+    set_source_states(hass)
+    _set_hot_water_temperature_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, version=3)
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await _select_managed_type(
+        hass,
+        result,
+        load_type=MANAGED_LOAD_TYPE_HOT_WATER,
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input=_hot_water_input(priority=5),
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        **_hot_water_input(priority=5),
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_HOT_WATER,
+    }
+
+
+async def test_hot_water_flow_rejects_duplicate_temperature_and_invalid_range(hass):
+    set_source_states(hass)
+    _set_hot_water_temperature_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, version=3)
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await _select_managed_type(
+        hass, result, load_type=MANAGED_LOAD_TYPE_HOT_WATER
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            **_hot_water_input(),
+            CONF_BOTTOM_TEMPERATURE_ENTITY: "sensor.boiler_top_temperature",
+            CONF_MINIMUM_TEMPERATURE_C: 75,
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert (
+        result["errors"][CONF_BOTTOM_TEMPERATURE_ENTITY]
+        == "temperature_entities_distinct"
+    )
+    assert result["errors"][CONF_MAXIMUM_TEMPERATURE_C] == "temperature_range"
+
+
+async def test_managed_load_flow_requires_a_positive_whole_priority(hass):
+    set_source_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, version=3)
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await _select_managed_type(hass, result)
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_PRIORITY: 1.5,
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_PRIORITY] == "priority_invalid"
+
+
+def test_hot_water_validation_checks_sensor_metadata_and_positive_parameters(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.boiler_top_temperature",
+        "50",
+        {"device_class": "humidity", "unit_of_measurement": "°C"},
+    )
+    hass.states.async_set(
+        "sensor.boiler_bottom_temperature",
+        "30",
+        {"device_class": "temperature", "unit_of_measurement": "V"},
+    )
+    user_input = {
+        **_hot_water_input(),
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_HOT_WATER,
+        CONF_TANK_VOLUME_LITERS: 0,
+        CONF_HEATER_POWER_KW: -1,
+        CONF_THERMAL_CONVERSION_FACTOR: float("nan"),
+    }
+
+    errors = _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=3),
+        user_input,
+    )
+
+    assert errors[CONF_TOP_TEMPERATURE_ENTITY] == "temperature_sensor_required"
+    assert errors[CONF_BOTTOM_TEMPERATURE_ENTITY] == "temperature_sensor_required"
+    assert errors[CONF_TANK_VOLUME_LITERS] == "value_positive"
+    assert errors[CONF_HEATER_POWER_KW] == "value_positive"
+    assert errors[CONF_THERMAL_CONVERSION_FACTOR] == "value_positive"
+
+    hass.states.async_set(
+        "sensor.boiler_bottom_temperature",
+        "unavailable",
+        {"device_class": "temperature", "unit_of_measurement": "°C"},
+    )
+    errors = _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=3),
+        user_input,
+    )
+    assert errors[CONF_BOTTOM_TEMPERATURE_ENTITY] == "invalid_numeric_entity"
 
 
 async def test_managed_load_subentry_flow_rejects_duplicate_source(hass):
@@ -526,7 +673,7 @@ async def test_managed_load_subentry_flow_rejects_duplicate_source(hass):
         domain=DOMAIN,
         data={},
         unique_id=DOMAIN,
-        version=2,
+        version=3,
         subentries_data=(
             {
                 "data": {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
@@ -542,9 +689,13 @@ async def test_managed_load_subentry_flow_rejects_duplicate_source(hass):
         (entry.entry_id, MANAGED_LOAD_SUBENTRY),
         context={"source": config_entries.SOURCE_USER},
     )
+    result = await _select_managed_type(hass, result)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
-        user_input={CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_PRIORITY: 100,
+        },
     )
 
     assert result["type"] is FlowResultType.FORM
@@ -562,7 +713,7 @@ async def test_managed_load_subentry_reconfigure_replaces_optional_request(hass)
         domain=DOMAIN,
         data={},
         unique_id=DOMAIN,
-        version=2,
+        version=3,
         subentries_data=(
             {
                 "data": {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
@@ -579,7 +730,14 @@ async def test_managed_load_subentry_reconfigure_replaces_optional_request(hass)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         user_input={
+            CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+        },
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
             CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_PRIORITY: 25,
             CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
         },
     )
@@ -588,7 +746,54 @@ async def test_managed_load_subentry_reconfigure_replaces_optional_request(hass)
     assert result["reason"] == "reconfigure_successful"
     assert entry.subentries[subentry.subentry_id].data == {
         CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+        CONF_PRIORITY: 25,
         CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+    }
+
+
+async def test_managed_load_reconfigure_type_switch_removes_hot_water_fields(hass):
+    set_source_states(hass)
+    _set_hot_water_temperature_states(hass)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        unique_id=DOMAIN,
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    **_hot_water_input(),
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_HOT_WATER,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Water heater energy",
+                "unique_id": "sensor.water_heater_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+    subentry = next(iter(entry.subentries.values()))
+
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry.subentry_id)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC},
+    )
+    assert result["step_id"] == "reconfigure_generic"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total",
+            CONF_PRIORITY: 40,
+        },
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert entry.subentries[subentry.subentry_id].data == {
+        CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total",
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+        CONF_PRIORITY: 40,
     }
 
 
@@ -603,17 +808,19 @@ async def test_managed_load_rejects_requested_energy_without_kwh(hass):
         domain=DOMAIN,
         data={},
         unique_id=DOMAIN,
-        version=2,
+        version=3,
     )
     entry.add_to_hass(hass)
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, MANAGED_LOAD_SUBENTRY),
         context={"source": config_entries.SOURCE_USER},
     )
+    result = await _select_managed_type(hass, result)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         user_input={
             CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_PRIORITY: 100,
             CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
         },
     )
@@ -626,7 +833,7 @@ async def test_version_one_entry_migrates_managed_sources_to_subentries(hass):
     set_source_states(hass)
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data=config_data(),
+        data=config_data(include_managed=True),
         unique_id=DOMAIN,
         version=1,
     )
@@ -634,7 +841,7 @@ async def test_version_one_entry_migrates_managed_sources_to_subentries(hass):
 
     assert await async_migrate_entry(hass, entry)
 
-    assert entry.version == 2
+    assert entry.version == 3
     assert CONF_MANAGED_ENERGY_ENTITIES not in entry.data
     assert {
         subentry.data[CONF_MANAGED_ENERGY_ENTITY]
@@ -646,6 +853,8 @@ async def test_version_one_entry_migrates_managed_sources_to_subentries(hass):
     assert all(
         isinstance(subentry, ConfigSubentry)
         and subentry.subentry_type == MANAGED_LOAD_SUBENTRY
+        and subentry.data[CONF_MANAGED_LOAD_TYPE] == MANAGED_LOAD_TYPE_GENERIC
+        and subentry.data[CONF_PRIORITY] == 100
         for subentry in entry.subentries.values()
     )
 
@@ -654,7 +863,7 @@ async def test_version_one_migration_skips_an_existing_managed_subentry(hass):
     set_source_states(hass)
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data=config_data(),
+        data=config_data(include_managed=True),
         unique_id=DOMAIN,
         version=1,
         subentries_data=(
@@ -673,6 +882,39 @@ async def test_version_one_migration_skips_an_existing_managed_subentry(hass):
     assert len(entry.subentries) == 2
 
 
+async def test_version_two_entry_types_existing_subentries_as_generic(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config_data(),
+        unique_id=DOMAIN,
+        version=2,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, entry)
+
+    subentry = next(iter(entry.subentries.values()))
+    assert entry.version == 3
+    assert subentry.unique_id == "sensor.ev_energy_total"
+    assert subentry.data == {
+        CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+        CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+        CONF_PRIORITY: 100,
+    }
+
+
 def test_managed_load_schema_filters_cumulative_and_requested_energy():
     fields = {
         marker.schema: value for marker, value in _managed_load_schema().schema.items()
@@ -685,6 +927,63 @@ def test_managed_load_schema_filters_cumulative_and_requested_energy():
 
     assert managed_filter == [{"domain": ["sensor"], "device_class": ["energy"]}]
     assert {"domain": ["input_number"]} in requested_filter
+
+
+def test_hot_water_schema_filters_temperature_entities():
+    fields = {
+        marker.schema: value
+        for marker, value in _managed_load_details_schema(
+            MANAGED_LOAD_TYPE_HOT_WATER
+        ).schema.items()
+    }
+    expected = [{"domain": ["sensor"], "device_class": ["temperature"]}]
+    assert _plain_filter(fields[CONF_TOP_TEMPERATURE_ENTITY].config["filter"]) == (
+        expected
+    )
+    assert _plain_filter(fields[CONF_BOTTOM_TEMPERATURE_ENTITY].config["filter"]) == (
+        expected
+    )
+
+
+def _set_hot_water_temperature_states(hass) -> None:
+    attributes = {
+        "device_class": "temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": UnitOfTemperature.CELSIUS,
+    }
+    hass.states.async_set("sensor.boiler_top_temperature", "50", attributes)
+    hass.states.async_set("sensor.boiler_bottom_temperature", "30", attributes)
+
+
+def _hot_water_input(*, priority: int = 100) -> dict:
+    return {
+        CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total",
+        CONF_PRIORITY: priority,
+        CONF_TOP_TEMPERATURE_ENTITY: "sensor.boiler_top_temperature",
+        CONF_BOTTOM_TEMPERATURE_ENTITY: "sensor.boiler_bottom_temperature",
+        CONF_MINIMUM_TEMPERATURE_C: 45.0,
+        CONF_MAXIMUM_TEMPERATURE_C: 70.0,
+        CONF_TANK_VOLUME_LITERS: 200.0,
+        CONF_HEATER_POWER_KW: 2.0,
+        CONF_THERMAL_CONVERSION_FACTOR: 1.0,
+    }
+
+
+async def _select_managed_type(
+    hass,
+    result,
+    *,
+    load_type: str = MANAGED_LOAD_TYPE_GENERIC,
+):
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_LOAD_TYPE: load_type,
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == load_type
+    return result
 
 
 async def test_user_flow_blocks_duplicate_entry(hass):
