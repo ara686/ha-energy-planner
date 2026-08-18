@@ -137,7 +137,7 @@
         "invalid_numeric_entity": "Vybraná entita musí mít číselný stav.",
         "energy_sensor_required": "Elektroměr musí být kumulativní energetický senzor s podporovanou jednotkou energie.",
         "energy_amount_required": "Požadovaná energie musí být nezáporná entita v kWh.",
-        "power_amount_required": "Maximální výkon nabíječky musí být kladná hodnota v kW.",
+        "power_amount_required": "Maximální výkon nabíječky musí být kladná hodnota v kW s nejvýše jedním desetinným místem.",
         "charging_efficiency_range": "Účinnost nabíjení musí být větší než nula a nejvýše jedna.",
         "entity_already_configured": "Tento elektroměr je již nakonfigurován.",
         "temperature_entities_distinct": "Horní a dolní teplotní čidlo musí být rozdílné.",
