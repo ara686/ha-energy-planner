@@ -30,6 +30,7 @@ from .const import (
     CONF_CHARGE_WINDOW,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
+    CONF_CHARGING_EFFICIENCY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -42,6 +43,7 @@ from .const import (
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
@@ -53,6 +55,7 @@ from .const import (
     CONF_NT_WINDOWS_ENABLED,
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
@@ -63,6 +66,7 @@ from .const import (
     CONF_THERMAL_CONVERSION_FACTOR,
     CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
+    DEFAULT_EV_CHARGING_EFFICIENCY,
     DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C,
     DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
     DEFAULT_MANAGED_LOAD_PRIORITY,
@@ -71,6 +75,7 @@ from .const import (
     DEFAULT_NT_WINDOWS,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_GENERIC,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
@@ -80,7 +85,11 @@ from .options import (
     normalize_options,
 )
 from .sources import parse_float
-from .units import is_supported_energy_unit
+from .units import (
+    energy_value_to_kwh,
+    is_supported_energy_unit,
+    power_value_to_kw,
+)
 
 ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
@@ -90,7 +99,9 @@ ERR_ENERGY_SENSOR_REQUIRED = "energy_sensor_required"
 ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
 ERR_PERCENTAGE_ENTITY_REQUIRED = "percentage_entity_required"
 ERR_PERCENTAGE_RANGE = "percentage_range"
+ERR_POWER_AMOUNT_REQUIRED = "power_amount_required"
 ERR_PRIORITY_INVALID = "priority_invalid"
+ERR_CHARGING_EFFICIENCY_RANGE = "charging_efficiency_range"
 ERR_TEMPERATURE_ENTITIES_DISTINCT = "temperature_entities_distinct"
 ERR_TEMPERATURE_RANGE = "temperature_range"
 ERR_TEMPERATURE_SENSOR_REQUIRED = "temperature_sensor_required"
@@ -179,6 +190,17 @@ REQUESTED_ENERGY_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {
         "domain": "number",
         "device_class": NumberDeviceClass.ENERGY_STORAGE,
+    },
+    {"domain": "input_number"},
+]
+EV_POWER_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {
+        "domain": "sensor",
+        "device_class": SensorDeviceClass.POWER,
+    },
+    {
+        "domain": "number",
+        "device_class": NumberDeviceClass.POWER,
     },
     {"domain": "input_number"},
 ]
@@ -305,6 +327,12 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
         """Configure a hot-water managed load."""
         return await self._async_step_details(user_input)
 
+    async def async_step_electric_vehicle(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Configure an electric-vehicle managed load."""
+        return await self._async_step_details(user_input)
+
     async def async_step_reconfigure(
         self,
         user_input: dict[str, Any] | None = None,
@@ -336,6 +364,12 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Reconfigure a hot-water managed load."""
+        return await self._async_step_details(user_input, reconfigure=True)
+
+    async def async_step_reconfigure_electric_vehicle(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Reconfigure an electric-vehicle managed load."""
         return await self._async_step_details(user_input, reconfigure=True)
 
     async def _async_step_details(
@@ -383,6 +417,19 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
         suggested = (
             dict(subentry.data) if subentry is not None and user_input is None else {}
         )
+        if self._selected_load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE:
+            suggested.setdefault(
+                CONF_REQUIRED_ENERGY_ENTITY,
+                suggested.get(CONF_REQUESTED_ENERGY_ENTITY),
+            )
+        elif self._selected_load_type == MANAGED_LOAD_TYPE_GENERIC:
+            suggested.setdefault(
+                CONF_REQUESTED_ENERGY_ENTITY,
+                suggested.get(CONF_REQUIRED_ENERGY_ENTITY),
+            )
+        suggested = {
+            key: value for key, value in suggested.items() if value is not None
+        }
         return self.async_show_form(
             step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(
@@ -583,6 +630,7 @@ def _managed_load_type_schema() -> vol.Schema:
                     options=[
                         MANAGED_LOAD_TYPE_GENERIC,
                         MANAGED_LOAD_TYPE_HOT_WATER,
+                        MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                     translation_key="managed_load_type",
@@ -630,6 +678,21 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
                     CONF_THERMAL_CONVERSION_FACTOR,
                     default=DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
                 ): _number_selector(minimum=0.001),
+            }
+        )
+    elif load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE:
+        fields.update(
+            {
+                vol.Required(CONF_REQUIRED_ENERGY_ENTITY): _entity_selector(
+                    REQUESTED_ENERGY_ENTITY_FILTERS
+                ),
+                vol.Required(CONF_MAXIMUM_CHARGING_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
+                vol.Required(
+                    CONF_CHARGING_EFFICIENCY,
+                    default=DEFAULT_EV_CHARGING_EFFICIENCY,
+                ): _number_selector(minimum=0.001, maximum=1),
             }
         )
     else:
@@ -681,6 +744,18 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
                 ),
             }
         )
+    elif load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE:
+        data.update(
+            {
+                CONF_REQUIRED_ENERGY_ENTITY: str(
+                    user_input[CONF_REQUIRED_ENERGY_ENTITY]
+                ),
+                CONF_MAXIMUM_CHARGING_POWER_ENTITY: str(
+                    user_input[CONF_MAXIMUM_CHARGING_POWER_ENTITY]
+                ),
+                CONF_CHARGING_EFFICIENCY: float(user_input[CONF_CHARGING_EFFICIENCY]),
+            }
+        )
     elif requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
         data[CONF_REQUESTED_ENERGY_ENTITY] = str(requested_entity_id)
     return data
@@ -722,6 +797,8 @@ def _validate_managed_load_input(
     load_type = user_input[CONF_MANAGED_LOAD_TYPE]
     if load_type == MANAGED_LOAD_TYPE_HOT_WATER:
         _validate_hot_water_input(hass, user_input, errors)
+    elif load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE:
+        _validate_electric_vehicle_input(hass, user_input, errors)
     elif requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
         requested_input = {CONF_REQUESTED_ENERGY_ENTITY: requested_entity_id}
         value = _validate_numeric_entity(
@@ -763,6 +840,66 @@ def _validate_hot_water_input(
         value = _finite_float(user_input.get(key))
         if value is None or value <= 0:
             errors[key] = ERR_VALUE_POSITIVE
+
+
+def _validate_electric_vehicle_input(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    """Validate electric-vehicle energy, power and efficiency inputs."""
+    required_entity = str(user_input[CONF_REQUIRED_ENERGY_ENTITY])
+    required_state = hass.states.get(required_entity)
+    required_value = parse_float(required_state.state if required_state else None)
+    if required_value is None or not math.isfinite(required_value):
+        errors[CONF_REQUIRED_ENERGY_ENTITY] = ERR_INVALID_NUMERIC_ENTITY
+    elif (
+        required_state is None
+        or required_state.domain not in {"sensor", "number", "input_number"}
+        or not _compatible_device_class(
+            required_state,
+            {SensorDeviceClass.ENERGY, SensorDeviceClass.ENERGY_STORAGE},
+        )
+        or (
+            converted := energy_value_to_kwh(
+                required_value,
+                required_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT),
+            )
+        )
+        is None
+        or converted < 0
+    ):
+        errors[CONF_REQUIRED_ENERGY_ENTITY] = ERR_ENERGY_AMOUNT_REQUIRED
+
+    power_entity = str(user_input[CONF_MAXIMUM_CHARGING_POWER_ENTITY])
+    power_state = hass.states.get(power_entity)
+    power_value = parse_float(power_state.state if power_state else None)
+    if power_value is None or not math.isfinite(power_value):
+        errors[CONF_MAXIMUM_CHARGING_POWER_ENTITY] = ERR_INVALID_NUMERIC_ENTITY
+    elif (
+        power_state is None
+        or power_state.domain not in {"sensor", "number", "input_number"}
+        or not _compatible_device_class(power_state, {SensorDeviceClass.POWER})
+        or (
+            converted_power := power_value_to_kw(
+                power_value,
+                power_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT),
+            )
+        )
+        is None
+        or converted_power <= 0
+    ):
+        errors[CONF_MAXIMUM_CHARGING_POWER_ENTITY] = ERR_POWER_AMOUNT_REQUIRED
+
+    efficiency = _finite_float(user_input.get(CONF_CHARGING_EFFICIENCY))
+    if efficiency is None or not 0 < efficiency <= 1:
+        errors[CONF_CHARGING_EFFICIENCY] = ERR_CHARGING_EFFICIENCY_RANGE
+
+
+def _compatible_device_class(state, allowed: set[str]) -> bool:
+    """Accept an absent device class or one compatible with the entity amount."""
+    device_class = state.attributes.get("device_class")
+    return device_class is None or device_class in allowed
 
 
 def _validate_temperature_entity(

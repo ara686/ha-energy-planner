@@ -5,14 +5,84 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from custom_components.energy_planner.allocation import ManagedLoadEstimate
+from custom_components.energy_planner.electric_vehicle import (
+    ElectricVehicleInput,
+    calculate_electric_vehicle_demand,
+)
 from custom_components.energy_planner.hot_water import HotWaterDemand
 from custom_components.energy_planner.managed_allocation import (
+    ElectricVehicleAllocationInput,
     GenericAllocationInput,
     HotWaterAllocationInput,
     SurplusSlot,
     UnavailableAllocationInput,
     allocate_managed_day,
 )
+
+
+def test_allocation_runs_all_four_phases_in_order():
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=60,
+        surplus_complete=True,
+        surplus_slots=[SurplusSlot(start, 9)],
+        loads=[
+            _hot_water("boiler", required=2, flexible=3, power=20),
+            _electric_vehicle("car", required=4, power=20),
+            _generic("generic", expected=2),
+        ],
+    )
+
+    loads = {load.source_id: load for load in result.loads}
+    assert loads["boiler"].minimum_allocated_kwh == 2
+    assert loads["car"].recommended_kwh == 4
+    assert loads["generic"].recommended_kwh == 2
+    assert loads["boiler"].recommended_kwh == 3
+
+
+def test_ev_priority_and_equal_priority_shortage_are_proportional():
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=60,
+        surplus_complete=True,
+        surplus_slots=[SurplusSlot(start, 5)],
+        loads=[
+            _electric_vehicle("first", required=2, power=20, priority=1),
+            _electric_vehicle("small", required=2, power=20, priority=2),
+            _electric_vehicle("large", required=4, power=20, priority=2),
+        ],
+    )
+
+    loads = {load.source_id: load for load in result.loads}
+    assert loads["first"].recommended_kwh == 2
+    assert loads["small"].recommended_kwh == pytest.approx(1)
+    assert loads["large"].recommended_kwh == pytest.approx(2)
+
+
+def test_ev_power_limit_and_shortfall_are_reported_in_both_energy_domains():
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=30,
+        surplus_complete=True,
+        surplus_slots=[
+            SurplusSlot(start, 10),
+            SurplusSlot(start + timedelta(minutes=30), 10),
+        ],
+        loads=[_electric_vehicle("car", required=10, power=2, efficiency=0.8)],
+    )
+
+    load = result.loads[0].as_dict()
+    assert load["recommended_kwh"] == 2
+    assert load["electrical_shortfall_kwh"] == 8
+    assert load["battery_shortfall_kwh"] == pytest.approx(6.4)
+    assert load["battery_required_kwh"] == 8
+    assert load["electrical_required_kwh"] == 10
+    assert load["electrical_remaining_before_kwh"] == 10
+    assert load["method"] == "ev_request"
+    assert all(value <= 1 for value in result.electric_vehicle_energy_by_slot.values())
 
 
 def test_allocation_runs_hot_water_minimum_generic_then_hot_water_flexible():
@@ -216,4 +286,26 @@ def _generic(
             confidence="high",
             reason="historical_daily_usage",
         ),
+    )
+
+
+def _electric_vehicle(
+    source_id: str,
+    *,
+    required: float,
+    power: float,
+    priority: int = 100,
+    efficiency: float = 1,
+) -> ElectricVehicleAllocationInput:
+    demand = calculate_electric_vehicle_demand(
+        ElectricVehicleInput(
+            battery_required_kwh=required * efficiency,
+            charging_efficiency=efficiency,
+        )
+    )
+    return ElectricVehicleAllocationInput(
+        source_id=source_id,
+        priority=priority,
+        maximum_charging_power_kw=power,
+        demand=demand,
     )

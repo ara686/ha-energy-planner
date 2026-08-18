@@ -64,6 +64,7 @@ class EnergyPlannerSensorDescription(SensorEntityDescription):
 @dataclass(frozen=True, kw_only=True)
 class ManagedSourceSensorDescription(SensorEntityDescription):
     value_key: str = ""
+    allocation_key: str | None = None
     entity_registry_enabled_default: bool = True
 
 
@@ -188,6 +189,8 @@ def _compact_daily_allocations(values: list[Any]) -> list[dict[str, Any]]:
                         "state",
                         "recommended_kwh",
                         "minimum_shortfall_kwh",
+                        "electrical_shortfall_kwh",
+                        "battery_shortfall_kwh",
                     )
                     if field in load
                 }
@@ -324,8 +327,9 @@ def _managed_source_history_attributes(
 def _managed_source_allocation(
     result: PlannerResult,
     source_id: str,
+    allocation_key: str = "surplus_allocation",
 ) -> dict[str, Any]:
-    allocation = result.plan.get("surplus_allocation")
+    allocation = result.plan.get(allocation_key)
     if not isinstance(allocation, dict):
         return {}
     loads = allocation.get("loads")
@@ -425,6 +429,14 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda result: result.plan.get("unused_surplus_tomorrow_kwh"),
         attr_fn=_tomorrow_surplus_attributes,
+    ),
+    EnergyPlannerSensorDescription(
+        key="managed_recommended_today_kwh",
+        translation_key="managed_recommended_today_kwh",
+        icon="mdi:calendar-today",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda result: result.plan.get("managed_recommended_today_kwh"),
+        attr_fn=_managed_allocation_attributes,
     ),
     EnergyPlannerSensorDescription(
         key="managed_expected_demand_tomorrow_kwh",
@@ -661,8 +673,18 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
 
 MANAGED_SOURCE_SENSOR_DESCRIPTIONS: tuple[ManagedSourceSensorDescription, ...] = (
     ManagedSourceSensorDescription(
+        key="suggested_today",
+        value_key="recommended_kwh",
+        allocation_key="surplus_allocation_today",
+        translation_key="managed_source_suggested_today",
+        icon="mdi:calendar-today",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=2,
+    ),
+    ManagedSourceSensorDescription(
         key="suggested_tomorrow",
         value_key="recommended_kwh",
+        allocation_key="surplus_allocation",
         translation_key="managed_source_suggested_tomorrow",
         icon="mdi:chart-donut-variant",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -784,6 +806,8 @@ class EnergyPlannerSensor(CoordinatorEntity[EnergyPlannerCoordinator], SensorEnt
             return False
         if self.entity_description.always_available:
             return True
+        if self.entity_description.key == "managed_recommended_today_kwh":
+            return isinstance(result.plan.get(self.entity_description.key), int | float)
         return result.state in {"ok", "warning"}
 
     @property
@@ -831,6 +855,10 @@ class EnergyPlannerManagedSourceSensor(
         self._attr_unique_id = (
             f"{entry.entry_id}_managed_{slugify(source_entity_id)}_{description.key}"
         )
+        if description.key == "suggested_today":
+            self.entity_id = (
+                f"sensor.{DOMAIN}_managed_{slugify(source_name)}_{description.key}"
+            )
         self._attr_entity_registry_enabled_default = (
             description.entity_registry_enabled_default
         )
@@ -847,9 +875,14 @@ class EnergyPlannerManagedSourceSensor(
         result = self.coordinator.data
         if result is None:
             return False
-        if self.entity_description.key != "suggested_tomorrow":
+        allocation_key = self.entity_description.allocation_key
+        if allocation_key is None:
             return True
-        allocation = _managed_source_allocation(result, self._source_entity_id)
+        allocation = _managed_source_allocation(
+            result,
+            self._source_entity_id,
+            allocation_key,
+        )
         return allocation.get("state") == "ok" and isinstance(
             allocation.get("recommended_kwh"), int | float
         )
@@ -866,10 +899,11 @@ class EnergyPlannerManagedSourceSensor(
         result = self.coordinator.data
         if result is None:
             return None
-        if self.entity_description.key == "suggested_tomorrow":
+        if self.entity_description.allocation_key is not None:
             value = _managed_source_allocation(
                 result,
                 self._source_entity_id,
+                self.entity_description.allocation_key,
             ).get(self.entity_description.value_key)
             return round(value, 6) if isinstance(value, (int, float)) else None
         return _managed_source_value(
@@ -888,9 +922,13 @@ class EnergyPlannerManagedSourceSensor(
         if result is None:
             return attributes
 
-        if self.entity_description.key == "suggested_tomorrow":
+        if self.entity_description.allocation_key is not None:
             attributes.update(
-                _managed_source_allocation(result, self._source_entity_id)
+                _managed_source_allocation(
+                    result,
+                    self._source_entity_id,
+                    self.entity_description.allocation_key,
+                )
             )
             return attributes
 

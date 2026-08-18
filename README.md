@@ -31,7 +31,8 @@ and binary sensors that you can use in dashboards or in your own automations.
   water, pool technology or EV charging.
 - Recommend how fully covered future surplus can be divided among typed managed
   loads. Generic loads use recent usage or a requested-energy entity; hot-water
-  tanks use their current temperatures and physical parameters.
+  tanks use their current temperatures and physical parameters; electric
+  vehicles use a current battery-energy request and charging-power limit.
 - Keep managed loads out of the normal house consumption profile, so the planner
   learns the base household load more realistically.
 - Track managed loads separately, so you can see how much energy went into EV
@@ -79,10 +80,14 @@ Required:
 Optional:
 
 - Managed loads added after the shared setup as separate items. The available
-  types are `generic` and `hot_water`; each still requires its own cumulative
-  energy meter so its consumption can be removed from the house profile.
+  types are `generic`, `hot_water` and `electric_vehicle`; each still requires
+  its own cumulative energy meter so its consumption can be removed from the
+  house profile.
 - A numeric requested-energy entity for a `generic` load, or two temperature
-  sensors and the tank parameters for a `hot_water` load.
+  sensors and the tank parameters for a `hot_water` load. An
+  `electric_vehicle` load needs the remaining battery-side energy and a future
+  maximum charging-power entity; `sensor.enyaq_charge_kwh` is a typical
+  template-sensor input.
 - Solcast PV forecast entities for today, tomorrow and additional days.
 
 If your home consumption is only available as a power sensor, for example
@@ -104,8 +109,8 @@ Energy Planner builds an hourly consumption profile from Home Assistant history.
   repeated samples for the same hour of day.
 - Generic history-based recommendations require at least three
   coverage-qualified completed days and use up to seven recent days. Hot-water
-  recommendations do not require consumption history, but both temperature
-  sensors and complete solar coverage must be available.
+  and EV recommendations do not require consumption history. Their current
+  model inputs and complete solar coverage must be available.
 
 Reconfigure keeps the stored history. If you change a source entity, check the
 results for a while and only remove the integration if you intentionally want to
@@ -122,7 +127,7 @@ Most useful entities:
 | Entity | What it means |
 |--------|---------------|
 | `sensor.energy_planner_soc_forecast` | Passive forecasted SoC at the configured forecast horizon. It uses current SoC, consumption history and PV forecast, without assuming Energy Planner automations have already charged or locked the battery. Its attributes contain the future forecast points for graphs. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Passive forecasted SoC at the configured horizon with generic demand and actually allocated hot-water solar slots included. Attributes contain compact graph points, per-day allocations and managed-demand scheduling details. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Passive forecasted SoC at the configured horizon with generic demand and actually allocated hot-water and EV solar slots included. Attributes contain compact graph points, per-day allocations and managed-demand scheduling details. |
 | `sensor.energy_planner_soc_forecast_24h` | Passive forecasted SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |
@@ -131,9 +136,11 @@ Most useful entities:
 | `sensor.energy_planner_safe_discharge_soc` | Lowest SoC that should still preserve the plan. |
 | `sensor.energy_planner_unused_surplus_today` | Estimated unused PV surplus for today from the passive forecast. |
 | `sensor.energy_planner_unused_surplus_tomorrow` | Tomorrow's allocatable surplus. It has a value only when the complete local day and its solar input are covered. |
+| `sensor.energy_planner_recommended_managed_energy_today` | Total EV charging input recommended for the complete remaining slots today. It is unavailable when their slot or solar coverage is incomplete. |
 | `sensor.energy_planner_recommended_managed_energy_tomorrow` | Total energy recommended for all managed loads tomorrow. Its attributes include compact allocations for every complete future local day in the horizon. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Complete tomorrow surplus remaining after all recommendations. |
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Generic attributes describe the history/request; hot-water attributes include average temperature, minimum need, flexible capacity and minimum shortfall. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Charger-input energy recommended today for an `electric_vehicle` load. It is unavailable for other load types. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Generic attributes describe the history/request; hot-water attributes include average temperature, minimum need, flexible capacity and minimum shortfall; EV attributes include battery/electrical demand and shortfall. |
 | `sensor.energy_planner_managed_<source>_today` | Energy used today by one managed load, for example EV charging or water heating. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Energy Planner's tracked total for one managed load. |
 
@@ -167,6 +174,8 @@ for automations:
   there is enough predicted PV surplus.
 - Use each `managed_<source>_suggested_tomorrow` value as an input to your own
   next-day automation; Energy Planner still does not switch the device itself.
+- Use an EV load's `managed_<source>_suggested_today` as a solar-only charging
+  budget for the remaining complete planner slots today.
 - Use per-load managed sensors to prioritize loads, for example heat water
   before allowing EV charging.
 
@@ -181,7 +190,8 @@ included in plan-specific simulations.
 
 ## Manual Recalculation
 
-Energy Planner recalculates automatically. It also reacts to battery SoC changes.
+Energy Planner recalculates automatically. It also reacts to battery SoC and EV
+request or maximum-power entity changes.
 
 You can force a recalculation from **Developer Tools > Services**:
 
@@ -199,6 +209,9 @@ energy_planner.recalculate
 - An unavailable hot-water temperature sensor withholds only that tank's
   recommendation. Energy Planner never falls back to consumption history for a
   `hot_water` load.
+- An unavailable EV energy request or maximum-power entity withholds only that
+  vehicle's recommendation. An `electric_vehicle` load never falls back to
+  consumption history and never plans grid charging.
 - If forecast graphs are empty, check that
   `sensor.energy_planner_soc_forecast` has a `points` attribute in
   **Developer Tools > States**.

@@ -20,22 +20,27 @@ from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIP
 from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW,
+    CONF_CHARGING_EFFICIENCY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGING_ENABLED,
     CONF_HEATER_POWER_KW,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MINIMUM_TEMPERATURE_C,
     CONF_NT_WINDOWS,
     CONF_PRIORITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
     CONF_TANK_VOLUME_LITERS,
     CONF_THERMAL_CONVERSION_FACTOR,
     CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+    MANAGED_LOAD_TYPE_GENERIC,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
 from custom_components.energy_planner.history import (
@@ -261,6 +266,7 @@ async def test_horizon_soc_forecasts_use_battery_device_class(hass, config_entry
         "unused_surplus_today_kwh",
         "unused_surplus_total_kwh",
         "unused_surplus_tomorrow_kwh",
+        "managed_recommended_today_kwh",
         "managed_expected_demand_tomorrow_kwh",
         "managed_recommended_tomorrow_kwh",
         "unallocated_surplus_tomorrow_kwh",
@@ -908,6 +914,165 @@ async def test_missing_hot_water_temperature_only_unavailable_suggested_sensor(h
     assert today.state != STATE_UNAVAILABLE
 
 
+async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.enyaq_charge_kwh",
+        "9",
+        {"device_class": "energy_storage", "unit_of_measurement": "kWh"},
+    )
+    hass.states.async_set(
+        "number.ev_maximum_charging_power",
+        "11",
+        {"device_class": "power", "unit_of_measurement": "kW"},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Energy Planner",
+        data=config_data(),
+        options=options_data(),
+        unique_id=DOMAIN,
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                    CONF_PRIORITY: 10,
+                    CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+                    CONF_MAXIMUM_CHARGING_POWER_ENTITY: (
+                        "number.ev_maximum_charging_power"
+                    ),
+                    CONF_CHARGING_EFFICIENCY: 0.9,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.water_heater_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+                    CONF_PRIORITY: 100,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Water heater energy",
+                "unique_id": "sensor.water_heater_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    ev_prefix = f"{entry.entry_id}_managed_{slugify('sensor.ev_energy_total')}"
+    generic_prefix = (
+        f"{entry.entry_id}_managed_{slugify('sensor.water_heater_energy_total')}"
+    )
+    aggregate_entity_id = registry.async_get_entity_id(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_managed_recommended_today_kwh",
+    )
+    ev_entity_id = registry.async_get_entity_id(
+        "sensor",
+        DOMAIN,
+        f"{ev_prefix}_suggested_today",
+    )
+    generic_entity_id = registry.async_get_entity_id(
+        "sensor",
+        DOMAIN,
+        f"{generic_prefix}_suggested_today",
+    )
+    assert aggregate_entity_id == (
+        "sensor.energy_planner_recommended_managed_energy_today"
+    )
+    assert ev_entity_id == (
+        "sensor.energy_planner_managed_ev_charging_energy_suggested_today"
+    )
+    load = {
+        "source_entity_id": "sensor.ev_energy_total",
+        "load_type": "electric_vehicle",
+        "priority": 10,
+        "state": "ok",
+        "method": "ev_request",
+        "battery_required_kwh": 9,
+        "electrical_required_kwh": 10,
+        "electrical_remaining_before_kwh": 10,
+        "electrical_shortfall_kwh": 6.5,
+        "battery_shortfall_kwh": 5.85,
+        "charging_efficiency": 0.9,
+        "maximum_charging_power_kw": 11,
+        "recommended_kwh": 3.5,
+    }
+    allocation = {
+        "state": "ok",
+        "target_date": "2026-08-18",
+        "available_surplus_kwh": 3.5,
+        "expected_demand_kwh": 10,
+        "recommended_kwh": 3.5,
+        "unallocated_surplus_kwh": 0,
+        "loads": {"sensor.ev_energy_total": load},
+    }
+    entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "managed_recommended_today_kwh": 3.5,
+                "surplus_allocation_today": allocation,
+                "managed_allocation_by_day": [allocation],
+            },
+        )
+    )
+    await hass.async_block_till_done()
+
+    aggregate = hass.states.get(aggregate_entity_id)
+    ev_today = hass.states.get(ev_entity_id)
+    generic_today = hass.states.get(generic_entity_id)
+    assert aggregate is not None
+    assert float(aggregate.state) == 3.5
+    assert (
+        aggregate.attributes["managed_allocation_by_day"][0]["loads"][
+            "sensor.ev_energy_total"
+        ]["battery_shortfall_kwh"]
+        == 5.85
+    )
+    assert ev_today is not None
+    assert float(ev_today.state) == 3.5
+    assert ev_today.attributes["method"] == "ev_request"
+    assert ev_today.attributes["electrical_shortfall_kwh"] == 6.5
+    assert ev_today.attributes["battery_shortfall_kwh"] == 5.85
+    assert generic_today is not None
+    assert generic_today.state == STATE_UNAVAILABLE
+
+    entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="warning",
+            updated=dt_util.utcnow(),
+            plan={
+                "managed_recommended_today_kwh": None,
+                "surplus_allocation_today": {
+                    **allocation,
+                    "state": "insufficient_data",
+                    "recommended_kwh": None,
+                    "loads": {
+                        "sensor.ev_energy_total": {
+                            **load,
+                            "state": "insufficient_data",
+                            "recommended_kwh": None,
+                        }
+                    },
+                },
+            },
+        )
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(aggregate_entity_id).state == STATE_UNAVAILABLE
+    assert hass.states.get(ev_entity_id).state == STATE_UNAVAILABLE
+
+
 async def test_sensors_are_unavailable_when_required_data_is_invalid(
     hass,
     config_entry,
@@ -1046,6 +1211,89 @@ async def test_managed_source_changes_request_debounced_planner_refresh(
         await asyncio.sleep(0)
         await hass.async_block_till_done()
     assert refresh_calls == 1
+
+
+async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
+    hass,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "custom_components.energy_planner.MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS",
+        0,
+    )
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.enyaq_charge_kwh",
+        "9",
+        {"device_class": "energy_storage", "unit_of_measurement": "kWh"},
+    )
+    hass.states.async_set(
+        "number.ev_maximum_charging_power",
+        "11",
+        {"device_class": "power", "unit_of_measurement": "kW"},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Energy Planner",
+        data=config_data(),
+        options=options_data(),
+        unique_id=DOMAIN,
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                    CONF_PRIORITY: 10,
+                    CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+                    CONF_MAXIMUM_CHARGING_POWER_ENTITY: (
+                        "number.ev_maximum_charging_power"
+                    ),
+                    CONF_CHARGING_EFFICIENCY: 0.9,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    refresh_calls = 0
+
+    async def mock_refresh() -> None:
+        nonlocal refresh_calls
+        refresh_calls += 1
+
+    coordinator.async_request_refresh = mock_refresh
+
+    hass.states.async_set("sensor.battery_capacity", "21")
+    await hass.async_block_till_done()
+    assert refresh_calls == 0
+
+    hass.states.async_set("sensor.enyaq_charge_kwh", "10")
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+    assert refresh_calls == 1
+
+    hass.states.async_set("number.ev_maximum_charging_power", "12")
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+    assert refresh_calls == 2
+
+    hass.states.async_set("number.ev_maximum_charging_power", "12")
+    await hass.async_block_till_done()
+    assert refresh_calls == 2
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass.states.async_set("sensor.enyaq_charge_kwh", "11")
+    await hass.async_block_till_done()
+    assert refresh_calls == 2
 
 
 async def test_options_update_changes_loaded_recalculation_interval(

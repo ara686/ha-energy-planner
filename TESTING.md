@@ -52,10 +52,14 @@ Planner tests:
 - typed managed-load configuration, type switching and v1/v2 migration
 - history-based generic demand and requested-energy override
 - hot-water temperature average, thermal targets and conversion factor
-- three-phase allocation, priority ordering, equal-priority proportional
-  shortage and per-slot heater power limits
+- EV battery-to-electrical conversion, zero request, efficiency validation and
+  energy/power unit conversion
+- four-phase allocation, priority ordering, equal-priority proportional
+  shortage and per-slot heater/EV power limits
+- EV allocation over the complete remaining day, incomplete-today carry,
+  multi-day remainder and no repeated generic demand after tomorrow
 - complete and incomplete future-day coverage, repeated hot-water demand and
-  23/25-hour DST days
+  23/25-hour DST days, including EV today boundaries
 - history correction
 - partial current hour and forecast horizon boundary
 - SoC forecast for exactly 24 hours and longer horizons
@@ -70,7 +74,10 @@ Home Assistant integration tests:
 - `async_setup_entry`, `async_unload_entry` and `ConfigEntry.runtime_data`
 - DataUpdateCoordinator refresh, update interval and invalid source recovery
 - unavailable hot-water temperature behavior without a history fallback
+- unavailable EV request or power behavior without a history fallback
+- debounced EV input-entity refresh listeners and unload cleanup
 - all sensors created with stable unique IDs, translated names, units and device classes
+- aggregate and per-source EV today recommendation sensors
 - required-data failure marks dependent sensors unavailable
 - main state attributes stay compact and recorder-friendly
 - services are registered in `async_setup`, work with loaded entries and raise on missing entries

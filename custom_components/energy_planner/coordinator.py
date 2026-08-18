@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import math
 import re
-from datetime import date, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass
@@ -60,6 +61,10 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
 )
+from .electric_vehicle import (
+    ElectricVehicleInput,
+    calculate_electric_vehicle_demand,
+)
 from .ha_history import (
     async_get_recorder_energy_history,
     async_get_recorder_energy_statistics,
@@ -67,6 +72,7 @@ from .ha_history import (
 from .history import EnergyHistory, EnergyHistoryStore
 from .hot_water import HotWaterInput, calculate_hot_water_demand
 from .managed_allocation import (
+    ElectricVehicleAllocationInput,
     GenericAllocationInput,
     HotWaterAllocationInput,
     ManagedAllocationInput,
@@ -80,7 +86,7 @@ from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, calculate_soc_forecast, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
-from .units import energy_value_to_kwh, is_supported_energy_unit
+from .units import energy_value_to_kwh, is_supported_energy_unit, power_value_to_kw
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_CONSUMPTION_HISTORY_SENSOR_POINTS = 24 * 7
@@ -289,11 +295,13 @@ def _add_managed_allocations(
         now=now,
         warnings=warnings,
     )
+    interval_minutes = _interval_minutes(entry)
     daily_summaries = {
         item.get("date"): item
         for item in result.plan.get("unused_surplus_by_day", [])
         if isinstance(item, dict) and isinstance(item.get("date"), str)
     }
+    today = now.date()
     tomorrow = now.date() + timedelta(days=1)
     if tomorrow.isoformat() not in daily_summaries:
         tomorrow_surplus = result.plan.get("unused_surplus_tomorrow_kwh")
@@ -307,7 +315,7 @@ def _add_managed_allocations(
                 "complete": tomorrow_complete,
                 "unused_surplus_kwh": float(tomorrow_surplus),
             }
-    repeating_hot_water_inputs = [
+    hot_water_inputs = [
         load
         for load in load_inputs
         if isinstance(load, HotWaterAllocationInput)
@@ -316,6 +324,49 @@ def _add_managed_allocations(
             and load.load_type == "hot_water"
         )
     ]
+    electric_vehicle_inputs = [
+        load
+        for load in load_inputs
+        if isinstance(load, ElectricVehicleAllocationInput)
+        or (
+            isinstance(load, UnavailableAllocationInput)
+            and load.load_type == "electric_vehicle"
+        )
+    ]
+    generic_inputs = [
+        load for load in load_inputs if isinstance(load, GenericAllocationInput)
+    ]
+    forecast = result.plan.get("soc_forecast")
+    points = forecast.get("points", []) if isinstance(forecast, dict) else []
+    allocations: list[ManagedDayAllocation] = []
+    carried_ev_inputs = electric_vehicle_inputs
+
+    if electric_vehicle_inputs:
+        today_slots, today_complete = _remaining_today_surplus_slots(
+            points,
+            now=now,
+            interval_minutes=interval_minutes,
+        )
+        today_allocation = allocate_managed_day(
+            target_date=today,
+            interval_minutes=interval_minutes,
+            surplus_complete=today_complete,
+            surplus_slots=today_slots,
+            loads=electric_vehicle_inputs,
+        )
+        allocations.append(today_allocation)
+        carried_ev_inputs = _carry_electric_vehicle_inputs(
+            electric_vehicle_inputs,
+            today_allocation,
+        )
+        result.plan["surplus_allocation_today"] = today_allocation.as_dict()
+        result.plan["managed_recommended_today_kwh"] = (
+            today_allocation.recommended_kwh if today_allocation.state == "ok" else None
+        )
+    else:
+        result.plan["surplus_allocation_today"] = None
+        result.plan["managed_recommended_today_kwh"] = 0.0
+
     additional_dates = (
         {
             parsed_date
@@ -323,13 +374,10 @@ def _add_managed_allocations(
             if (parsed_date := _parse_date(raw_date)) is not None
             and parsed_date > tomorrow
         }
-        if repeating_hot_water_inputs
+        if hot_water_inputs or electric_vehicle_inputs
         else set()
     )
     future_dates = sorted(additional_dates | {tomorrow})
-    forecast = result.plan.get("soc_forecast")
-    points = forecast.get("points", []) if isinstance(forecast, dict) else []
-    allocations: list[ManagedDayAllocation] = []
     for target_date in future_dates:
         summary = daily_summaries.get(target_date.isoformat(), {})
         complete = bool(summary.get("complete"))
@@ -349,18 +397,23 @@ def _add_managed_allocations(
                     float(summary["unused_surplus_kwh"]),
                 )
             ]
-        allocations.append(
-            allocate_managed_day(
-                target_date=target_date,
-                interval_minutes=_interval_minutes(entry),
-                surplus_complete=complete,
-                surplus_slots=surplus_slots,
-                loads=(
-                    load_inputs
-                    if target_date == tomorrow
-                    else repeating_hot_water_inputs
-                ),
-            )
+        day_inputs: list[ManagedAllocationInput] = [
+            *hot_water_inputs,
+            *carried_ev_inputs,
+        ]
+        if target_date == tomorrow:
+            day_inputs.extend(generic_inputs)
+        day_allocation = allocate_managed_day(
+            target_date=target_date,
+            interval_minutes=interval_minutes,
+            surplus_complete=complete,
+            surplus_slots=surplus_slots,
+            loads=day_inputs,
+        )
+        allocations.append(day_allocation)
+        carried_ev_inputs = _carry_electric_vehicle_inputs(
+            carried_ev_inputs,
+            day_allocation,
         )
 
     allocation_payload = [allocation.as_dict() for allocation in allocations]
@@ -372,10 +425,10 @@ def _add_managed_allocations(
         ),
         allocate_managed_day(
             target_date=tomorrow,
-            interval_minutes=_interval_minutes(entry),
+            interval_minutes=interval_minutes,
             surplus_complete=False,
             surplus_slots=[],
-            loads=load_inputs,
+            loads=[*hot_water_inputs, *carried_ev_inputs, *generic_inputs],
         ),
     )
     result.plan["managed_allocation_by_day"] = allocation_payload
@@ -400,13 +453,19 @@ def _managed_allocation_inputs(
     now,
     warnings: list[str],
 ) -> list[ManagedAllocationInput]:
-    """Build runtime inputs for generic and hot-water load strategies."""
+    """Build runtime inputs for every managed-load strategy."""
     learning_days = DEFAULT_MANAGED_HISTORY_LEARNING_DAYS
     load_inputs: list[ManagedAllocationInput] = []
     for load in managed_load_configs(entry):
         if load.is_hot_water:
             hot_water_input = _hot_water_allocation_input(hass, load, warnings)
             load_inputs.append(hot_water_input)
+            continue
+        if load.is_electric_vehicle:
+            electric_vehicle_input = _electric_vehicle_allocation_input(
+                hass, load, warnings
+            )
+            load_inputs.append(electric_vehicle_input)
             continue
         daily_usage = history.managed_source_daily_usage(
             load.source_entity_id,
@@ -530,6 +589,96 @@ def _hot_water_allocation_input(
     )
 
 
+def _electric_vehicle_allocation_input(
+    hass: HomeAssistant,
+    load,
+    warnings: list[str],
+) -> ManagedAllocationInput:
+    """Build one electric-vehicle input or an explicit unavailable result."""
+    if (
+        load.required_energy_entity_id is None
+        or load.maximum_charging_power_entity_id is None
+    ):
+        warnings.append(
+            "Electric-vehicle load has incomplete configuration: "
+            f"{load.source_entity_id}."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id,
+            "electric_vehicle",
+            load.priority,
+            "invalid_electric_vehicle_configuration",
+        )
+
+    required_state = hass.states.get(load.required_energy_entity_id)
+    battery_required_kwh = energy_value_to_kwh(
+        required_state.state if required_state else None,
+        required_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+        if required_state
+        else None,
+    )
+    if (
+        battery_required_kwh is None
+        or not math.isfinite(battery_required_kwh)
+        or battery_required_kwh < 0
+    ):
+        warnings.append(
+            "Electric-vehicle required-energy source has no valid non-negative "
+            f"state: {load.required_energy_entity_id}."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id,
+            "electric_vehicle",
+            load.priority,
+            "invalid_required_energy_source",
+        )
+
+    power_state = hass.states.get(load.maximum_charging_power_entity_id)
+    maximum_charging_power_kw = power_value_to_kw(
+        power_state.state if power_state else None,
+        power_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) if power_state else None,
+    )
+    if (
+        maximum_charging_power_kw is None
+        or not math.isfinite(maximum_charging_power_kw)
+        or maximum_charging_power_kw <= 0
+    ):
+        warnings.append(
+            "Electric-vehicle maximum-power source has no valid positive state: "
+            f"{load.maximum_charging_power_entity_id}."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id,
+            "electric_vehicle",
+            load.priority,
+            "invalid_maximum_charging_power_source",
+        )
+
+    try:
+        demand = calculate_electric_vehicle_demand(
+            ElectricVehicleInput(
+                battery_required_kwh=battery_required_kwh,
+                charging_efficiency=load.charging_efficiency,
+            )
+        )
+    except ValueError:
+        warnings.append(
+            f"Electric-vehicle load has invalid parameters: {load.source_entity_id}."
+        )
+        return UnavailableAllocationInput(
+            load.source_entity_id,
+            "electric_vehicle",
+            load.priority,
+            "invalid_electric_vehicle_parameters",
+        )
+    return ElectricVehicleAllocationInput(
+        source_id=load.source_entity_id,
+        priority=load.priority,
+        maximum_charging_power_kw=maximum_charging_power_kw,
+        demand=demand,
+    )
+
+
 def _add_managed_soc_forecast(
     *,
     planner_input: PlannerInput,
@@ -574,8 +723,18 @@ def _add_managed_soc_forecast(
         _merge_source_energy(
             scheduled_by_source, allocation.hot_water_scheduled_by_source
         )
-        total_expected += generic_schedule.expected_kwh + sum(
-            allocation.hot_water_scheduled_by_source.values()
+        _merge_slot_energy(
+            energy_by_slot,
+            allocation.electric_vehicle_energy_by_slot,
+        )
+        _merge_source_energy(
+            scheduled_by_source,
+            allocation.electric_vehicle_scheduled_by_source,
+        )
+        total_expected += (
+            generic_schedule.expected_kwh
+            + sum(allocation.hot_water_scheduled_by_source.values())
+            + sum(allocation.electric_vehicle_scheduled_by_source.values())
         )
 
     forecast = calculate_soc_forecast(
@@ -628,6 +787,105 @@ def _parse_date(value: object) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _carry_electric_vehicle_inputs(
+    inputs: list[ManagedAllocationInput],
+    allocation: ManagedDayAllocation,
+) -> list[ManagedAllocationInput]:
+    """Carry only an EV load's unallocated electrical requirement forward."""
+    results = {load.source_id: load for load in allocation.loads}
+    carried: list[ManagedAllocationInput] = []
+    for load in inputs:
+        if not isinstance(load, ElectricVehicleAllocationInput):
+            carried.append(load)
+            continue
+        result = results.get(load.source_id)
+        allocated = (
+            result.recommended_kwh
+            if result is not None and result.recommended_kwh is not None
+            else 0.0
+        )
+        remaining = max(load.demand.electrical_remaining_kwh - allocated, 0.0)
+        carried.append(
+            replace(
+                load,
+                demand=load.demand.with_electrical_remaining(remaining),
+            )
+        )
+    return carried
+
+
+def _remaining_today_surplus_slots(
+    points: object,
+    *,
+    now: datetime,
+    interval_minutes: int,
+) -> tuple[list[SurplusSlot], bool]:
+    """Return covered surplus slots from the next interval to local midnight."""
+    if interval_minutes <= 0:
+        return [], False
+    start = _ceil_to_interval(now, interval_minutes)
+    end = datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=now.tzinfo)
+    expected: list[datetime] = []
+    cursor = start
+    while _timeline_time(cursor) < _timeline_time(end):
+        expected.append(cursor)
+        cursor = _add_elapsed_time(cursor, timedelta(minutes=interval_minutes))
+    if not expected:
+        return [], True
+    if not isinstance(points, list):
+        return [], False
+
+    point_by_start: dict[datetime, tuple[float, float]] = {}
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        timestamp = _datetime_from_value(point.get("timestamp"))
+        surplus = point.get("unused_surplus_kwh")
+        coverage = point.get("solar_coverage")
+        if (
+            timestamp is None
+            or not isinstance(surplus, int | float)
+            or not isinstance(coverage, int | float)
+        ):
+            continue
+        point_by_start[_timeline_time(timestamp)] = (
+            max(float(surplus), 0.0),
+            float(coverage),
+        )
+
+    slots: list[SurplusSlot] = []
+    for slot_start in expected:
+        point = point_by_start.get(_timeline_time(slot_start))
+        if point is None or point[1] < 0.999:
+            return [], False
+        slots.append(SurplusSlot(slot_start, point[0]))
+    return slots, True
+
+
+def _ceil_to_interval(timestamp: datetime, interval_minutes: int) -> datetime:
+    """Align a timestamp to the same next slot boundary used by the planner."""
+    clean = timestamp.replace(second=0, microsecond=0)
+    minutes = clean.hour * 60 + clean.minute
+    remainder = minutes % interval_minutes
+    if remainder == 0 and timestamp.second == 0 and timestamp.microsecond == 0:
+        return clean
+    return clean + timedelta(minutes=interval_minutes - remainder)
+
+
+def _add_elapsed_time(timestamp: datetime, delta: timedelta) -> datetime:
+    """Advance an aware timestamp without losing a repeated DST hour."""
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return timestamp + delta
+    return (timestamp.astimezone(UTC) + delta).astimezone(timestamp.tzinfo)
+
+
+def _timeline_time(timestamp: datetime) -> datetime:
+    """Return a comparable absolute timestamp while preserving naive inputs."""
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return timestamp
+    return timestamp.astimezone(UTC)
 
 
 def _surplus_slots_for_date(

@@ -6,17 +6,21 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
+    CONF_CHARGING_EFFICIENCY,
     CONF_HEATER_POWER_KW,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MINIMUM_TEMPERATURE_C,
     CONF_PRIORITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
     CONF_TANK_VOLUME_LITERS,
     CONF_THERMAL_CONVERSION_FACTOR,
     CONF_TOP_TEMPERATURE_ENTITY,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
 from custom_components.energy_planner.diagnostics import (
@@ -87,6 +91,9 @@ async def test_diagnostics_include_hot_water_model_configuration(hass):
             "load_type": "hot_water",
             "priority": 5,
             "requested_energy_entity_id": None,
+            "required_energy_entity_id": None,
+            "maximum_charging_power_entity_id": None,
+            "charging_efficiency": 0.9,
             "top_temperature_entity_id": "sensor.boiler_top",
             "bottom_temperature_entity_id": "sensor.boiler_bottom",
             "minimum_temperature_c": 45.0,
@@ -96,3 +103,35 @@ async def test_diagnostics_include_hot_water_model_configuration(hass):
             "thermal_conversion_factor": 1.0,
         }
     ]
+
+
+async def test_diagnostics_include_electric_vehicle_model_configuration(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                    CONF_PRIORITY: 10,
+                    CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+                    CONF_MAXIMUM_CHARGING_POWER_ENTITY: "number.ev_max_power",
+                    CONF_CHARGING_EFFICIENCY: 0.92,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    load = diagnostics["entry"]["managed_loads"][0]
+    assert load["load_type"] == "electric_vehicle"
+    assert load["required_energy_entity_id"] == "sensor.enyaq_charge_kwh"
+    assert load["maximum_charging_power_entity_id"] == "number.ev_max_power"
+    assert load["charging_efficiency"] == 0.92

@@ -11,6 +11,7 @@ from custom_components.energy_planner.const import (
     CONF_BATTERY_MIN_SOC_ENTITY,
     CONF_BATTERY_SOC_ENTITY,
     CONF_BOTTOM_TEMPERATURE_ENTITY,
+    CONF_CHARGING_EFFICIENCY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_HEATER_POWER_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
@@ -20,11 +21,13 @@ from custom_components.energy_planner.const import (
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
@@ -35,6 +38,8 @@ from custom_components.energy_planner.const import (
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+    MANAGED_LOAD_TYPE_GENERIC,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
 from custom_components.energy_planner.coordinator import (
@@ -43,6 +48,7 @@ from custom_components.energy_planner.coordinator import (
     _add_surplus_allocation,
     _async_planner_history_from_ha,
     _consumption_from_hourly_profile,
+    _remaining_today_surplus_slots,
     _solcast_entity_ids,
     _solcast_forecast,
     build_planner_result,
@@ -732,6 +738,376 @@ def test_hot_water_soc_forecast_uses_only_allocated_surplus_slots(hass):
         1,
     ]
     assert result.plan["soc_at_forecast_horizon_with_managed"] == 80
+
+
+def test_ev_allocation_uses_remaining_today_then_carries_across_days(hass):
+    now = datetime(2026, 8, 18, 12, 30)
+    entry = _electric_vehicle_entry(include_generic=True)
+    _set_electric_vehicle_inputs(hass, battery_required="9", maximum_power="2")
+    hass.states.async_set(
+        "input_number.generic_requested_energy",
+        "2",
+        {"unit_of_measurement": "kWh"},
+    )
+    today_points = [
+        {
+            "timestamp": datetime(2026, 8, 18, hour),
+            "unused_surplus_kwh": 1 if hour < 17 else 0,
+            "solar_coverage": 1,
+        }
+        for hour in range(13, 24)
+    ]
+    tomorrow_points = [
+        {
+            "timestamp": datetime(2026, 8, 19, hour),
+            "unused_surplus_kwh": 1 if hour < 4 else 0,
+        }
+        for hour in range(24)
+    ]
+    third_day_points = [
+        {
+            "timestamp": datetime(2026, 8, 20, hour),
+            "unused_surplus_kwh": 1 if hour < 4 else 0,
+        }
+        for hour in range(24)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [
+                {"date": "2026-08-19", "complete": True},
+                {"date": "2026-08-20", "complete": True},
+            ],
+            "soc_forecast": {
+                "points": [*today_points, *tomorrow_points, *third_day_points]
+            },
+        },
+    )
+
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    today, tomorrow, third_day = allocations
+    today_ev = today.as_dict()["loads"]["sensor.ev_energy_total"]
+    tomorrow_loads = tomorrow.as_dict()["loads"]
+    tomorrow_ev = tomorrow_loads["sensor.ev_energy_total"]
+    third_day_loads = third_day.as_dict()["loads"]
+    third_day_ev = third_day_loads["sensor.ev_energy_total"]
+    assert today_ev["recommended_kwh"] == 4
+    assert today_ev["electrical_shortfall_kwh"] == 6
+    assert tomorrow_ev["electrical_remaining_before_kwh"] == 6
+    assert tomorrow_ev["recommended_kwh"] == 4
+    assert tomorrow_ev["electrical_shortfall_kwh"] == 2
+    assert tomorrow_loads["sensor.generic_energy_total"]["recommended_kwh"] == 0
+    assert third_day_ev["electrical_remaining_before_kwh"] == 2
+    assert third_day_ev["recommended_kwh"] == 2
+    assert "sensor.generic_energy_total" not in third_day_loads
+    assert result.plan["managed_recommended_today_kwh"] == 4
+    assert result.plan["managed_recommended_tomorrow_kwh"] == 4
+
+
+def test_incomplete_today_ev_data_carries_full_request_to_tomorrow(hass):
+    now = datetime(2026, 8, 18, 22, 30)
+    entry = _electric_vehicle_entry()
+    _set_electric_vehicle_inputs(hass, battery_required="9", maximum_power="20")
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": True}],
+            "soc_forecast": {
+                "points": [
+                    {
+                        "timestamp": datetime(2026, 8, 18, 23),
+                        "unused_surplus_kwh": 10,
+                        "solar_coverage": 0.5,
+                    },
+                    {
+                        "timestamp": datetime(2026, 8, 19, 10),
+                        "unused_surplus_kwh": 10,
+                    },
+                ]
+            },
+        },
+    )
+
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    today_ev = allocations[0].as_dict()["loads"]["sensor.ev_energy_total"]
+    tomorrow_ev = allocations[1].as_dict()["loads"]["sensor.ev_energy_total"]
+    assert result.plan["managed_recommended_today_kwh"] is None
+    assert today_ev["state"] == "insufficient_data"
+    assert tomorrow_ev["electrical_remaining_before_kwh"] == 10
+    assert tomorrow_ev["recommended_kwh"] == 10
+
+
+def test_ev_with_no_remaining_today_slot_recommends_zero_today(hass):
+    now = datetime(2026, 8, 18, 23, 59)
+    entry = _electric_vehicle_entry()
+    _set_electric_vehicle_inputs(hass, battery_required="9", maximum_power="20")
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": True}],
+            "soc_forecast": {
+                "points": [
+                    {
+                        "timestamp": datetime(2026, 8, 19, 10),
+                        "unused_surplus_kwh": 10,
+                    }
+                ]
+            },
+        },
+    )
+
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    assert allocations[0].recommended_kwh == 0
+    assert result.plan["managed_recommended_today_kwh"] == 0
+    assert allocations[1].expected_demand_kwh == 10
+
+
+def test_invalid_ev_input_is_unavailable_without_history_fallback(hass):
+    now = datetime(2026, 8, 18, 23, 59)
+    entry = _electric_vehicle_entry()
+    _set_electric_vehicle_inputs(
+        hass,
+        battery_required="unavailable",
+        maximum_power="11",
+    )
+    history = EnergyHistory()
+    for days_ago in range(1, 8):
+        history.add_hourly_sample(
+            now - timedelta(days=days_ago),
+            home_kwh=8,
+            managed_kwh=8,
+            managed_source_id="sensor.ev_energy_total",
+            observed_source_ids={"sensor.ev_energy_total"},
+        )
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": True}],
+            "soc_forecast": {
+                "points": [
+                    {
+                        "timestamp": datetime(2026, 8, 19, 10),
+                        "unused_surplus_kwh": 10,
+                    }
+                ]
+            },
+        },
+    )
+    warnings: list[str] = []
+
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        result=result,
+        warnings=warnings,
+    )
+
+    load = allocations[1].as_dict()["loads"]["sensor.ev_energy_total"]
+    assert result.plan["managed_recommended_today_kwh"] is None
+    assert load["method"] == "insufficient_data"
+    assert load["recommended_kwh"] is None
+    assert load["reason"] == "invalid_required_energy_source"
+    assert any("sensor.enyaq_charge_kwh" in warning for warning in warnings)
+
+
+def test_remaining_today_ev_slots_cover_repeated_fall_dst_hour():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 10, 25, 0, 30, tzinfo=timezone)
+    first_utc = datetime(2026, 10, 24, 23, tzinfo=UTC)
+    points = [
+        {
+            "timestamp": (first_utc + timedelta(hours=index)).astimezone(timezone),
+            "unused_surplus_kwh": 1,
+            "solar_coverage": 1,
+        }
+        for index in range(24)
+    ]
+
+    slots, complete = _remaining_today_surplus_slots(
+        points,
+        now=now,
+        interval_minutes=60,
+    )
+
+    assert complete
+    assert len(slots) == 24
+    assert len({slot.start.astimezone(UTC) for slot in slots}) == 24
+
+
+def test_remaining_today_ev_slots_skip_missing_spring_dst_hour():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 3, 29, 0, 30, tzinfo=timezone)
+    first_utc = datetime(2026, 3, 29, 0, tzinfo=UTC)
+    points = [
+        {
+            "timestamp": (first_utc + timedelta(hours=index)).astimezone(timezone),
+            "unused_surplus_kwh": 1,
+            "solar_coverage": 1,
+        }
+        for index in range(22)
+    ]
+
+    slots, complete = _remaining_today_surplus_slots(
+        points,
+        now=now,
+        interval_minutes=60,
+    )
+
+    assert complete
+    assert len(slots) == 22
+    assert all(slot.start.hour != 2 for slot in slots)
+
+
+def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
+    now = datetime(2026, 8, 18, 21, 30)
+    entry = _electric_vehicle_entry()
+    _set_electric_vehicle_inputs(hass, battery_required="1.8", maximum_power="1")
+    slot_starts = [datetime(2026, 8, 18, 22), datetime(2026, 8, 18, 23)]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": False}],
+            "soc_forecast": {
+                "points": [
+                    {
+                        "timestamp": start,
+                        "unused_surplus_kwh": 1,
+                        "solar_coverage": 1,
+                    }
+                    for start in slot_starts
+                ]
+            },
+        },
+    )
+    history = EnergyHistory()
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        result=result,
+        warnings=[],
+    )
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=100,
+        battery_capacity_kwh=10,
+        battery_min_soc=0,
+        slots=[ForecastSlot(start, 0, 0) for start in slot_starts],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        grid_charging_enabled=False,
+        interval_minutes=60,
+        forecast_horizon_hours=24,
+    )
+
+    _add_managed_soc_forecast(
+        planner_input=planner_input,
+        history=history,
+        now=now,
+        allocations=allocations,
+        result=result,
+    )
+
+    forecast = result.plan["soc_forecast_with_managed"]
+    assert forecast["managed_scheduled_kwh"] == 2
+    assert forecast["managed_scheduled_by_source"] == {"sensor.ev_energy_total": 2}
+    assert [point["managed_consumption_kwh"] for point in forecast["points"]] == [
+        1,
+        1,
+    ]
+
+
+def _electric_vehicle_entry(*, include_generic: bool = False) -> MockConfigEntry:
+    subentries = [
+        {
+            "data": {
+                CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                CONF_PRIORITY: 10,
+                CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+                CONF_MAXIMUM_CHARGING_POWER_ENTITY: (
+                    "number.ev_maximum_charging_power"
+                ),
+                CONF_CHARGING_EFFICIENCY: 0.9,
+            },
+            "subentry_type": MANAGED_LOAD_SUBENTRY,
+            "title": "EV",
+            "unique_id": "sensor.ev_energy_total",
+        }
+    ]
+    if include_generic:
+        subentries.append(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.generic_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+                    CONF_PRIORITY: 100,
+                    CONF_REQUESTED_ENERGY_ENTITY: (
+                        "input_number.generic_requested_energy"
+                    ),
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Generic",
+                "unique_id": "sensor.generic_energy_total",
+            }
+        )
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={CONF_INTERVAL_MINUTES: 60},
+        version=3,
+        subentries_data=tuple(subentries),
+    )
+
+
+def _set_electric_vehicle_inputs(
+    hass,
+    *,
+    battery_required: str,
+    maximum_power: str,
+) -> None:
+    hass.states.async_set(
+        "sensor.enyaq_charge_kwh",
+        battery_required,
+        {"device_class": "energy_storage", "unit_of_measurement": "kWh"},
+    )
+    hass.states.async_set(
+        "number.ev_maximum_charging_power",
+        maximum_power,
+        {"device_class": "power", "unit_of_measurement": "kW"},
+    )
 
 
 def _hot_water_entry(

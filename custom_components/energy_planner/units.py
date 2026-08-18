@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.const import UnitOfEnergy
-from homeassistant.util.unit_conversion import EnergyConverter
+from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 
 from .sources import parse_float
 
@@ -24,4 +24,21 @@ def energy_value_to_kwh(value: Any, unit: Any) -> float | None:
         parsed,
         unit,
         UnitOfEnergy.KILO_WATT_HOUR,
+    )
+
+
+def is_supported_power_unit(unit: Any) -> bool:
+    """Return whether Home Assistant can convert the unit as power."""
+    return isinstance(unit, str) and unit in PowerConverter.VALID_UNITS
+
+
+def power_value_to_kw(value: Any, unit: Any) -> float | None:
+    """Parse a power value and normalize it to kW."""
+    parsed = parse_float(value)
+    if parsed is None or not is_supported_power_unit(unit):
+        return None
+    return PowerConverter.convert(
+        parsed,
+        unit,
+        UnitOfPower.KILO_WATT,
     )

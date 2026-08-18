@@ -37,3 +37,10 @@ time-slot and solar-input coverage separately. Tomorrow surplus is valid only
 when both cover the entire next local day. The Home Assistant coordinator passes
 that budget to the separate pure allocation module; device states and Home
 Assistant entities never enter the planner core.
+
+The pure managed-load allocation layer runs hot-water minimum, EV, generic and
+hot-water flexible phases in that order. EV demand is normalized from
+battery-side energy to charger input through charging efficiency, limited per
+slot by maximum charging power and carried forward only while unmet. The
+coordinator supplies fully normalized values and uses today only for EV, all
+types tomorrow, and no repeated generic request on later days.
