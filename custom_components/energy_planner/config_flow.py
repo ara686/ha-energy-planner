@@ -67,6 +67,7 @@ from .const import (
     CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_EV_CHARGING_EFFICIENCY,
+    DEFAULT_EV_MAXIMUM_CHARGING_POWER_KW,
     DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C,
     DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
     DEFAULT_MANAGED_LOAD_PRIORITY,
@@ -671,8 +672,12 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
                 vol.Required(CONF_REQUIRED_ENERGY_ENTITY): _entity_selector(
                     REQUESTED_ENERGY_ENTITY_FILTERS
                 ),
-                vol.Required(CONF_MAXIMUM_CHARGING_POWER_KW): _number_selector(
+                vol.Required(
+                    CONF_MAXIMUM_CHARGING_POWER_KW,
+                    default=DEFAULT_EV_MAXIMUM_CHARGING_POWER_KW,
+                ): _number_selector(
                     minimum=0.001,
+                    step=0.1,
                     unit_of_measurement="kW",
                 ),
                 vol.Required(
@@ -858,7 +863,15 @@ def _validate_electric_vehicle_input(
         errors[CONF_REQUIRED_ENERGY_ENTITY] = ERR_ENERGY_AMOUNT_REQUIRED
 
     maximum_power = _finite_float(user_input.get(CONF_MAXIMUM_CHARGING_POWER_KW))
-    if maximum_power is None or maximum_power <= 0:
+    if (
+        maximum_power is None
+        or maximum_power <= 0
+        or not math.isclose(
+            maximum_power * 10,
+            round(maximum_power * 10),
+            abs_tol=1e-9,
+        )
+    ):
         errors[CONF_MAXIMUM_CHARGING_POWER_KW] = ERR_POWER_AMOUNT_REQUIRED
 
     efficiency = _finite_float(user_input.get(CONF_CHARGING_EFFICIENCY))

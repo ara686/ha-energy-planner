@@ -53,7 +53,7 @@ Planner tests:
 - history-based generic demand and requested-energy override
 - hot-water temperature average, thermal targets and conversion factor
 - EV battery-to-electrical conversion, zero request, efficiency validation and
-  positive numeric maximum charger power
+  positive numeric maximum charger power with a `11.0 kW` default and one-decimal precision
 - four-phase allocation, priority ordering, equal-priority proportional
   shortage and per-slot heater/EV power limits
 - EV allocation over the complete remaining day, incomplete-today carry,
