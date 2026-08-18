@@ -137,7 +137,7 @@
         "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
         "energy_sensor_required": "The energy meter must be a cumulative energy sensor with a supported energy unit.",
         "energy_amount_required": "Requested energy must be a non-negative entity in kWh.",
-        "power_amount_required": "Maximum charger power must be a positive value in kW.",
+        "power_amount_required": "Maximum charger power must be a positive value in kW with at most one decimal place.",
         "charging_efficiency_range": "Charging efficiency must be greater than zero and at most one.",
         "entity_already_configured": "This energy meter is already configured.",
         "temperature_entities_distinct": "Top and bottom temperature sensors must be different.",

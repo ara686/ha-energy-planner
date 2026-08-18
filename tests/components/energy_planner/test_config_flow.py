@@ -715,6 +715,31 @@ def test_electric_vehicle_validation_checks_units_values_and_efficiency(hass):
     assert errors[CONF_MAXIMUM_CHARGING_POWER_KW] == "power_amount_required"
 
 
+def test_electric_vehicle_power_accepts_at_most_one_decimal_place(hass):
+    set_source_states(hass)
+    _set_ev_input_states(hass)
+    user_input = {
+        **_electric_vehicle_input(),
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+        CONF_MAXIMUM_CHARGING_POWER_KW: 11.11,
+    }
+
+    errors = _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=4),
+        user_input,
+    )
+
+    assert errors == {CONF_MAXIMUM_CHARGING_POWER_KW: "power_amount_required"}
+
+    user_input[CONF_MAXIMUM_CHARGING_POWER_KW] = 11.1
+    assert not _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=4),
+        user_input,
+    )
+
+
 async def test_hot_water_flow_rejects_duplicate_temperature_and_invalid_range(hass):
     set_source_states(hass)
     _set_hot_water_temperature_states(hass)
@@ -1164,12 +1189,8 @@ def test_hot_water_schema_filters_temperature_entities():
 
 
 def test_electric_vehicle_schema_filters_energy_and_uses_numeric_power():
-    fields = {
-        marker.schema: value
-        for marker, value in _managed_load_details_schema(
-            MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
-        ).schema.items()
-    }
+    schema = _managed_load_details_schema(MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE)
+    fields = {marker.schema: value for marker, value in schema.schema.items()}
 
     required_filter = _plain_filter(
         fields[CONF_REQUIRED_ENERGY_ENTITY].config["filter"]
@@ -1178,7 +1199,14 @@ def test_electric_vehicle_schema_filters_energy_and_uses_numeric_power():
     assert {"domain": ["input_number"]} in required_filter
     assert {"domain": ["sensor"], "device_class": ["energy"]} in required_filter
     assert power_config["min"] == 0.001
+    assert power_config["step"] == 0.1
     assert power_config["unit_of_measurement"] == "kW"
+    power_marker = next(
+        marker
+        for marker in schema.schema
+        if marker.schema == CONF_MAXIMUM_CHARGING_POWER_KW
+    )
+    assert power_marker.default() == 11.0
 
 
 def _set_hot_water_temperature_states(hass) -> None:

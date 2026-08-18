@@ -97,7 +97,7 @@ load's recommendation; it never falls back to history.
 | Field | Key | Required | Description |
 |-------|-----|----------|-------------|
 | Remaining battery energy | `required_energy_entity` | Required | Current non-negative energy still storable in the vehicle battery. `sensor`, `number` and `input_number` entities with units convertible to `kWh` are supported. For example, use `sensor.enyaq_charge_kwh`. |
-| Maximum charger power | `maximum_charging_power_kw` | Required | Fixed positive technical input limit in `kW`, for example `11`. Available solar surplus separately limits the actual recommendation in every slot. |
+| Maximum charger power | `maximum_charging_power_kw` | Required | Fixed positive technical input limit in `kW`, entered with at most one decimal place. Default `11.0`. Available solar surplus separately limits the actual recommendation in every slot. |
 | Charging efficiency | `charging_efficiency` | Required | Battery energy divided by charger electrical input, greater than zero and at most `1`; default `0.90`. |
 
 The request is converted to charger-input energy:
