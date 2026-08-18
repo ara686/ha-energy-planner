@@ -86,7 +86,7 @@ from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, calculate_soc_forecast, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
-from .units import energy_value_to_kwh, is_supported_energy_unit, power_value_to_kw
+from .units import energy_value_to_kwh, is_supported_energy_unit
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_CONSUMPTION_HISTORY_SENSOR_POINTS = 24 * 7
@@ -595,10 +595,7 @@ def _electric_vehicle_allocation_input(
     warnings: list[str],
 ) -> ManagedAllocationInput:
     """Build one electric-vehicle input or an explicit unavailable result."""
-    if (
-        load.required_energy_entity_id is None
-        or load.maximum_charging_power_entity_id is None
-    ):
+    if load.required_energy_entity_id is None or load.maximum_charging_power_kw is None:
         warnings.append(
             "Electric-vehicle load has incomplete configuration: "
             f"{load.source_entity_id}."
@@ -633,25 +630,19 @@ def _electric_vehicle_allocation_input(
             "invalid_required_energy_source",
         )
 
-    power_state = hass.states.get(load.maximum_charging_power_entity_id)
-    maximum_charging_power_kw = power_value_to_kw(
-        power_state.state if power_state else None,
-        power_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) if power_state else None,
-    )
     if (
-        maximum_charging_power_kw is None
-        or not math.isfinite(maximum_charging_power_kw)
-        or maximum_charging_power_kw <= 0
+        not math.isfinite(load.maximum_charging_power_kw)
+        or load.maximum_charging_power_kw <= 0
     ):
         warnings.append(
-            "Electric-vehicle maximum-power source has no valid positive state: "
-            f"{load.maximum_charging_power_entity_id}."
+            "Electric-vehicle load has no valid positive maximum charging power: "
+            f"{load.source_entity_id}."
         )
         return UnavailableAllocationInput(
             load.source_entity_id,
             "electric_vehicle",
             load.priority,
-            "invalid_maximum_charging_power_source",
+            "invalid_maximum_charging_power",
         )
 
     try:
@@ -674,7 +665,7 @@ def _electric_vehicle_allocation_input(
     return ElectricVehicleAllocationInput(
         source_id=load.source_entity_id,
         priority=load.priority,
-        maximum_charging_power_kw=maximum_charging_power_kw,
+        maximum_charging_power_kw=load.maximum_charging_power_kw,
         demand=demand,
     )
 

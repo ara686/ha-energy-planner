@@ -53,7 +53,7 @@ Planner tests:
 - history-based generic demand and requested-energy override
 - hot-water temperature average, thermal targets and conversion factor
 - EV battery-to-electrical conversion, zero request, efficiency validation and
-  energy/power unit conversion
+  positive numeric maximum charger power
 - four-phase allocation, priority ordering, equal-priority proportional
   shortage and per-slot heater/EV power limits
 - EV allocation over the complete remaining day, incomplete-today carry,
@@ -74,7 +74,7 @@ Home Assistant integration tests:
 - `async_setup_entry`, `async_unload_entry` and `ConfigEntry.runtime_data`
 - DataUpdateCoordinator refresh, update interval and invalid source recovery
 - unavailable hot-water temperature behavior without a history fallback
-- unavailable EV request or power behavior without a history fallback
+- unavailable EV request or invalid configured power without a history fallback
 - debounced EV input-entity refresh listeners and unload cleanup
 - all sensors created with stable unique IDs, translated names, units and device classes
 - aggregate and per-source EV today recommendation sensors

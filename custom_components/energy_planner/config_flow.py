@@ -43,7 +43,7 @@ from .const import (
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
-    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
+    CONF_MAXIMUM_CHARGING_POWER_KW,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
@@ -85,11 +85,7 @@ from .options import (
     normalize_options,
 )
 from .sources import parse_float
-from .units import (
-    energy_value_to_kwh,
-    is_supported_energy_unit,
-    power_value_to_kw,
-)
+from .units import energy_value_to_kwh, is_supported_energy_unit
 
 ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
@@ -193,17 +189,6 @@ REQUESTED_ENERGY_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     },
     {"domain": "input_number"},
 ]
-EV_POWER_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
-    {
-        "domain": "sensor",
-        "device_class": SensorDeviceClass.POWER,
-    },
-    {
-        "domain": "number",
-        "device_class": NumberDeviceClass.POWER,
-    },
-    {"domain": "input_number"},
-]
 
 
 def _number_selector(
@@ -229,7 +214,7 @@ def _number_selector(
 class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Energy Planner."""
 
-    VERSION = 3
+    VERSION = 4
 
     @staticmethod
     def async_get_options_flow(
@@ -686,8 +671,9 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
                 vol.Required(CONF_REQUIRED_ENERGY_ENTITY): _entity_selector(
                     REQUESTED_ENERGY_ENTITY_FILTERS
                 ),
-                vol.Required(CONF_MAXIMUM_CHARGING_POWER_ENTITY): _entity_selector(
-                    EV_POWER_ENTITY_FILTERS
+                vol.Required(CONF_MAXIMUM_CHARGING_POWER_KW): _number_selector(
+                    minimum=0.001,
+                    unit_of_measurement="kW",
                 ),
                 vol.Required(
                     CONF_CHARGING_EFFICIENCY,
@@ -750,8 +736,8 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
                 CONF_REQUIRED_ENERGY_ENTITY: str(
                     user_input[CONF_REQUIRED_ENERGY_ENTITY]
                 ),
-                CONF_MAXIMUM_CHARGING_POWER_ENTITY: str(
-                    user_input[CONF_MAXIMUM_CHARGING_POWER_ENTITY]
+                CONF_MAXIMUM_CHARGING_POWER_KW: float(
+                    user_input[CONF_MAXIMUM_CHARGING_POWER_KW]
                 ),
                 CONF_CHARGING_EFFICIENCY: float(user_input[CONF_CHARGING_EFFICIENCY]),
             }
@@ -871,25 +857,9 @@ def _validate_electric_vehicle_input(
     ):
         errors[CONF_REQUIRED_ENERGY_ENTITY] = ERR_ENERGY_AMOUNT_REQUIRED
 
-    power_entity = str(user_input[CONF_MAXIMUM_CHARGING_POWER_ENTITY])
-    power_state = hass.states.get(power_entity)
-    power_value = parse_float(power_state.state if power_state else None)
-    if power_value is None or not math.isfinite(power_value):
-        errors[CONF_MAXIMUM_CHARGING_POWER_ENTITY] = ERR_INVALID_NUMERIC_ENTITY
-    elif (
-        power_state is None
-        or power_state.domain not in {"sensor", "number", "input_number"}
-        or not _compatible_device_class(power_state, {SensorDeviceClass.POWER})
-        or (
-            converted_power := power_value_to_kw(
-                power_value,
-                power_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT),
-            )
-        )
-        is None
-        or converted_power <= 0
-    ):
-        errors[CONF_MAXIMUM_CHARGING_POWER_ENTITY] = ERR_POWER_AMOUNT_REQUIRED
+    maximum_power = _finite_float(user_input.get(CONF_MAXIMUM_CHARGING_POWER_KW))
+    if maximum_power is None or maximum_power <= 0:
+        errors[CONF_MAXIMUM_CHARGING_POWER_KW] = ERR_POWER_AMOUNT_REQUIRED
 
     efficiency = _finite_float(user_input.get(CONF_CHARGING_EFFICIENCY))
     if efficiency is None or not 0 < efficiency <= 1:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,7 @@ if TYPE_CHECKING:
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.debounce import Debouncer
@@ -20,6 +22,8 @@ from .const import (
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
+    CONF_MAXIMUM_CHARGING_POWER_KW,
     CONF_PRIORITY,
     DEFAULT_MANAGED_LOAD_PRIORITY,
     DEFAULT_MANAGED_LOAD_TYPE,
@@ -28,6 +32,7 @@ from .const import (
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
 )
 from .managed_loads import managed_energy_entity_ids, managed_load_configs
+from .units import power_value_to_kw
 
 PLATFORMS = ["binary_sensor", "sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -103,9 +108,9 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate legacy managed loads to typed config subentries."""
-    if entry.version > 3:
+    if entry.version > 4:
         return False
-    if entry.version == 3:
+    if entry.version == 4:
         return True
 
     data = dict(entry.data)
@@ -148,12 +153,41 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         subentry_data = dict(subentry.data)
         subentry_data.setdefault(CONF_MANAGED_LOAD_TYPE, DEFAULT_MANAGED_LOAD_TYPE)
         subentry_data.setdefault(CONF_PRIORITY, DEFAULT_MANAGED_LOAD_PRIORITY)
+        if (
+            subentry_data[CONF_MANAGED_LOAD_TYPE] == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
+            and CONF_MAXIMUM_CHARGING_POWER_KW not in subentry_data
+        ):
+            legacy_entity_id = subentry_data.get(CONF_MAXIMUM_CHARGING_POWER_ENTITY)
+            legacy_state = (
+                hass.states.get(legacy_entity_id)
+                if isinstance(legacy_entity_id, str)
+                else None
+            )
+            maximum_power_kw = power_value_to_kw(
+                legacy_state.state if legacy_state else None,
+                legacy_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+                if legacy_state
+                else None,
+            )
+            if (
+                maximum_power_kw is not None
+                and math.isfinite(maximum_power_kw)
+                and maximum_power_kw > 0
+            ):
+                subentry_data[CONF_MAXIMUM_CHARGING_POWER_KW] = maximum_power_kw
+            else:
+                _LOGGER.warning(
+                    "Could not migrate maximum charging power for managed load %s; "
+                    "reconfigure the load to restore its EV recommendation",
+                    subentry.data.get(CONF_MANAGED_ENERGY_ENTITY),
+                )
+        subentry_data.pop(CONF_MAXIMUM_CHARGING_POWER_ENTITY, None)
         hass.config_entries.async_update_subentry(
             entry,
             subentry,
             data=subentry_data,
         )
-    hass.config_entries.async_update_entry(entry, data=data, version=3)
+    hass.config_entries.async_update_entry(entry, data=data, version=4)
     return True
 
 
@@ -266,10 +300,7 @@ def _register_managed_model_refresh(
         entity_id
         for load in managed_load_configs(entry)
         if load.load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
-        for entity_id in (
-            load.required_energy_entity_id,
-            load.maximum_charging_power_entity_id,
-        )
+        for entity_id in (load.required_energy_entity_id,)
         if entity_id
     }
     if not tracked_entities:

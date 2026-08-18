@@ -27,7 +27,7 @@ from custom_components.energy_planner.const import (
     CONF_HISTORY_LEARNING_DAYS,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
-    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
+    CONF_MAXIMUM_CHARGING_POWER_KW,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MINIMUM_TEMPERATURE_C,
     CONF_NT_WINDOWS,
@@ -921,18 +921,13 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
         "9",
         {"device_class": "energy_storage", "unit_of_measurement": "kWh"},
     )
-    hass.states.async_set(
-        "number.ev_maximum_charging_power",
-        "11",
-        {"device_class": "power", "unit_of_measurement": "kW"},
-    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Energy Planner",
         data=config_data(),
         options=options_data(),
         unique_id=DOMAIN,
-        version=3,
+        version=4,
         subentries_data=(
             {
                 "data": {
@@ -940,9 +935,7 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
                     CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
                     CONF_PRIORITY: 10,
                     CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
-                    CONF_MAXIMUM_CHARGING_POWER_ENTITY: (
-                        "number.ev_maximum_charging_power"
-                    ),
+                    CONF_MAXIMUM_CHARGING_POWER_KW: 11,
                     CONF_CHARGING_EFFICIENCY: 0.9,
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
@@ -1227,18 +1220,13 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
         "9",
         {"device_class": "energy_storage", "unit_of_measurement": "kWh"},
     )
-    hass.states.async_set(
-        "number.ev_maximum_charging_power",
-        "11",
-        {"device_class": "power", "unit_of_measurement": "kW"},
-    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Energy Planner",
         data=config_data(),
         options=options_data(),
         unique_id=DOMAIN,
-        version=3,
+        version=4,
         subentries_data=(
             {
                 "data": {
@@ -1246,9 +1234,7 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
                     CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
                     CONF_PRIORITY: 10,
                     CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
-                    CONF_MAXIMUM_CHARGING_POWER_ENTITY: (
-                        "number.ev_maximum_charging_power"
-                    ),
+                    CONF_MAXIMUM_CHARGING_POWER_KW: 11,
                     CONF_CHARGING_EFFICIENCY: 0.9,
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
@@ -1280,20 +1266,10 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
         await hass.async_block_till_done()
     assert refresh_calls == 1
 
-    hass.states.async_set("number.ev_maximum_charging_power", "12")
-    for _ in range(3):
-        await asyncio.sleep(0)
-        await hass.async_block_till_done()
-    assert refresh_calls == 2
-
-    hass.states.async_set("number.ev_maximum_charging_power", "12")
-    await hass.async_block_till_done()
-    assert refresh_calls == 2
-
     assert await hass.config_entries.async_unload(entry.entry_id)
     hass.states.async_set("sensor.enyaq_charge_kwh", "11")
     await hass.async_block_till_done()
-    assert refresh_calls == 2
+    assert refresh_calls == 1
 
 
 async def test_options_update_changes_loaded_recalculation_interval(
