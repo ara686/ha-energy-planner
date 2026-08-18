@@ -33,6 +33,11 @@ async def async_get_config_entry_diagnostics(
                     "load_type": load.load_type,
                     "priority": load.priority,
                     "requested_energy_entity_id": load.requested_energy_entity_id,
+                    "required_energy_entity_id": load.required_energy_entity_id,
+                    "maximum_charging_power_entity_id": (
+                        load.maximum_charging_power_entity_id
+                    ),
+                    "charging_efficiency": load.charging_efficiency,
                     "top_temperature_entity_id": load.top_temperature_entity_id,
                     "bottom_temperature_entity_id": (load.bottom_temperature_entity_id),
                     "minimum_temperature_c": load.minimum_temperature_c,

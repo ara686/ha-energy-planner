@@ -108,6 +108,28 @@
             "heater_power_kw": "Elektrický príkon ohrevu",
             "thermal_conversion_factor": "Faktor premeny na teplo"
           }
+        },
+        "electric_vehicle": {
+          "title": "Nastaviť nabíjanie elektromobilu",
+          "description": "Požadovaná energia je aktuálny zvyšok na strane batérie auta. Maximálny nabíjací príkon je kladný budúci limit vstupu. Plánovač iba odporúča využitie predpovedaného solárneho prebytku.",
+          "data": {
+            "managed_energy_entity": "Kumulatívny elektromer",
+            "priority": "Priorita",
+            "required_energy_entity": "Zostávajúca energia do batérie",
+            "maximum_charging_power_entity": "Maximálny nabíjací príkon",
+            "charging_efficiency": "Účinnosť nabíjania"
+          }
+        },
+        "reconfigure_electric_vehicle": {
+          "title": "Upraviť nabíjanie elektromobilu",
+          "description": "Upravte požadovanú energiu, budúci limit nabíjacieho príkonu alebo účinnosť nabíjania.",
+          "data": {
+            "managed_energy_entity": "Kumulatívny elektromer",
+            "priority": "Priorita",
+            "required_energy_entity": "Zostávajúca energia do batérie",
+            "maximum_charging_power_entity": "Maximálny nabíjací príkon",
+            "charging_efficiency": "Účinnosť nabíjania"
+          }
         }
       },
       "abort": {"reconfigure_successful": "Riadený odber bol úspešne aktualizovaný."},
@@ -115,6 +137,8 @@
         "invalid_numeric_entity": "Vybraná entita musí mať číselný stav.",
         "energy_sensor_required": "Elektromer musí byť kumulatívny energetický senzor s podporovanou jednotkou energie.",
         "energy_amount_required": "Požadovaná energia musí byť nezáporná entita v kWh.",
+        "power_amount_required": "Maximálny nabíjací príkon musí byť kladná entita v kW.",
+        "charging_efficiency_range": "Účinnosť nabíjania musí byť väčšia než nula a najviac jedna.",
         "entity_already_configured": "Tento elektromer je už nakonfigurovaný.",
         "temperature_entities_distinct": "Horný a dolný teplotný snímač musia byť rozdielne.",
         "temperature_sensor_required": "Vyberte číselný teplotný senzor s podporovanou jednotkou teploty.",
@@ -128,7 +152,8 @@
     "managed_load_type": {
       "options": {
         "generic": "Všeobecný (história alebo požiadavka)",
-        "hot_water": "Teplá úžitková voda"
+        "hot_water": "Teplá úžitková voda",
+        "electric_vehicle": "Elektromobil"
       }
     }
   },
@@ -220,6 +245,7 @@
         "name": "Nevyužitý prebytok spolu"
       },
       "unused_surplus_tomorrow_kwh": {"name": "Nevyužitý prebytok zajtra"},
+      "managed_recommended_today_kwh": {"name": "Odporúčaná riadená energia dnes"},
       "managed_expected_demand_tomorrow_kwh": {"name": "Očakávaná riadená spotreba zajtra"},
       "managed_recommended_tomorrow_kwh": {"name": "Odporúčaná riadená energia zajtra"},
       "unallocated_surplus_tomorrow_kwh": {"name": "Nerozdelený prebytok zajtra"},
@@ -278,6 +304,7 @@
         "name": "Riadená spotreba {source} história"
       },
       "managed_source_suggested_tomorrow": {"name": "Riadená spotreba {source} odporúčanie na zajtra"},
+      "managed_source_suggested_today": {"name": "Riadená spotreba {source} odporúčanie na dnes"},
       "update_interval_minutes": {
         "name": "Interval prepočtu"
       },

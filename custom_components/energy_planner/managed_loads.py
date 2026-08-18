@@ -8,22 +8,27 @@ from homeassistant.config_entries import ConfigEntry
 
 from .const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
+    CONF_CHARGING_EFFICIENCY,
     CONF_HEATER_POWER_KW,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MINIMUM_TEMPERATURE_C,
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
     CONF_TANK_VOLUME_LITERS,
     CONF_THERMAL_CONVERSION_FACTOR,
     CONF_TOP_TEMPERATURE_ENTITY,
+    DEFAULT_EV_CHARGING_EFFICIENCY,
     DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C,
     DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
     DEFAULT_MANAGED_LOAD_PRIORITY,
     DEFAULT_MANAGED_LOAD_TYPE,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
 
@@ -36,6 +41,9 @@ class ManagedLoadConfig:
     load_type: str = DEFAULT_MANAGED_LOAD_TYPE
     priority: int = DEFAULT_MANAGED_LOAD_PRIORITY
     requested_energy_entity_id: str | None = None
+    required_energy_entity_id: str | None = None
+    maximum_charging_power_entity_id: str | None = None
+    charging_efficiency: float = DEFAULT_EV_CHARGING_EFFICIENCY
     top_temperature_entity_id: str | None = None
     bottom_temperature_entity_id: str | None = None
     minimum_temperature_c: float | None = None
@@ -49,6 +57,11 @@ class ManagedLoadConfig:
     def is_hot_water(self) -> bool:
         """Return whether this load uses the hot-water thermal model."""
         return self.load_type == MANAGED_LOAD_TYPE_HOT_WATER
+
+    @property
+    def is_electric_vehicle(self) -> bool:
+        """Return whether this load uses the electric-vehicle model."""
+        return self.load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
 
 
 def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
@@ -64,6 +77,16 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             ),
             requested_energy_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_REQUESTED_ENERGY_ENTITY)
+            ),
+            required_energy_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_REQUIRED_ENERGY_ENTITY)
+            ),
+            maximum_charging_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_MAXIMUM_CHARGING_POWER_ENTITY)
+            ),
+            charging_efficiency=_float_or_default(
+                subentry.data.get(CONF_CHARGING_EFFICIENCY),
+                DEFAULT_EV_CHARGING_EFFICIENCY,
             ),
             top_temperature_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_TOP_TEMPERATURE_ENTITY)

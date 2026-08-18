@@ -24,8 +24,9 @@ Entities**.
 | `sensor.energy_planner_unused_surplus_today` | `unused_surplus_today_kwh` | Standard | `kWh` | Passive forecasted PV surplus for today that cannot be stored in the battery. |
 | `sensor.energy_planner_unused_surplus_total` | `unused_surplus_total_kwh` | Standard | `kWh` | Passive forecasted PV surplus across the configured forecast horizon that cannot be stored in the battery. |
 | `sensor.energy_planner_unused_surplus_tomorrow` | `unused_surplus_tomorrow_kwh` | Standard | `kWh` | Passive surplus for the complete next local calendar day. Unavailable if time-slot or solar coverage is incomplete; coverage percentages are attributes. |
-| `sensor.energy_planner_expected_managed_demand_tomorrow` | `managed_expected_demand_tomorrow_kwh` | Standard | `kWh` | Combined generic historical/requested demand and hot-water minimum need before surplus limiting. |
-| `sensor.energy_planner_recommended_managed_energy_tomorrow` | `managed_recommended_tomorrow_kwh` | Standard | `kWh` | Combined managed-load recommendation after the three allocation phases. Attribute `managed_allocation_by_day` contains compact per-day and per-source values for complete future days. |
+| `sensor.energy_planner_recommended_managed_energy_today` | `managed_recommended_today_kwh` | Standard | `kWh` | Combined EV charger-input recommendation from the next complete planner slot to local midnight. Unavailable if this remaining period lacks complete slot or solar coverage; zero when no slot remains. Attribute `managed_allocation_by_day` is unrecorded and contains compact today and future allocations. |
+| `sensor.energy_planner_expected_managed_demand_tomorrow` | `managed_expected_demand_tomorrow_kwh` | Standard | `kWh` | Combined generic historical/requested demand, hot-water minimum need and EV remainder after today's planned allocation, before tomorrow's surplus limiting. |
+| `sensor.energy_planner_recommended_managed_energy_tomorrow` | `managed_recommended_tomorrow_kwh` | Standard | `kWh` | Combined managed-load recommendation after the four allocation phases. Attribute `managed_allocation_by_day` contains compact per-day and per-source values for today and complete future days. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | `unallocated_surplus_tomorrow_kwh` | Standard | `kWh` | Complete tomorrow surplus left after all managed-load recommendations. |
 | `sensor.energy_planner_first_full_time` | `first_full_time` | Standard | timestamp | First passive forecasted time when the battery reaches full SoC. |
 | `sensor.energy_planner_high_tariff_grid_import_at_target` | `vt_grid_import_kwh_at_target` | Standard | `kWh` | Forecasted high-tariff grid import remaining in the simulation when charging to `target_soc`. |
@@ -33,7 +34,7 @@ Entities**.
 | `sensor.energy_planner_soc_at_planner_start` | `soc_at_planner_start` | Diagnostic | `%` | Predicted SoC at the start of the planning window. |
 | `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | Diagnostic | `%` | Predicted SoC at the start of the lock/protection window. |
 | `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is passive predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and a recorder-safe future `points` array for graph cards. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | `soc_forecast_with_managed` | Standard | `%` | State is passive predicted SoC at the configured horizon with tomorrow's generic demand and actually allocated hot-water slots added to consumption. Attributes include compact graph points, `managed_allocation_by_day` and scheduled-demand details. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | `soc_forecast_with_managed` | Standard | `%` | State is passive predicted SoC at the configured horizon with tomorrow's generic demand and actually allocated hot-water and EV slots added to consumption. Attributes include compact graph points, `managed_allocation_by_day` and scheduled-demand details. |
 | `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Passive predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
@@ -59,7 +60,9 @@ discharge. Plan-specific simulations are exposed separately by
 `generic` loads, it adds tomorrow's full historical or requested demand using
 the historical hourly shape; a load without a usable shape is spread evenly.
 For `hot_water`, it adds only energy actually allocated to surplus slots for
-each complete future day. Its compact `points` include
+each complete future day. For `electric_vehicle`, it adds only actual allocated
+solar slots today and on subsequent complete days while carrying the unmet
+remainder. Its compact `points` include
 `managed_consumption_kwh` where managed demand is scheduled.
 
 ## Managed Source Entities
@@ -72,7 +75,8 @@ typically creates entity IDs like
 
 | Typical entity pattern | Category | Unit/type | Description |
 |------------------------|----------|-----------|-------------|
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Standard | `kWh` | Recommended energy for this load tomorrow. Common attributes include type, priority, state, method, expected demand and reason. Generic loads add history/request details; hot-water loads add thermal-model values. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Standard | `kWh` | Recommended charger electrical input for an `electric_vehicle` today. Unavailable for non-EV loads and when remaining-today solar coverage is incomplete. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Standard | `kWh` | Recommended energy for this load tomorrow. Common attributes include type, priority, state, method, expected demand and reason. Generic loads add history/request details; hot-water loads add thermal-model values; EV loads add request, power, efficiency and shortfalls. |
 | `sensor.energy_planner_managed_<source>_today` | Standard | `kWh` | Energy used by this managed load today. Uses `device_class: energy` and `state_class: total_increasing`. |
 | `sensor.energy_planner_managed_<source>_current_hour` | Standard | `kWh` | Energy used by this managed load in the current hour bucket. Useful for live dashboards and automation conditions. |
 | `sensor.energy_planner_managed_<source>_last_hour` | Standard | `kWh` | Energy used by this managed load in the previous completed hour bucket. Useful for hourly charts and decisions that should not use an incomplete current hour. |
@@ -101,6 +105,15 @@ is `thermal_model` and the attributes include `average_temperature`,
 `minimum_required_kwh`, `flexible_capacity_kwh`, `minimum_shortfall_kwh` and
 `recommended_kwh`. An unavailable temperature sensor makes only this suggested
 entity unavailable; historical per-source sensors remain available.
+
+The suggested-today entity is available only for `electric_vehicle`. Its
+`method` is `ev_request`; attributes include `battery_required_kwh`,
+`electrical_required_kwh`, `electrical_remaining_before_kwh`,
+`electrical_shortfall_kwh`, `battery_shortfall_kwh`, `charging_efficiency`,
+`maximum_charging_power_kw` and `recommended_kwh`. Recommended values are
+charger input, while `battery_*` values are on the vehicle-battery side. Invalid
+EV inputs make only that EV recommendation unavailable and never trigger a
+history fallback.
 
 The multi-day allocation payload is deliberately compact and marked as
 unrecorded together with forecast `points`, so these larger prediction

@@ -25,8 +25,9 @@ from .const import (
     DEFAULT_MANAGED_LOAD_TYPE,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
 )
-from .managed_loads import managed_energy_entity_ids
+from .managed_loads import managed_energy_entity_ids, managed_load_configs
 
 PLATFORMS = ["binary_sensor", "sensor"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -79,6 +80,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = coordinator
     _register_battery_soc_refresh(hass, entry, coordinator)
     _register_energy_source_history(hass, entry, coordinator)
+    _register_managed_model_refresh(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -250,6 +252,64 @@ def _register_energy_source_history(
             hass,
             [entity_id for entity_id, _source_type in tracked_sources],
             _handle_energy_source_change,
+        )
+    )
+
+
+def _register_managed_model_refresh(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: Any,
+) -> None:
+    """Refresh planner data when a managed model input changes."""
+    tracked_entities = {
+        entity_id
+        for load in managed_load_configs(entry)
+        if load.load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
+        for entity_id in (
+            load.required_energy_entity_id,
+            load.maximum_charging_power_entity_id,
+        )
+        if entity_id
+    }
+    if not tracked_entities:
+        return
+
+    async def _request_refresh() -> None:
+        await coordinator.async_request_refresh()
+
+    debouncer = Debouncer(
+        hass,
+        _LOGGER,
+        cooldown=MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS,
+        immediate=False,
+        function=_request_refresh,
+    )
+    entry.async_on_unload(debouncer.async_cancel)
+
+    @callback
+    def _handle_managed_model_change(event) -> None:
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        if (
+            old_state is not None
+            and old_state.state == new_state.state
+            and old_state.attributes == new_state.attributes
+        ):
+            return
+        _LOGGER.debug(
+            "Managed model input %s changed; scheduling Energy Planner refresh",
+            new_state.entity_id,
+        )
+        hass.async_create_task(debouncer.async_call())
+
+    entry.async_on_unload(
+        async_track_state_change_event(
+            hass,
+            sorted(tracked_entities),
+            _handle_managed_model_change,
         )
     )
 

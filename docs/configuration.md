@@ -47,11 +47,11 @@ Every managed-load item first asks for these common fields:
 
 | Field | Key | Required | Description |
 |-------|-----|----------|-------------|
-| Managed load type | `managed_load_type` | Required | `generic` uses history or an explicit request. `hot_water` uses the physical tank model. EV and pool types are intentionally not offered until they have dedicated models. |
+| Managed load type | `managed_load_type` | Required | `generic` uses history or an explicit request. `hot_water` uses the physical tank model. `electric_vehicle` uses a current battery-side request and future charging-power limit. Pool is intentionally not offered until it has a dedicated model. |
 | Priority | `priority` | Required | Positive whole number, default `100`. Lower numbers are allocated first within an allocation phase. Loads with equal priority share shortages proportionally. |
 | Cumulative energy meter | `managed_energy_entity` | Required | A `total` or `total_increasing` energy sensor in a supported energy unit such as `Wh`, `kWh` or `MWh`. Its values are normalized to `kWh`; hourly and daily deltas are used for history. |
 
-The cumulative meter remains required for both types so managed consumption can
+The cumulative meter remains required for all types so managed consumption can
 be removed from the house profile and exposed by the historical sensors.
 
 ### Generic managed load
@@ -91,6 +91,27 @@ average temperature, not to either individual sensor. The model currently does
 not include water draw, standing losses, sensor delay or temperature transfer
 between forecast days. Invalid or unavailable temperature input withholds this
 load's recommendation; it never falls back to history.
+
+### Electric-vehicle managed load
+
+| Field | Key | Required | Description |
+|-------|-----|----------|-------------|
+| Remaining battery energy | `required_energy_entity` | Required | Current non-negative energy still storable in the vehicle battery. `sensor`, `number` and `input_number` entities with units convertible to `kWh` are supported. For example, use `sensor.enyaq_charge_kwh`. |
+| Maximum charging input power | `maximum_charging_power_entity` | Required | Positive future charger-input limit from a `sensor`, `number` or `input_number` entity with units convertible to `kW`. It must not be an instantaneous zero-power reading from an idle charger. |
+| Charging efficiency | `charging_efficiency` | Required | Battery energy divided by charger electrical input, greater than zero and at most `1`; default `0.90`. |
+
+The request is converted to charger-input energy:
+
+```text
+electrical required kWh = battery required kWh / charging efficiency
+```
+
+A zero request is valid. The integration watches both EV input entities and
+requests a debounced recalculation when either state changes. Invalid or
+unavailable EV input withholds only this load's recommendation; an
+`electric_vehicle` load never falls back to history. Energy Planner assumes the
+vehicle can charge in every planned slot and does not model connection state,
+departure time, driving or target-SoC changes.
 
 If you only have a power sensor, for example `sensor.home_power` in `W`, create
 a Home Assistant Integral helper first to convert power to energy in `kWh`, then
@@ -171,20 +192,28 @@ expected demand = active probability × active-day energy
 ```
 
 Allocation runs directly over passive-forecast `unused_surplus_kwh` slots in
-three phases:
+four phases:
 
 1. `hot_water` electrical energy needed to reach the configured minimum.
-2. Historical or explicitly requested `generic` energy.
-3. Flexible `hot_water` capacity from the minimum to the maximum.
+2. `electric_vehicle` charger-input energy.
+3. Historical or explicitly requested `generic` energy.
+4. Flexible `hot_water` capacity from the minimum to the maximum.
 
 Within each phase, lower priorities run first and equal priorities share a
 shortage proportionally. Hot-water allocation is limited by remaining demand,
 remaining surplus and `heater_power_kw × slot duration`. The configured minimum
 is a solar target, not a guarantee; `minimum_shortfall_kwh` reports any unmet
-part.
+part. EV allocation uses the equivalent
+`maximum_charging_power_kw × slot duration` limit and reports electrical and
+battery-side shortfalls.
 
-No recommendation is published for a local day unless both forecast slots and
-solar inputs cover that complete day. For every complete future local day in the
-horizon, the current hot-water deficit is repeated unchanged while that day's
-solar surplus and allocation remain separate. This deliberately simple model
-does not carry simulated tank temperature between days.
+EV is first allocated from the next complete planner boundary through today's
+local midnight. If that whole remaining period is not covered, today's EV
+recommendation is unavailable and the complete request carries to tomorrow; if
+no slot remains, today's recommendation is zero. Tomorrow includes every load
+type. Later complete days repeat the current hot-water deficit, carry only the
+unmet EV remainder and do not repeat generic demand. Each day's solar surplus
+and allocation remains separate. The model neither carries simulated tank
+temperature nor changes the EV input entity; its next state corrects the plan at
+the following recalculation. Only solar surplus is recommended—grid charging is
+not part of managed-load allocation.

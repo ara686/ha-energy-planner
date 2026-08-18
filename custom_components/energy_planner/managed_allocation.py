@@ -7,9 +7,10 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from .allocation import ManagedLoadEstimate
+from .electric_vehicle import ElectricVehicleDemand
 from .hot_water import HotWaterDemand
 
-LoadType = Literal["generic", "hot_water"]
+LoadType = Literal["generic", "hot_water", "electric_vehicle"]
 AllocationState = Literal["ok", "insufficient_data"]
 
 
@@ -41,6 +42,16 @@ class HotWaterAllocationInput:
 
 
 @dataclass(frozen=True)
+class ElectricVehicleAllocationInput:
+    """Electric-vehicle demand participating in managed allocation."""
+
+    source_id: str
+    priority: int
+    maximum_charging_power_kw: float
+    demand: ElectricVehicleDemand
+
+
+@dataclass(frozen=True)
 class UnavailableAllocationInput:
     """Configured managed load whose model inputs are currently unavailable."""
 
@@ -51,7 +62,10 @@ class UnavailableAllocationInput:
 
 
 ManagedAllocationInput = (
-    GenericAllocationInput | HotWaterAllocationInput | UnavailableAllocationInput
+    GenericAllocationInput
+    | HotWaterAllocationInput
+    | ElectricVehicleAllocationInput
+    | UnavailableAllocationInput
 )
 
 
@@ -102,6 +116,13 @@ class ManagedLoadAllocation:
                     **self.details,
                 }
             )
+        elif self.load_type == "electric_vehicle":
+            payload.update(
+                {
+                    key: _round(value) if isinstance(value, int | float) else value
+                    for key, value in self.details.items()
+                }
+            )
         else:
             payload.update(self.details)
         return payload
@@ -109,7 +130,7 @@ class ManagedLoadAllocation:
 
 @dataclass
 class ManagedDayAllocation:
-    """Allocation and hot-water schedule for one local calendar day."""
+    """Allocation and slot schedules for one local calendar day."""
 
     state: AllocationState
     target_date: date
@@ -120,6 +141,8 @@ class ManagedDayAllocation:
     loads: list[ManagedLoadAllocation]
     hot_water_energy_by_slot: dict[datetime, float] = field(default_factory=dict)
     hot_water_scheduled_by_source: dict[str, float] = field(default_factory=dict)
+    electric_vehicle_energy_by_slot: dict[datetime, float] = field(default_factory=dict)
+    electric_vehicle_scheduled_by_source: dict[str, float] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -158,7 +181,7 @@ def allocate_managed_day(
     surplus_slots: list[SurplusSlot],
     loads: list[ManagedAllocationInput],
 ) -> ManagedDayAllocation:
-    """Allocate one complete day's surplus in three ordered phases."""
+    """Allocate one day's surplus in four ordered phases."""
     results = {load.source_id: _initial_result(load) for load in loads}
     expected = sum(item.expected_demand_kwh for item in results.values())
     if not surplus_complete:
@@ -185,8 +208,13 @@ def allocate_managed_day(
     power_used: dict[tuple[str, datetime], float] = {}
     hot_schedule: dict[datetime, float] = {}
     hot_by_source: dict[str, float] = {}
+    ev_schedule: dict[datetime, float] = {}
+    ev_by_source: dict[str, float] = {}
 
     hot_loads = [load for load in loads if isinstance(load, HotWaterAllocationInput)]
+    ev_loads = [
+        load for load in loads if isinstance(load, ElectricVehicleAllocationInput)
+    ]
     generic_loads = [load for load in loads if isinstance(load, GenericAllocationInput)]
     _allocate_phase(
         items=[
@@ -194,8 +222,8 @@ def allocate_managed_day(
                 source_id=load.source_id,
                 priority=load.priority,
                 desired_kwh=load.demand.minimum_required_kwh,
-                heater_power_kw=load.heater_power_kw,
-                is_hot_water=True,
+                maximum_power_kw=load.heater_power_kw,
+                schedule_kind="hot_water",
             )
             for load in hot_loads
         ],
@@ -205,7 +233,29 @@ def allocate_managed_day(
         power_used=power_used,
         hot_schedule=hot_schedule,
         hot_by_source=hot_by_source,
+        ev_schedule=ev_schedule,
+        ev_by_source=ev_by_source,
         minimum_phase=True,
+    )
+    _allocate_phase(
+        items=[
+            _PhaseItem(
+                source_id=load.source_id,
+                priority=load.priority,
+                desired_kwh=load.demand.electrical_remaining_kwh,
+                maximum_power_kw=load.maximum_charging_power_kw,
+                schedule_kind="electric_vehicle",
+            )
+            for load in ev_loads
+        ],
+        interval_minutes=interval_minutes,
+        slot_pool=slot_pool,
+        results=results,
+        power_used=power_used,
+        hot_schedule=hot_schedule,
+        hot_by_source=hot_by_source,
+        ev_schedule=ev_schedule,
+        ev_by_source=ev_by_source,
     )
     _allocate_phase(
         items=[
@@ -222,6 +272,8 @@ def allocate_managed_day(
         power_used=power_used,
         hot_schedule=hot_schedule,
         hot_by_source=hot_by_source,
+        ev_schedule=ev_schedule,
+        ev_by_source=ev_by_source,
     )
     _allocate_phase(
         items=[
@@ -229,8 +281,8 @@ def allocate_managed_day(
                 source_id=load.source_id,
                 priority=load.priority,
                 desired_kwh=load.demand.flexible_capacity_kwh,
-                heater_power_kw=load.heater_power_kw,
-                is_hot_water=True,
+                maximum_power_kw=load.heater_power_kw,
+                schedule_kind="hot_water",
             )
             for load in hot_loads
         ],
@@ -240,6 +292,8 @@ def allocate_managed_day(
         power_used=power_used,
         hot_schedule=hot_schedule,
         hot_by_source=hot_by_source,
+        ev_schedule=ev_schedule,
+        ev_by_source=ev_by_source,
     )
 
     for result in results.values():
@@ -249,6 +303,18 @@ def allocate_managed_day(
             result.minimum_required_kwh - result.minimum_allocated_kwh,
             0.0,
         )
+        if result.load_type == "electric_vehicle":
+            electrical_shortfall = max(
+                result.expected_demand_kwh - result.recommended_kwh,
+                0.0,
+            )
+            efficiency = float(result.details["charging_efficiency"])
+            result.details.update(
+                {
+                    "electrical_shortfall_kwh": electrical_shortfall,
+                    "battery_shortfall_kwh": electrical_shortfall * efficiency,
+                }
+            )
     recommended = sum(result.recommended_kwh or 0.0 for result in results.values())
     unallocated = sum(slot_pool.values())
     usable_loads = [result for result in results.values() if result.state == "ok"]
@@ -271,6 +337,12 @@ def allocate_managed_day(
         hot_water_scheduled_by_source={
             source_id: _round(value) for source_id, value in hot_by_source.items()
         },
+        electric_vehicle_energy_by_slot={
+            start: value for start, value in ev_schedule.items() if value > 0
+        },
+        electric_vehicle_scheduled_by_source={
+            source_id: _round(value) for source_id, value in ev_by_source.items()
+        },
         warnings=warnings,
     )
 
@@ -280,8 +352,8 @@ class _PhaseItem:
     source_id: str
     priority: int
     desired_kwh: float
-    heater_power_kw: float | None = None
-    is_hot_water: bool = False
+    maximum_power_kw: float | None = None
+    schedule_kind: Literal["hot_water", "electric_vehicle"] | None = None
     allocated_kwh: float = 0.0
 
     @property
@@ -298,6 +370,8 @@ def _allocate_phase(
     power_used: dict[tuple[str, datetime], float],
     hot_schedule: dict[datetime, float],
     hot_by_source: dict[str, float],
+    ev_schedule: dict[datetime, float],
+    ev_by_source: dict[str, float],
     minimum_phase: bool = False,
 ) -> None:
     for priority in sorted({item.priority for item in items}):
@@ -314,8 +388,8 @@ def _allocate_phase(
                 if remaining <= 1e-12:
                     continue
                 capacity = remaining
-                if item.heater_power_kw is not None:
-                    slot_limit = max(item.heater_power_kw, 0.0) * interval_minutes / 60
+                if item.maximum_power_kw is not None:
+                    slot_limit = max(item.maximum_power_kw, 0.0) * interval_minutes / 60
                     already_used = power_used.get((item.source_id, slot_start), 0.0)
                     capacity = min(capacity, max(slot_limit - already_used, 0.0))
                 if capacity <= 1e-12:
@@ -334,12 +408,16 @@ def _allocate_phase(
                 result.recommended_kwh = (result.recommended_kwh or 0.0) + value
                 if minimum_phase:
                     result.minimum_allocated_kwh += value
-                if item.is_hot_water:
+                if item.schedule_kind is not None:
                     power_used[(source_id, slot_start)] = (
                         power_used.get((source_id, slot_start), 0.0) + value
                     )
+                if item.schedule_kind == "hot_water":
                     hot_schedule[slot_start] = hot_schedule.get(slot_start, 0.0) + value
                     hot_by_source[source_id] = hot_by_source.get(source_id, 0.0) + value
+                elif item.schedule_kind == "electric_vehicle":
+                    ev_schedule[slot_start] = ev_schedule.get(slot_start, 0.0) + value
+                    ev_by_source[source_id] = ev_by_source.get(source_id, 0.0) + value
                 slot_pool[slot_start] -= value
 
 
@@ -408,6 +486,26 @@ def _initial_result(load: ManagedAllocationInput) -> ManagedLoadAllocation:
             minimum_required_kwh=load.demand.minimum_required_kwh,
             flexible_capacity_kwh=load.demand.flexible_capacity_kwh,
             details=load.demand.as_dict(),
+        )
+    if isinstance(load, ElectricVehicleAllocationInput):
+        demand = load.demand
+        return ManagedLoadAllocation(
+            source_id=load.source_id,
+            load_type="electric_vehicle",
+            priority=load.priority,
+            method="ev_request",
+            expected_demand_kwh=demand.electrical_remaining_kwh,
+            recommended_kwh=0.0,
+            reason="current_ev_request",
+            details={
+                "battery_required_kwh": demand.battery_required_kwh,
+                "electrical_required_kwh": demand.electrical_required_kwh,
+                "electrical_remaining_before_kwh": (demand.electrical_remaining_kwh),
+                "charging_efficiency": demand.charging_efficiency,
+                "maximum_charging_power_kw": load.maximum_charging_power_kw,
+                "electrical_shortfall_kwh": demand.electrical_remaining_kwh,
+                "battery_shortfall_kwh": demand.battery_remaining_kwh,
+            },
         )
     return ManagedLoadAllocation(
         source_id=load.source_id,

@@ -14,6 +14,7 @@ from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
+    CONF_CHARGING_EFFICIENCY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -25,6 +26,7 @@ from custom_components.energy_planner.const import (
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
@@ -35,6 +37,7 @@ from custom_components.energy_planner.const import (
     CONF_NT_WINDOWS_ENABLED,
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
@@ -102,6 +105,13 @@ HOT_WATER_MANAGED_LOAD_FIELD_KEYS = {
     CONF_HEATER_POWER_KW,
     CONF_THERMAL_CONVERSION_FACTOR,
 }
+ELECTRIC_VEHICLE_MANAGED_LOAD_FIELD_KEYS = {
+    CONF_MANAGED_ENERGY_ENTITY,
+    CONF_PRIORITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
+    CONF_CHARGING_EFFICIENCY,
+}
 
 
 def _load_translation(language: str) -> dict[str, Any]:
@@ -134,6 +144,7 @@ def test_config_and_options_fields_have_human_readable_labels() -> None:
         | MANAGED_LOAD_TYPE_FIELD_KEYS
         | GENERIC_MANAGED_LOAD_FIELD_KEYS
         | HOT_WATER_MANAGED_LOAD_FIELD_KEYS
+        | ELECTRIC_VEHICLE_MANAGED_LOAD_FIELD_KEYS
     )
 
     for language in SUPPORTED_LANGUAGES:
@@ -152,6 +163,12 @@ def test_config_and_options_fields_have_human_readable_labels() -> None:
         labels |= {
             translations[f"config_subentries.managed_load.step.hot_water.data.{key}"]
             for key in HOT_WATER_MANAGED_LOAD_FIELD_KEYS
+        }
+        labels |= {
+            translations[
+                f"config_subentries.managed_load.step.electric_vehicle.data.{key}"
+            ]
+            for key in ELECTRIC_VEHICLE_MANAGED_LOAD_FIELD_KEYS
         }
 
         assert labels.isdisjoint(raw_keys)
@@ -224,6 +241,13 @@ async def test_home_assistant_loads_managed_load_subentry_translations(hass) -> 
             translations[
                 f"component.{DOMAIN}.config_subentries.managed_load.step.generic.data."
                 f"{CONF_MANAGED_ENERGY_ENTITY}"
+            ]
+            == expected_label
+        )
+        assert (
+            translations[
+                f"component.{DOMAIN}.config_subentries.managed_load.step."
+                f"electric_vehicle.data.{CONF_MANAGED_ENERGY_ENTITY}"
             ]
             == expected_label
         )

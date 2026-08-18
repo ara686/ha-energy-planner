@@ -3,7 +3,7 @@ from __future__ import annotations
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower, UnitOfTemperature
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -22,6 +22,7 @@ from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
+    CONF_CHARGING_EFFICIENCY,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -34,6 +35,7 @@ from custom_components.energy_planner.const import (
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
+    CONF_MAXIMUM_CHARGING_POWER_ENTITY,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
@@ -45,6 +47,7 @@ from custom_components.energy_planner.const import (
     CONF_NT_WINDOWS_ENABLED,
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
+    CONF_REQUIRED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
@@ -55,6 +58,7 @@ from custom_components.energy_planner.const import (
     DEFAULT_NAME,
     DOMAIN,
     MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_GENERIC,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
@@ -571,6 +575,153 @@ async def test_managed_load_subentry_flow_accepts_hot_water_model(hass):
     }
 
 
+async def test_managed_load_subentry_flow_accepts_electric_vehicle_model(hass):
+    set_source_states(hass)
+    _set_ev_input_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, version=3)
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await _select_managed_type(
+        hass,
+        result,
+        load_type=MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input=_electric_vehicle_input(priority=5),
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        **_electric_vehicle_input(priority=5),
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+    }
+
+
+async def test_generic_and_ev_reconfigure_prefills_counterpart_and_cleans_fields(hass):
+    set_source_states(hass)
+    _set_ev_input_states(hass)
+    hass.states.async_set(
+        "input_number.ev_requested_energy",
+        "7",
+        {"unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        unique_id=DOMAIN,
+        version=3,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+                    CONF_PRIORITY: 100,
+                    CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+    subentry = next(iter(entry.subentries.values()))
+
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry.subentry_id)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE},
+    )
+    assert result["step_id"] == "reconfigure_electric_vehicle"
+    assert _suggested_values(result["data_schema"])[CONF_REQUIRED_ENERGY_ENTITY] == (
+        "input_number.ev_requested_energy"
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            **_electric_vehicle_input(),
+            CONF_REQUIRED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert (
+        CONF_REQUESTED_ENERGY_ENTITY not in entry.subentries[subentry.subentry_id].data
+    )
+
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry.subentry_id)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC},
+    )
+    assert _suggested_values(result["data_schema"])[CONF_REQUESTED_ENERGY_ENTITY] == (
+        "input_number.ev_requested_energy"
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_PRIORITY: 100,
+            CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    updated = entry.subentries[subentry.subentry_id].data
+    assert CONF_MAXIMUM_CHARGING_POWER_ENTITY not in updated
+    assert CONF_CHARGING_EFFICIENCY not in updated
+
+
+def test_electric_vehicle_validation_checks_units_values_and_efficiency(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.enyaq_charge_kwh",
+        "-1",
+        {"device_class": "energy", "unit_of_measurement": "A"},
+    )
+    hass.states.async_set(
+        "number.ev_maximum_charging_power",
+        "0",
+        {"device_class": "power", "unit_of_measurement": UnitOfPower.WATT},
+    )
+    user_input = {
+        **_electric_vehicle_input(),
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+        CONF_CHARGING_EFFICIENCY: 0,
+    }
+
+    errors = _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=3),
+        user_input,
+    )
+
+    assert errors[CONF_REQUIRED_ENERGY_ENTITY] == "energy_amount_required"
+    assert errors[CONF_MAXIMUM_CHARGING_POWER_ENTITY] == "power_amount_required"
+    assert errors[CONF_CHARGING_EFFICIENCY] == "charging_efficiency_range"
+
+    hass.states.async_set(
+        "sensor.enyaq_charge_kwh",
+        "inf",
+        {"device_class": "energy", "unit_of_measurement": "kWh"},
+    )
+    hass.states.async_set(
+        "number.ev_maximum_charging_power",
+        "nan",
+        {"device_class": "power", "unit_of_measurement": "kW"},
+    )
+    errors = _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=3),
+        user_input,
+    )
+    assert errors[CONF_REQUIRED_ENERGY_ENTITY] == "invalid_numeric_entity"
+    assert errors[CONF_MAXIMUM_CHARGING_POWER_ENTITY] == "invalid_numeric_entity"
+
+
 async def test_hot_water_flow_rejects_duplicate_temperature_and_invalid_range(hass):
     set_source_states(hass)
     _set_hot_water_temperature_states(hass)
@@ -945,6 +1096,26 @@ def test_hot_water_schema_filters_temperature_entities():
     )
 
 
+def test_electric_vehicle_schema_filters_energy_and_power_entities():
+    fields = {
+        marker.schema: value
+        for marker, value in _managed_load_details_schema(
+            MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
+        ).schema.items()
+    }
+
+    required_filter = _plain_filter(
+        fields[CONF_REQUIRED_ENERGY_ENTITY].config["filter"]
+    )
+    power_filter = _plain_filter(
+        fields[CONF_MAXIMUM_CHARGING_POWER_ENTITY].config["filter"]
+    )
+    assert {"domain": ["input_number"]} in required_filter
+    assert {"domain": ["sensor"], "device_class": ["energy"]} in required_filter
+    assert {"domain": ["input_number"]} in power_filter
+    assert {"domain": ["sensor"], "device_class": ["power"]} in power_filter
+
+
 def _set_hot_water_temperature_states(hass) -> None:
     attributes = {
         "device_class": "temperature",
@@ -966,6 +1137,36 @@ def _hot_water_input(*, priority: int = 100) -> dict:
         CONF_TANK_VOLUME_LITERS: 200.0,
         CONF_HEATER_POWER_KW: 2.0,
         CONF_THERMAL_CONVERSION_FACTOR: 1.0,
+    }
+
+
+def _set_ev_input_states(hass) -> None:
+    hass.states.async_set(
+        "sensor.enyaq_charge_kwh",
+        "18000",
+        {
+            "device_class": "energy_storage",
+            "state_class": "measurement",
+            "unit_of_measurement": UnitOfEnergy.WATT_HOUR,
+        },
+    )
+    hass.states.async_set(
+        "number.ev_maximum_charging_power",
+        "11000",
+        {
+            "device_class": "power",
+            "unit_of_measurement": UnitOfPower.WATT,
+        },
+    )
+
+
+def _electric_vehicle_input(*, priority: int = 100) -> dict:
+    return {
+        CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+        CONF_PRIORITY: priority,
+        CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+        CONF_MAXIMUM_CHARGING_POWER_ENTITY: "number.ev_maximum_charging_power",
+        CONF_CHARGING_EFFICIENCY: 0.9,
     }
 
 

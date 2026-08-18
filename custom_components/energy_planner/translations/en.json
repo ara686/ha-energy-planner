@@ -108,6 +108,28 @@
             "heater_power_kw": "Heater input power",
             "thermal_conversion_factor": "Thermal conversion factor"
           }
+        },
+        "electric_vehicle": {
+          "title": "Configure electric vehicle charging",
+          "description": "Required energy is the current battery-side remainder. Maximum charging power is a positive future input limit. The planner only recommends forecast solar surplus.",
+          "data": {
+            "managed_energy_entity": "Cumulative energy meter",
+            "priority": "Priority",
+            "required_energy_entity": "Remaining battery energy",
+            "maximum_charging_power_entity": "Maximum charging input power",
+            "charging_efficiency": "Charging efficiency"
+          }
+        },
+        "reconfigure_electric_vehicle": {
+          "title": "Edit electric vehicle charging",
+          "description": "Update the energy request, future charging-power limit or charging efficiency.",
+          "data": {
+            "managed_energy_entity": "Cumulative energy meter",
+            "priority": "Priority",
+            "required_energy_entity": "Remaining battery energy",
+            "maximum_charging_power_entity": "Maximum charging input power",
+            "charging_efficiency": "Charging efficiency"
+          }
         }
       },
       "abort": {"reconfigure_successful": "Managed load updated successfully."},
@@ -115,6 +137,8 @@
         "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
         "energy_sensor_required": "The energy meter must be a cumulative energy sensor with a supported energy unit.",
         "energy_amount_required": "Requested energy must be a non-negative entity in kWh.",
+        "power_amount_required": "Maximum charging power must be a positive entity in kW.",
+        "charging_efficiency_range": "Charging efficiency must be greater than zero and at most one.",
         "entity_already_configured": "This energy meter is already configured.",
         "temperature_entities_distinct": "Top and bottom temperature sensors must be different.",
         "temperature_sensor_required": "Select a numeric temperature sensor with a supported temperature unit.",
@@ -128,7 +152,8 @@
     "managed_load_type": {
       "options": {
         "generic": "Generic (history or request)",
-        "hot_water": "Hot water"
+        "hot_water": "Hot water",
+        "electric_vehicle": "Electric vehicle"
       }
     }
   },
@@ -220,6 +245,7 @@
         "name": "Unused surplus total"
       },
       "unused_surplus_tomorrow_kwh": {"name": "Unused surplus tomorrow"},
+      "managed_recommended_today_kwh": {"name": "Recommended managed energy today"},
       "managed_expected_demand_tomorrow_kwh": {"name": "Expected managed demand tomorrow"},
       "managed_recommended_tomorrow_kwh": {"name": "Recommended managed energy tomorrow"},
       "unallocated_surplus_tomorrow_kwh": {"name": "Unallocated surplus tomorrow"},
@@ -278,6 +304,7 @@
         "name": "Managed {source} history"
       },
       "managed_source_suggested_tomorrow": {"name": "Managed {source} suggested tomorrow"},
+      "managed_source_suggested_today": {"name": "Managed {source} suggested today"},
       "update_interval_minutes": {
         "name": "Recalculation interval"
       },

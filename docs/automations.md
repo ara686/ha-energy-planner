@@ -91,6 +91,31 @@ actions:
       entity_id: switch.your_water_heater
 ```
 
+## Enable EV Charging From Today's Recommendation
+
+For an `electric_vehicle` managed load, the suggested-today sensor represents
+charger-input energy allocated from forecast solar surplus in the remaining
+complete slots today. The planner does not switch or throttle the charger; this
+example only enables it when the recommendation is positive.
+
+```yaml
+alias: Energy Planner - enable EV for today's solar recommendation
+mode: restart
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.energy_planner_managed_ev_charging_energy_suggested_today
+    above: 0.5
+actions:
+  - action: switch.turn_on
+    target:
+      entity_id: switch.your_ev_charger_enable
+```
+
+The entity is unavailable if the EV request, maximum-power input or remaining
+solar coverage is invalid. Its value is an energy budget, not an instantaneous
+power setpoint. Add your own stop logic, connection checks and safety conditions
+for the charger.
+
 ## Prioritize Water Heating Before EV Charging
 
 This example allows EV charging from PV surplus only after the water heater has
