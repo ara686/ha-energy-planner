@@ -44,6 +44,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import EnergyPlannerCoordinator
+from .ev_plan import EV_CHARGING_MODES
 from .managed_loads import managed_load_configs
 from .models import PlannerResult
 from .options import merged_options, serialize_window, serialize_windows
@@ -65,6 +66,8 @@ class EnergyPlannerSensorDescription(SensorEntityDescription):
 class ManagedSourceSensorDescription(SensorEntityDescription):
     value_key: str = ""
     allocation_key: str | None = None
+    ev_plan_value_key: str | None = None
+    include_ev_plan_attributes: bool = False
     entity_registry_enabled_default: bool = True
 
 
@@ -741,6 +744,33 @@ MANAGED_SOURCE_SENSOR_DESCRIPTIONS: tuple[ManagedSourceSensorDescription, ...] =
     ),
 )
 
+EV_PLAN_SENSOR_DESCRIPTIONS: tuple[ManagedSourceSensorDescription, ...] = (
+    ManagedSourceSensorDescription(
+        key="charging_mode",
+        ev_plan_value_key="mode",
+        translation_key="managed_source_charging_mode",
+        icon="mdi:ev-station",
+        device_class=SensorDeviceClass.ENUM,
+    ),
+    ManagedSourceSensorDescription(
+        key="next_departure",
+        ev_plan_value_key="departure",
+        translation_key="managed_source_next_departure",
+        icon="mdi:car-clock",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+    ManagedSourceSensorDescription(
+        key="planned_until_departure",
+        ev_plan_value_key="planned_kwh",
+        include_ev_plan_attributes=True,
+        translation_key="managed_source_planned_until_departure",
+        icon="mdi:car-electric",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        suggested_display_precision=1,
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -756,6 +786,9 @@ async def async_setup_entry(
     async_add_entities(entities)
     for load in managed_load_configs(entry):
         source_name = _source_display_name(hass, load.source_entity_id)
+        descriptions = list(MANAGED_SOURCE_SENSOR_DESCRIPTIONS)
+        if load.is_electric_vehicle:
+            descriptions.extend(EV_PLAN_SENSOR_DESCRIPTIONS)
         source_entities = [
             EnergyPlannerManagedSourceSensor(
                 coordinator,
@@ -765,7 +798,7 @@ async def async_setup_entry(
                 subentry_id=load.subentry_id,
                 description=description,
             )
-            for description in MANAGED_SOURCE_SENSOR_DESCRIPTIONS
+            for description in descriptions
         ]
         async_add_entities(
             source_entities,
@@ -836,7 +869,9 @@ class EnergyPlannerManagedSourceSensor(
     """Energy Planner per-managed-source history sensor."""
 
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"managed_allocation_by_day", "points"})
+    _unrecorded_attributes = frozenset(
+        {"managed_allocation_by_day", "points", "timeline"}
+    )
 
     def __init__(
         self,
@@ -863,6 +898,8 @@ class EnergyPlannerManagedSourceSensor(
             description.entity_registry_enabled_default
         )
         self._attr_translation_placeholders = {"source": source_name}
+        if description.key == "charging_mode":
+            self._attr_options = list(EV_CHARGING_MODES)
         load_identifier = subentry_id or slugify(source_entity_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry.entry_id}_managed_load_{load_identifier}")},
@@ -875,6 +912,11 @@ class EnergyPlannerManagedSourceSensor(
         result = self.coordinator.data
         if result is None:
             return False
+        if self.entity_description.ev_plan_value_key is not None:
+            plan = _ev_charging_plan(result, self._source_entity_id)
+            if self.entity_description.key == "charging_mode":
+                return isinstance(plan.get("mode"), str)
+            return plan.get(self.entity_description.ev_plan_value_key) is not None
         allocation_key = self.entity_description.allocation_key
         if allocation_key is None:
             return True
@@ -888,7 +930,7 @@ class EnergyPlannerManagedSourceSensor(
         )
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> Any:
         if self.entity_description.key == "tracked_total":
             return round(
                 self.coordinator.history.managed_source_tracked_total_kwh(
@@ -899,6 +941,15 @@ class EnergyPlannerManagedSourceSensor(
         result = self.coordinator.data
         if result is None:
             return None
+        if self.entity_description.ev_plan_value_key is not None:
+            value = _ev_charging_plan(result, self._source_entity_id).get(
+                self.entity_description.ev_plan_value_key
+            )
+            if self.entity_description.device_class == SensorDeviceClass.TIMESTAMP:
+                return _datetime_value(value)
+            if isinstance(value, float):
+                return round(value, 6)
+            return value
         if self.entity_description.allocation_key is not None:
             value = _managed_source_allocation(
                 result,
@@ -920,6 +971,16 @@ class EnergyPlannerManagedSourceSensor(
         }
         result = self.coordinator.data
         if result is None:
+            return attributes
+
+        if self.entity_description.ev_plan_value_key is not None:
+            plan = _ev_charging_plan(result, self._source_entity_id)
+            if self.entity_description.include_ev_plan_attributes:
+                attributes.update(plan)
+            else:
+                for key in ("reason", "next_action_start", "next_action_end"):
+                    if key in plan:
+                        attributes[key] = plan[key]
             return attributes
 
         if self.entity_description.allocation_key is not None:
@@ -950,6 +1011,18 @@ class EnergyPlannerManagedSourceSensor(
             ]
             attributes["points_compacted"] = True
         return attributes
+
+
+def _ev_charging_plan(
+    result: PlannerResult,
+    source_entity_id: str,
+) -> dict[str, Any]:
+    """Return one EV plan from the coordinator payload."""
+    plans = result.plan.get("ev_charging_plans")
+    if not isinstance(plans, dict):
+        return {}
+    plan = plans.get(source_entity_id)
+    return plan if isinstance(plan, dict) else {}
 
 
 def _datetime_value(value: Any) -> datetime | None:

@@ -12,6 +12,13 @@ from custom_components.energy_planner.const import (
     CONF_BATTERY_SOC_ENTITY,
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_STRATEGY,
+    CONF_EV_CONNECTED_ENTITY,
+    CONF_EV_DEPARTURE_TIME,
+    CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_PRESENCE_ENTITY,
+    CONF_EV_RETURN_TIME,
+    CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_HEATER_POWER_KW,
     CONF_HISTORY_CORRECTION_PERCENT,
@@ -37,6 +44,7 @@ from custom_components.energy_planner.const import (
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    EV_CHARGING_STRATEGY_DEADLINE_AWARE,
     MANAGED_LOAD_SUBENTRY,
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_GENERIC,
@@ -44,6 +52,7 @@ from custom_components.energy_planner.const import (
 )
 from custom_components.energy_planner.coordinator import (
     EnergyPlannerCoordinator,
+    _add_ev_charging_plans,
     _add_managed_soc_forecast,
     _add_surplus_allocation,
     _async_planner_history_from_ha,
@@ -1082,6 +1091,84 @@ def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
         1,
         1,
     ]
+
+
+def test_deadline_aware_ev_payload_uses_live_state_and_grid_permission(hass):
+    now = datetime(2026, 8, 17, 3, tzinfo=UTC)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        version=5,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                    CONF_PRIORITY: 10,
+                    CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+                    CONF_MAXIMUM_CHARGING_POWER_KW: 3,
+                    CONF_CHARGING_EFFICIENCY: 1,
+                    CONF_EV_CHARGING_STRATEGY: (EV_CHARGING_STRATEGY_DEADLINE_AWARE),
+                    CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
+                    CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
+                    CONF_EV_GRID_OUTSIDE_NT_ENTITY: (
+                        "input_boolean.ev_grid_outside_nt"
+                    ),
+                    CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
+                    CONF_EV_DEPARTURE_TIME: "07:00:00",
+                    CONF_EV_RETURN_TIME: "17:00:00",
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    _set_electric_vehicle_inputs(hass, battery_required="6")
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "off")
+    hass.states.async_set("input_boolean.ev_grid_outside_nt", "on")
+    points = [
+        {
+            "timestamp": (now + timedelta(hours=index)).isoformat(),
+            "battery_kwh": 6,
+            "unused_surplus_kwh": 0,
+            "solar_coverage": 1,
+            "is_nt": index == 0,
+        }
+        for index in range(14)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={"safe_discharge_soc": 30, "soc_forecast": {"points": points}},
+    )
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=30,
+        battery_capacity_kwh=20,
+        battery_min_soc=20,
+        slots=[],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        interval_minutes=60,
+    )
+
+    _add_ev_charging_plans(
+        hass,
+        entry,
+        planner_input=planner_input,
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    plan = result.plan["ev_charging_plans"]["sensor.ev_energy_total"]
+    assert plan["mode"] == "connect_vehicle"
+    assert plan["grid_low_tariff_kwh"] == 3
+    assert plan["grid_high_tariff_kwh"] == 3
+    assert plan["shortfall_kwh"] == 0
+    assert plan["departure"] == "2026-08-17T07:00:00+00:00"
 
 
 def _electric_vehicle_entry(

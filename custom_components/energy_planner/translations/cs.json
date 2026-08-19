@@ -111,24 +111,38 @@
         },
         "electric_vehicle": {
           "title": "Nastavit nabíjení elektromobilu",
-          "description": "Požadovaná energie je aktuální zbytek na straně baterie auta. Maximální výkon nabíječky je pevný technický limit v kW; dostupný solární přebytek omezuje každý slot samostatně.",
+          "description": "Zvolte zpětně kompatibilní plán pouze ze soláru nebo poradní plán podle odjezdu. Planner Wallbox přímo neovládá.",
           "data": {
             "managed_energy_entity": "Kumulativní elektroměr",
             "priority": "Priorita",
             "required_energy_entity": "Zbývající energie do baterie",
             "maximum_charging_power_kw": "Maximální výkon nabíječky",
-            "charging_efficiency": "Účinnost nabíjení"
+            "charging_efficiency": "Účinnost nabíjení",
+            "ev_charging_strategy": "Strategie nabíjení",
+            "ev_presence_entity": "Poloha vozidla",
+            "ev_connected_entity": "Připojení nabíjecího kabelu",
+            "ev_grid_outside_nt_entity": "Povolit GRID mimo nízký tarif",
+            "ev_workdays": "Pracovní dny",
+            "ev_departure_time": "Čas odjezdu",
+            "ev_return_time": "Čas návratu"
           }
         },
         "reconfigure_electric_vehicle": {
           "title": "Upravit nabíjení elektromobilu",
-          "description": "Upravte požadovanou energii, pevný limit výkonu nabíječky nebo účinnost nabíjení.",
+          "description": "Upravte požadovanou energii, limity nabíjení, plán dostupnosti a poradní strategii.",
           "data": {
             "managed_energy_entity": "Kumulativní elektroměr",
             "priority": "Priorita",
             "required_energy_entity": "Zbývající energie do baterie",
             "maximum_charging_power_kw": "Maximální výkon nabíječky",
-            "charging_efficiency": "Účinnost nabíjení"
+            "charging_efficiency": "Účinnost nabíjení",
+            "ev_charging_strategy": "Strategie nabíjení",
+            "ev_presence_entity": "Poloha vozidla",
+            "ev_connected_entity": "Připojení nabíjecího kabelu",
+            "ev_grid_outside_nt_entity": "Povolit GRID mimo nízký tarif",
+            "ev_workdays": "Pracovní dny",
+            "ev_departure_time": "Čas odjezdu",
+            "ev_return_time": "Čas návratu"
           }
         }
       },
@@ -144,7 +158,10 @@
         "temperature_sensor_required": "Vyberte číselný teplotní senzor s podporovanou jednotkou teploty.",
         "temperature_range": "Minimální teplota musí být nižší než maximální teplota.",
         "priority_invalid": "Priorita musí být celé číslo alespoň 1.",
-        "value_positive": "Objem nádrže, příkon ohřevu a faktor přeměny musí být větší než nula."
+        "value_positive": "Objem nádrže, příkon ohřevu a faktor přeměny musí být větší než nula.",
+        "entity_required": "Vyberte dostupnou entitu požadovaného typu.",
+        "workdays_required": "Vyberte alespoň jeden platný pracovní den.",
+        "times_distinct": "Čas odjezdu a návratu musí být odlišný."
       }
     }
   },
@@ -154,6 +171,18 @@
         "generic": "Obecný (historie nebo požadavek)",
         "hot_water": "Teplá užitková voda",
         "electric_vehicle": "Elektromobil"
+      }
+    },
+    "ev_charging_strategy": {
+      "options": {
+        "solar_only": "Pouze solár (kompatibilní)",
+        "deadline_aware": "Podle času odjezdu"
+      }
+    },
+    "ev_workday": {
+      "options": {
+        "0": "Pondělí", "1": "Úterý", "2": "Středa", "3": "Čtvrtek",
+        "4": "Pátek", "5": "Sobota", "6": "Neděle"
       }
     }
   },
@@ -305,6 +334,9 @@
       },
       "managed_source_suggested_tomorrow": {"name": "Řízená spotřeba {source} doporučení na zítřek"},
       "managed_source_suggested_today": {"name": "Řízená spotřeba {source} doporučení na dnešek"},
+      "managed_source_charging_mode": {"name": "Řízená spotřeba {source} režim nabíjení"},
+      "managed_source_next_departure": {"name": "Řízená spotřeba {source} příští odjezd"},
+      "managed_source_planned_until_departure": {"name": "Řízená spotřeba {source} plán do odjezdu"},
       "update_interval_minutes": {
         "name": "Interval přepočtu"
       },

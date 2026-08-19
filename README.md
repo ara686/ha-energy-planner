@@ -33,6 +33,8 @@ and binary sensors that you can use in dashboards or in your own automations.
   loads. Generic loads use recent usage or a requested-energy entity; hot-water
   tanks use their current temperatures and physical parameters; electric
   vehicles use a current battery-energy request and charging-power limit.
+- Build an optional deadline-aware EV plan from vehicle availability, departure
+  time, PV surplus, safe home-battery energy and low/high tariff GRID slots.
 - Keep managed loads out of the normal house consumption profile, so the planner
   learns the base household load more realistically.
 - Track managed loads separately, so you can see how much energy went into EV
@@ -88,6 +90,9 @@ Optional:
   `electric_vehicle` load needs the remaining battery-side energy and a fixed
   maximum charger power in `kW`; `sensor.enyaq_charge_kwh` is a typical
   template-sensor input for the energy request.
+- A deadline-aware EV additionally needs a `device_tracker`, a cable-connected
+  `binary_sensor`, workdays with departure/return times and an `input_boolean`
+  that explicitly permits GRID charging outside low tariff.
 - Solcast PV forecast entities for today, tomorrow and additional days.
 
 If your home consumption is only available as a power sensor, for example
@@ -141,6 +146,9 @@ Most useful entities:
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Complete tomorrow surplus remaining after all recommendations. |
 | `sensor.energy_planner_managed_<source>_suggested_today` | Charger-input energy recommended today for an `electric_vehicle` load. It is unavailable for other load types. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Generic attributes describe the history/request; hot-water attributes include average temperature, minimum need, flexible capacity and minimum shortfall; EV attributes include battery/electrical demand and shortfall. |
+| `sensor.energy_planner_managed_<source>_charging_mode` | Current advisory EV action such as `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` or `complete`. |
+| `sensor.energy_planner_managed_<source>_next_departure` | Next configured local departure used as the EV deadline. |
+| `sensor.energy_planner_managed_<source>_planned_until_departure` | Charger-input energy planned before departure. Attributes contain the source split, shortfall, reason, next action, solar-if-home result and compact timeline. |
 | `sensor.energy_planner_managed_<source>_today` | Energy used today by one managed load, for example EV charging or water heating. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Energy Planner's tracked total for one managed load. |
 
@@ -176,6 +184,9 @@ for automations:
   next-day automation; Energy Planner still does not switch the device itself.
 - Use an EV load's `managed_<source>_suggested_today` as a solar-only charging
   budget for the remaining complete planner slots today.
+- Map a deadline-aware EV's `managed_<source>_charging_mode` to your existing
+  Wallbox mode automation. Keep phase, current and overload protection in the
+  Wallbox's own safety logic.
 - Use per-load managed sensors to prioritize loads, for example heat water
   before allowing EV charging.
 
@@ -191,7 +202,7 @@ included in plan-specific simulations.
 ## Manual Recalculation
 
 Energy Planner recalculates automatically. It also reacts to battery SoC and EV
-energy-request changes.
+energy-request, location, cable and GRID-permission changes.
 
 You can force a recalculation from **Developer Tools > Services**:
 
@@ -211,7 +222,8 @@ energy_planner.recalculate
   `hot_water` load.
 - An unavailable EV energy request or an invalid maximum charger power
   withholds only that vehicle's recommendation. An `electric_vehicle` load
-  never falls back to consumption history and never plans grid charging.
+  never falls back to consumption history. `solar_only` never plans grid
+  charging; `deadline_aware` reports GRID only as an advisory decision.
 - If forecast graphs are empty, check that
   `sensor.energy_planner_soc_forecast` has a `points` attribute in
   **Developer Tools > States**.

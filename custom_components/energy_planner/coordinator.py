@@ -60,10 +60,16 @@ from .const import (
     DEFAULT_SUN_START_REQUIRED_MINUTES,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    EV_CHARGING_STRATEGY_DEADLINE_AWARE,
 )
 from .electric_vehicle import (
     ElectricVehicleInput,
     calculate_electric_vehicle_demand,
+)
+from .ev_plan import (
+    EVChargingPlanInput,
+    EVChargingSlot,
+    calculate_ev_charging_plans,
 )
 from .ha_history import (
     async_get_recorder_energy_history,
@@ -267,6 +273,14 @@ def build_planner_result(
         allocations=allocations,
         result=result,
     )
+    _add_ev_charging_plans(
+        hass,
+        entry,
+        planner_input=planner_input,
+        now=now,
+        result=result,
+        warnings=warnings,
+    )
     result.forecast["history_status"] = history_status
     result.forecast["consumption_history"] = consumption_history
     result.forecast["managed_source_history"] = managed_source_history
@@ -276,6 +290,152 @@ def build_planner_result(
         if result.state == "ok":
             result.state = "warning"
     return result
+
+
+def _add_ev_charging_plans(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    planner_input: PlannerInput,
+    now: datetime,
+    result: PlannerResult,
+    warnings: list[str],
+) -> None:
+    """Add advisory deadline-aware EV decisions without controlling devices."""
+    vehicles: list[EVChargingPlanInput] = []
+    unavailable: dict[str, dict[str, object]] = {}
+    for load in managed_load_configs(entry):
+        if (
+            not load.is_electric_vehicle
+            or load.ev_charging_strategy != EV_CHARGING_STRATEGY_DEADLINE_AWARE
+        ):
+            continue
+        allocation_input = _electric_vehicle_allocation_input(hass, load, warnings)
+        if not isinstance(allocation_input, ElectricVehicleAllocationInput):
+            unavailable[load.source_entity_id] = _unavailable_ev_plan_payload(
+                load.source_entity_id,
+                "invalid_required_energy_source",
+            )
+            continue
+
+        presence = hass.states.get(load.ev_presence_entity_id or "")
+        connected = hass.states.get(load.ev_connected_entity_id or "")
+        connected_value = _binary_state_value(connected)
+        presence_value = _presence_state_value(presence)
+        if connected_value is True:
+            presence_value = True
+        allow_grid_state = hass.states.get(load.ev_grid_outside_nt_entity_id or "")
+        vehicles.append(
+            EVChargingPlanInput(
+                source_id=load.source_entity_id,
+                priority=load.priority,
+                required_input_kwh=(allocation_input.demand.electrical_remaining_kwh),
+                maximum_charging_power_kw=load.maximum_charging_power_kw or 0.0,
+                workdays=load.ev_workdays,
+                departure_time=load.ev_departure_time,
+                return_time=load.ev_return_time,
+                currently_home=presence_value,
+                connected=connected_value,
+                allow_high_tariff_grid=_binary_state_value(allow_grid_state) is True,
+            )
+        )
+
+    forecast = result.plan.get("soc_forecast")
+    raw_points = forecast.get("points") if isinstance(forecast, dict) else None
+    slots = _ev_charging_slots(raw_points)
+    safe_discharge_soc = result.plan.get("safe_discharge_soc")
+    plans = calculate_ev_charging_plans(
+        vehicles,
+        now=now,
+        slots=slots,
+        interval_minutes=planner_input.interval_minutes,
+        battery_capacity_kwh=planner_input.battery_capacity_kwh,
+        safe_discharge_soc=(
+            float(safe_discharge_soc)
+            if isinstance(safe_discharge_soc, int | float)
+            else planner_input.battery_min_soc
+        ),
+    )
+    result.plan["ev_charging_plans"] = {
+        **unavailable,
+        **{source_id: plan.as_dict() for source_id, plan in plans.items()},
+    }
+
+
+def _ev_charging_slots(points: object) -> list[EVChargingSlot]:
+    """Convert the public SoC forecast to the pure EV planner input."""
+    if not isinstance(points, list):
+        return []
+    slots: list[EVChargingSlot] = []
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        start = _datetime_from_value(point.get("timestamp"))
+        battery_kwh = point.get("battery_kwh")
+        surplus_kwh = point.get("unused_surplus_kwh")
+        solar_coverage = point.get("solar_coverage")
+        if (
+            start is None
+            or not isinstance(battery_kwh, int | float)
+            or not isinstance(surplus_kwh, int | float)
+            or not isinstance(solar_coverage, int | float)
+        ):
+            continue
+        slots.append(
+            EVChargingSlot(
+                start=start,
+                battery_kwh=float(battery_kwh),
+                unused_surplus_kwh=max(float(surplus_kwh), 0.0),
+                solar_coverage=float(solar_coverage),
+                is_low_tariff=bool(point.get("is_nt")),
+            )
+        )
+    return slots
+
+
+def _binary_state_value(state) -> bool | None:
+    """Return a strict live binary value and preserve unavailable states."""
+    if state is None:
+        return None
+    if state.state == "on":
+        return True
+    if state.state == "off":
+        return False
+    return None
+
+
+def _presence_state_value(state) -> bool | None:
+    """Return whether the tracker is home, away or unavailable."""
+    if state is None or state.state in {"unknown", "unavailable", ""}:
+        return None
+    return state.state == "home"
+
+
+def _unavailable_ev_plan_payload(
+    source_entity_id: str,
+    reason: str,
+) -> dict[str, object]:
+    """Return the stable public shape for a runtime-unavailable EV."""
+    return {
+        "source_entity_id": source_entity_id,
+        "mode": "unavailable",
+        "reason": reason,
+        "departure": None,
+        "return_at": None,
+        "required_input_kwh": None,
+        "planned_kwh": None,
+        "solar_kwh": 0.0,
+        "home_battery_kwh": 0.0,
+        "grid_low_tariff_kwh": 0.0,
+        "grid_high_tariff_kwh": 0.0,
+        "shortfall_kwh": None,
+        "solar_if_home_kwh": 0.0,
+        "solar_if_home_covers_request": False,
+        "forecast_complete": False,
+        "next_action_start": None,
+        "next_action_end": None,
+        "timeline": [],
+    }
 
 
 def _add_managed_allocations(

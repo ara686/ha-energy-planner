@@ -21,6 +21,13 @@ from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_STRATEGY,
+    CONF_EV_CONNECTED_ENTITY,
+    CONF_EV_DEPARTURE_TIME,
+    CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_PRESENCE_ENTITY,
+    CONF_EV_RETURN_TIME,
+    CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGING_ENABLED,
     CONF_HEATER_POWER_KW,
@@ -38,6 +45,7 @@ from custom_components.energy_planner.const import (
     CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    EV_CHARGING_STRATEGY_DEADLINE_AWARE,
     MANAGED_LOAD_SUBENTRY,
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_GENERIC,
@@ -50,6 +58,7 @@ from custom_components.energy_planner.history import (
 )
 from custom_components.energy_planner.models import PlannerResult
 from custom_components.energy_planner.sensor import (
+    EV_PLAN_SENSOR_DESCRIPTIONS,
     MANAGED_SOURCE_SENSOR_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
     EnergyPlannerManagedSourceSensor,
@@ -181,7 +190,7 @@ async def test_point_payloads_are_excluded_from_recorder(hass, config_entry):
     expected_unrecorded = frozenset({"managed_allocation_by_day", "points"})
     assert EnergyPlannerSensor._unrecorded_attributes == expected_unrecorded
     assert EnergyPlannerManagedSourceSensor._unrecorded_attributes == frozenset(
-        {"managed_allocation_by_day", "points"}
+        {"managed_allocation_by_day", "points", "timeline"}
     )
 
 
@@ -914,6 +923,81 @@ async def test_missing_hot_water_temperature_only_unavailable_suggested_sensor(h
     assert today.state != STATE_UNAVAILABLE
 
 
+async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
+    set_source_states(hass)
+    hass.states.async_set(
+        "sensor.enyaq_charge_kwh",
+        "4.5",
+        {"device_class": "energy_storage", "unit_of_measurement": "kWh"},
+    )
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "off")
+    hass.states.async_set("input_boolean.ev_grid_outside_nt", "off")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Energy Planner",
+        data=config_data(),
+        options=options_data(),
+        unique_id=DOMAIN,
+        version=5,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                    CONF_PRIORITY: 10,
+                    CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+                    CONF_MAXIMUM_CHARGING_POWER_KW: 11,
+                    CONF_CHARGING_EFFICIENCY: 0.9,
+                    CONF_EV_CHARGING_STRATEGY: (EV_CHARGING_STRATEGY_DEADLINE_AWARE),
+                    CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
+                    CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
+                    CONF_EV_GRID_OUTSIDE_NT_ENTITY: (
+                        "input_boolean.ev_grid_outside_nt"
+                    ),
+                    CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
+                    CONF_EV_DEPARTURE_TIME: "07:00:00",
+                    CONF_EV_RETURN_TIME: "17:00:00",
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    prefix = f"{entry.entry_id}_managed_{slugify('sensor.ev_energy_total')}"
+    states = {}
+    for description in EV_PLAN_SENSOR_DESCRIPTIONS:
+        entity_id = registry.async_get_entity_id(
+            SENSOR_DOMAIN,
+            DOMAIN,
+            f"{prefix}_{description.key}",
+        )
+        assert entity_id is not None
+        states[description.key] = hass.states.get(entity_id)
+
+    assert states["charging_mode"].state == "connect_vehicle"
+    assert states["next_departure"].state != STATE_UNAVAILABLE
+    planned = states["planned_until_departure"]
+    assert planned.state != STATE_UNAVAILABLE
+    assert planned.attributes["required_input_kwh"] == 5
+    assert "solar_kwh" in planned.attributes
+    assert "home_battery_kwh" in planned.attributes
+    assert "grid_low_tariff_kwh" in planned.attributes
+    assert "grid_high_tariff_kwh" in planned.attributes
+    assert "shortfall_kwh" in planned.attributes
+    assert "solar_if_home_kwh" in planned.attributes
+    assert "timeline" in planned.attributes
+    assert planned.state_info is not None
+    assert "timeline" in planned.state_info["unrecorded_attributes"]
+
+
 async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
     set_source_states(hass)
     hass.states.async_set(
@@ -1220,13 +1304,16 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
         "9",
         {"device_class": "energy_storage", "unit_of_measurement": "kWh"},
     )
+    hass.states.async_set("device_tracker.listener_enyaq", "home")
+    hass.states.async_set("binary_sensor.listener_enyaq_connected", "on")
+    hass.states.async_set("input_boolean.listener_ev_grid_outside_nt", "off")
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Energy Planner",
         data=config_data(),
         options=options_data(),
         unique_id=DOMAIN,
-        version=4,
+        version=5,
         subentries_data=(
             {
                 "data": {
@@ -1236,6 +1323,17 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
                     CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
                     CONF_MAXIMUM_CHARGING_POWER_KW: 11,
                     CONF_CHARGING_EFFICIENCY: 0.9,
+                    CONF_EV_CHARGING_STRATEGY: (EV_CHARGING_STRATEGY_DEADLINE_AWARE),
+                    CONF_EV_PRESENCE_ENTITY: "device_tracker.listener_enyaq",
+                    CONF_EV_CONNECTED_ENTITY: (
+                        "binary_sensor.listener_enyaq_connected"
+                    ),
+                    CONF_EV_GRID_OUTSIDE_NT_ENTITY: (
+                        "input_boolean.listener_ev_grid_outside_nt"
+                    ),
+                    CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
+                    CONF_EV_DEPARTURE_TIME: "07:00:00",
+                    CONF_EV_RETURN_TIME: "17:00:00",
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
                 "title": "EV charging energy",
@@ -1266,10 +1364,29 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
         await hass.async_block_till_done()
     assert refresh_calls == 1
 
+    hass.states.async_set("device_tracker.listener_enyaq", "work")
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+    assert refresh_calls == 2
+
+    hass.states.async_set("binary_sensor.listener_enyaq_connected", "off")
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+    assert refresh_calls == 3
+
+    hass.states.async_set("input_boolean.listener_ev_grid_outside_nt", "on")
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+    assert refresh_calls == 4
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     hass.states.async_set("sensor.enyaq_charge_kwh", "11")
+    hass.states.async_set("device_tracker.listener_enyaq", "home")
     await hass.async_block_till_done()
-    assert refresh_calls == 1
+    assert refresh_calls == 4
 
 
 async def test_options_update_changes_loaded_recalculation_interval(

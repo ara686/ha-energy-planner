@@ -116,6 +116,44 @@ solar coverage is invalid. Its value is an energy budget, not an instantaneous
 power setpoint. Add your own stop logic, connection checks and safety conditions
 for the charger.
 
+## Map A Deadline-aware EV Plan To A Wallbox Mode
+
+This advisory mapping matches the recommended modes to an existing Wallbox
+selector. Replace the planner entity ID with the one created for your managed
+EV. Phase selection, current limiting and overload protection must remain in the
+Wallbox's existing safety logic.
+
+```yaml
+alias: Energy Planner - apply advisory EV mode
+mode: restart
+triggers:
+  - trigger: state
+    entity_id: sensor.energy_planner_managed_your_ev_charging_mode
+actions:
+  - variables:
+      planner_mode: >-
+        {{ states('sensor.energy_planner_managed_your_ev_charging_mode') }}
+      wallbox_mode: >-
+        {% if planner_mode == 'solar' %}
+          EKO - Solar
+        {% elif planner_mode == 'home_battery' %}
+          Battery Free kWh
+        {% elif planner_mode in ['grid_low_tariff', 'grid_high_tariff'] %}
+          GRID
+        {% else %}
+          OFF
+        {% endif %}
+  - action: input_select.select_option
+    target:
+      entity_id: input_select.wallbox_mode
+    data:
+      option: "{{ wallbox_mode | trim }}"
+```
+
+The fallback deliberately maps `off`, `connect_vehicle`, `wait_for_solar`,
+`complete`, `shortfall`, `unavailable` and unknown values to `OFF`. The planner
+still does not call this selector itself.
+
 ## Prioritize Water Heating Before EV Charging
 
 This example allows EV charging from PV surplus only after the water heater has

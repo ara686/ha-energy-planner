@@ -99,6 +99,13 @@ load's recommendation; it never falls back to history.
 | Remaining battery energy | `required_energy_entity` | Required | Current non-negative energy still storable in the vehicle battery. `sensor`, `number` and `input_number` entities with units convertible to `kWh` are supported. For example, use `sensor.enyaq_charge_kwh`. |
 | Maximum charger power | `maximum_charging_power_kw` | Required | Fixed positive technical input limit in `kW`, entered with at most one decimal place. Default `11.0`. Available solar surplus separately limits the actual recommendation in every slot. |
 | Charging efficiency | `charging_efficiency` | Required | Battery energy divided by charger electrical input, greater than zero and at most `1`; default `0.90`. |
+| Charging strategy | `ev_charging_strategy` | Required | `solar_only` preserves the earlier solar-budget behavior. `deadline_aware` adds availability, deadline, battery-shift and GRID decisions. Existing EV entries migrate to `solar_only`. |
+| Vehicle position | `ev_presence_entity` | Deadline-aware | A `device_tracker`; `home` means available and any known non-home zone means away. |
+| Charging cable connected | `ev_connected_entity` | Deadline-aware | A `binary_sensor`; `on` confirms current availability even if the tracker has not caught up. `off` while home produces `connect_vehicle`. |
+| Allow GRID outside low tariff | `ev_grid_outside_nt_entity` | Deadline-aware | An `input_boolean`, normally off. High-tariff GRID is considered only while this helper is on. |
+| Workdays | `ev_workdays` | Deadline-aware | One or more weekdays. Default Monday through Friday. |
+| Departure time | `ev_departure_time` | Deadline-aware | Local departure deadline; default `07:00`. |
+| Return time | `ev_return_time` | Deadline-aware | Local return and end of the expected absence; default `17:00`. |
 
 The request is converted to charger-input energy:
 
@@ -106,12 +113,24 @@ The request is converted to charger-input energy:
 electrical required kWh = battery required kWh / charging efficiency
 ```
 
-A zero request is valid. The integration watches the EV energy-request entity
-and requests a debounced recalculation when its state changes. An invalid or
-unavailable EV request, or an invalid maximum power, withholds only this load's recommendation; an
-`electric_vehicle` load never falls back to history. Energy Planner assumes the
-vehicle can charge in every planned slot and does not model connection state,
-departure time, driving or target-SoC changes.
+A zero request is valid. The integration watches the EV energy request and, for
+`deadline_aware`, the position, cable and GRID-permission entities. Their changes
+request a debounced recalculation. An invalid or unavailable EV request, or an
+invalid maximum power, withholds only this load's recommendation; an
+`electric_vehicle` load never falls back to history.
+
+`deadline_aware` first assigns direct surplus only while the weekly schedule
+says the car is home. It may then recommend a pre-departure transfer from the
+home battery, limited by charger power, time, the battery energy above
+`safe_discharge_soc`, and fully covered solar surplus that would otherwise be
+unused while the car is away. Missing solar coverage disables this battery
+transfer. Remaining demand uses available low-tariff GRID slots, then
+high-tariff slots only when the permission helper is on. Any remainder is
+reported as `shortfall_kwh`; no device is controlled by the integration.
+
+The plan also calculates `solar_if_home_kwh` through the expected return. This
+counterfactual explains whether the current request could have been covered by
+solar if the vehicle stayed home.
 
 When upgrading a version that used a maximum-power entity, migration copies its
 current positive state into the fixed `kW` value and removes the entity reference.
@@ -220,5 +239,7 @@ type. Later complete days repeat the current hot-water deficit, carry only the
 unmet EV remainder and do not repeat generic demand. Each day's solar surplus
 and allocation remains separate. The model neither carries simulated tank
 temperature nor changes the EV input entity; its next state corrects the plan at
-the following recalculation. Only solar surplus is recommended—grid charging is
-not part of managed-load allocation.
+the following recalculation. The backward-compatible `suggested_today` and
+`suggested_tomorrow` outputs remain solar-only managed-load allocation.
+Deadline-aware battery and GRID decisions are exposed separately by the EV plan
+entities and are not added to the passive managed-load SoC forecast.

@@ -18,6 +18,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CONF_BATTERY_SOC_ENTITY,
+    CONF_EV_CHARGING_STRATEGY,
     CONF_HOME_ENERGY_ENTITY,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
@@ -28,6 +29,7 @@ from .const import (
     DEFAULT_MANAGED_LOAD_PRIORITY,
     DEFAULT_MANAGED_LOAD_TYPE,
     DOMAIN,
+    EV_CHARGING_STRATEGY_SOLAR_ONLY,
     MANAGED_LOAD_SUBENTRY,
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
 )
@@ -108,9 +110,9 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate legacy managed loads to typed config subentries."""
-    if entry.version > 4:
+    if entry.version > 5:
         return False
-    if entry.version == 4:
+    if entry.version == 5:
         return True
 
     data = dict(entry.data)
@@ -181,13 +183,18 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "reconfigure the load to restore its EV recommendation",
                     subentry.data.get(CONF_MANAGED_ENERGY_ENTITY),
                 )
+        if subentry_data[CONF_MANAGED_LOAD_TYPE] == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE:
+            subentry_data.setdefault(
+                CONF_EV_CHARGING_STRATEGY,
+                EV_CHARGING_STRATEGY_SOLAR_ONLY,
+            )
         subentry_data.pop(CONF_MAXIMUM_CHARGING_POWER_ENTITY, None)
         hass.config_entries.async_update_subentry(
             entry,
             subentry,
             data=subentry_data,
         )
-    hass.config_entries.async_update_entry(entry, data=data, version=4)
+    hass.config_entries.async_update_entry(entry, data=data, version=5)
     return True
 
 
@@ -300,7 +307,12 @@ def _register_managed_model_refresh(
         entity_id
         for load in managed_load_configs(entry)
         if load.load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
-        for entity_id in (load.required_energy_entity_id,)
+        for entity_id in (
+            load.required_energy_entity_id,
+            load.ev_presence_entity_id,
+            load.ev_connected_entity_id,
+            load.ev_grid_outside_nt_entity_id,
+        )
         if entity_id
     }
     if not tracked_entities:
