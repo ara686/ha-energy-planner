@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import time
 from typing import Any
 
 import voluptuous as vol
@@ -31,6 +32,13 @@ from .const import (
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_STRATEGY,
+    CONF_EV_CONNECTED_ENTITY,
+    CONF_EV_DEPARTURE_TIME,
+    CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_PRESENCE_ENTITY,
+    CONF_EV_RETURN_TIME,
+    CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -67,7 +75,11 @@ from .const import (
     CONF_TOP_TEMPERATURE_ENTITY,
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_EV_CHARGING_EFFICIENCY,
+    DEFAULT_EV_CHARGING_STRATEGY,
+    DEFAULT_EV_DEPARTURE_TIME,
     DEFAULT_EV_MAXIMUM_CHARGING_POWER_KW,
+    DEFAULT_EV_RETURN_TIME,
+    DEFAULT_EV_WORKDAYS,
     DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C,
     DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
     DEFAULT_MANAGED_LOAD_PRIORITY,
@@ -75,6 +87,8 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_NT_WINDOWS,
     DOMAIN,
+    EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+    EV_CHARGING_STRATEGY_SOLAR_ONLY,
     MANAGED_LOAD_SUBENTRY,
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_GENERIC,
@@ -93,6 +107,7 @@ ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
 ERR_ENERGY_AMOUNT_REQUIRED = "energy_amount_required"
 ERR_ENTITY_ALREADY_CONFIGURED = "entity_already_configured"
 ERR_ENERGY_SENSOR_REQUIRED = "energy_sensor_required"
+ERR_ENTITY_REQUIRED = "entity_required"
 ERR_INVALID_NUMERIC_ENTITY = "invalid_numeric_entity"
 ERR_PERCENTAGE_ENTITY_REQUIRED = "percentage_entity_required"
 ERR_PERCENTAGE_RANGE = "percentage_range"
@@ -103,6 +118,8 @@ ERR_TEMPERATURE_ENTITIES_DISTINCT = "temperature_entities_distinct"
 ERR_TEMPERATURE_RANGE = "temperature_range"
 ERR_TEMPERATURE_SENSOR_REQUIRED = "temperature_sensor_required"
 ERR_VALUE_POSITIVE = "value_positive"
+ERR_WORKDAYS_REQUIRED = "workdays_required"
+ERR_TIMES_DISTINCT = "times_distinct"
 ENERGY_STATE_CLASSES = {
     "total",
     "total_increasing",
@@ -190,6 +207,15 @@ REQUESTED_ENERGY_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     },
     {"domain": "input_number"},
 ]
+EV_PRESENCE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {"domain": "device_tracker"},
+]
+EV_CONNECTED_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {"domain": "binary_sensor"},
+]
+EV_GRID_PERMISSION_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {"domain": "input_boolean"},
+]
 
 
 def _number_selector(
@@ -215,7 +241,7 @@ def _number_selector(
 class EnergyPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Energy Planner."""
 
-    VERSION = 4
+    VERSION = 5
 
     @staticmethod
     def async_get_options_flow(
@@ -684,6 +710,47 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
                     CONF_CHARGING_EFFICIENCY,
                     default=DEFAULT_EV_CHARGING_EFFICIENCY,
                 ): _number_selector(minimum=0.001, maximum=1),
+                vol.Required(
+                    CONF_EV_CHARGING_STRATEGY,
+                    default=DEFAULT_EV_CHARGING_STRATEGY,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            EV_CHARGING_STRATEGY_SOLAR_ONLY,
+                            EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        translation_key="ev_charging_strategy",
+                    )
+                ),
+                vol.Optional(CONF_EV_PRESENCE_ENTITY): _entity_selector(
+                    EV_PRESENCE_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_CONNECTED_ENTITY): _entity_selector(
+                    EV_CONNECTED_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_GRID_OUTSIDE_NT_ENTITY): _entity_selector(
+                    EV_GRID_PERMISSION_ENTITY_FILTERS
+                ),
+                vol.Required(
+                    CONF_EV_WORKDAYS,
+                    default=[str(day) for day in DEFAULT_EV_WORKDAYS],
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[str(day) for day in range(7)],
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        translation_key="ev_workday",
+                    )
+                ),
+                vol.Required(
+                    CONF_EV_DEPARTURE_TIME,
+                    default=DEFAULT_EV_DEPARTURE_TIME,
+                ): selector.TimeSelector(selector.TimeSelectorConfig()),
+                vol.Required(
+                    CONF_EV_RETURN_TIME,
+                    default=DEFAULT_EV_RETURN_TIME,
+                ): selector.TimeSelector(selector.TimeSelectorConfig()),
             }
         )
     else:
@@ -736,6 +803,12 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
             }
         )
     elif load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE:
+        strategy = str(
+            user_input.get(
+                CONF_EV_CHARGING_STRATEGY,
+                DEFAULT_EV_CHARGING_STRATEGY,
+            )
+        )
         data.update(
             {
                 CONF_REQUIRED_ENERGY_ENTITY: str(
@@ -745,8 +818,33 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
                     user_input[CONF_MAXIMUM_CHARGING_POWER_KW]
                 ),
                 CONF_CHARGING_EFFICIENCY: float(user_input[CONF_CHARGING_EFFICIENCY]),
+                CONF_EV_CHARGING_STRATEGY: strategy,
             }
         )
+        if strategy == EV_CHARGING_STRATEGY_DEADLINE_AWARE:
+            data.update(
+                {
+                    CONF_EV_WORKDAYS: [
+                        int(day)
+                        for day in user_input.get(CONF_EV_WORKDAYS, DEFAULT_EV_WORKDAYS)
+                    ],
+                    CONF_EV_DEPARTURE_TIME: str(
+                        user_input.get(
+                            CONF_EV_DEPARTURE_TIME, DEFAULT_EV_DEPARTURE_TIME
+                        )
+                    ),
+                    CONF_EV_RETURN_TIME: str(
+                        user_input.get(CONF_EV_RETURN_TIME, DEFAULT_EV_RETURN_TIME)
+                    ),
+                }
+            )
+            for key in (
+                CONF_EV_PRESENCE_ENTITY,
+                CONF_EV_CONNECTED_ENTITY,
+                CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+            ):
+                if entity_id := user_input.get(key):
+                    data[key] = str(entity_id)
     elif requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
         data[CONF_REQUESTED_ENERGY_ENTITY] = str(requested_entity_id)
     return data
@@ -877,6 +975,48 @@ def _validate_electric_vehicle_input(
     efficiency = _finite_float(user_input.get(CONF_CHARGING_EFFICIENCY))
     if efficiency is None or not 0 < efficiency <= 1:
         errors[CONF_CHARGING_EFFICIENCY] = ERR_CHARGING_EFFICIENCY_RANGE
+
+    strategy = str(
+        user_input.get(CONF_EV_CHARGING_STRATEGY, DEFAULT_EV_CHARGING_STRATEGY)
+    )
+    if strategy not in {
+        EV_CHARGING_STRATEGY_SOLAR_ONLY,
+        EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+    }:
+        errors[CONF_EV_CHARGING_STRATEGY] = ERR_ENTITY_REQUIRED
+        return
+    if strategy != EV_CHARGING_STRATEGY_DEADLINE_AWARE:
+        return
+
+    for key, domain in (
+        (CONF_EV_PRESENCE_ENTITY, "device_tracker"),
+        (CONF_EV_CONNECTED_ENTITY, "binary_sensor"),
+        (CONF_EV_GRID_OUTSIDE_NT_ENTITY, "input_boolean"),
+    ):
+        entity_id = user_input.get(key)
+        state = hass.states.get(str(entity_id)) if entity_id else None
+        if state is None or state.domain != domain:
+            errors[key] = ERR_ENTITY_REQUIRED
+
+    workdays = user_input.get(CONF_EV_WORKDAYS)
+    if not isinstance(workdays, list) or not workdays:
+        errors[CONF_EV_WORKDAYS] = ERR_WORKDAYS_REQUIRED
+    else:
+        try:
+            parsed_days = {int(day) for day in workdays}
+        except (TypeError, ValueError):
+            parsed_days = set()
+        if not parsed_days or not parsed_days <= set(range(7)):
+            errors[CONF_EV_WORKDAYS] = ERR_WORKDAYS_REQUIRED
+
+    try:
+        departure = time.fromisoformat(str(user_input[CONF_EV_DEPARTURE_TIME]))
+        return_at = time.fromisoformat(str(user_input[CONF_EV_RETURN_TIME]))
+    except (KeyError, ValueError):
+        errors[CONF_EV_DEPARTURE_TIME] = ERR_ENTITY_REQUIRED
+    else:
+        if departure == return_at:
+            errors[CONF_EV_RETURN_TIME] = ERR_TIMES_DISTINCT
 
 
 def _compatible_device_class(state, allowed: set[str]) -> bool:

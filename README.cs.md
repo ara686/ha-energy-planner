@@ -30,6 +30,8 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
   odběry. Obecné odběry používají historii nebo entitu s požadavkem, zásobník
   TUV aktuální teploty a fyzikální parametry a elektromobil aktuální požadavek
   energie do baterie a limit nabíjecího příkonu.
+- Volitelně sestaví EV plán podle času odjezdu, dostupnosti auta, přebytku FVE,
+  bezpečné energie domácí baterie a slotů GRIDu v nízkém i vysokém tarifu.
 - Oddělí řízené spotřebiče od běžné spotřeby domu, aby se lépe učil běžný
   profil domácnosti.
 - Ukáže řízené spotřebiče zvlášť, takže uvidíte spotřebu EV, TUV, bazénu nebo
@@ -84,6 +86,9 @@ Volitelné:
   zbývající energie na straně baterie auta a pevný maximální výkon nabíječky v
   `kW`; typickým vstupem požadavku je template senzor
   `sensor.enyaq_charge_kwh`.
+- EV plán podle odjezdu navíc potřebuje `device_tracker`, `binary_sensor`
+  připojeného kabelu, pracovní dny s časy odjezdu/návratu a `input_boolean`,
+  který výslovně povoluje GRID mimo nízký tarif.
 - Solcast předpověď FVE pro dnešek, zítřek a další dny.
 
 Pokud máte spotřebu domu jen jako okamžitý výkon, například
@@ -137,6 +142,9 @@ Nejužitečnější entity:
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Zítřejší přebytek zbývající po všech doporučeních. |
 | `sensor.energy_planner_managed_<source>_suggested_today` | Elektrický vstup nabíječky doporučený dnes pro `electric_vehicle`. Pro jiné typy je entita nedostupná. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr. U `generic` atributy popisují historii nebo požadavek; u TUV obsahují průměrnou teplotu, energii do minima, pružnou kapacitu a nedostatek do minima; u EV požadavek a nedostatek na straně baterie i elektrického vstupu. |
+| `sensor.energy_planner_managed_<source>_charging_mode` | Aktuální poradní EV akce, například `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` nebo `complete`. |
+| `sensor.energy_planner_managed_<source>_next_departure` | Příští nastavený místní odjezd použitý jako deadline EV. |
+| `sensor.energy_planner_managed_<source>_planned_until_departure` | Elektrický vstup nabíječky naplánovaný do odjezdu. Atributy obsahují rozpad zdrojů, shortfall, důvod, další akci, variantu se solárem při autě doma a kompaktní časovou osu. |
 | `sensor.energy_planner_managed_<source>_today` | Dnešní spotřeba jedné řízené zátěže, například EV nebo TUV. |
 | `sensor.energy_planner_managed_<source>_tracked_total` | Sledovaný součet Energy Planneru pro jednu řízenou zátěž. |
 
@@ -171,6 +179,9 @@ automatizace:
   automatizace na další den; Energy Planner zařízení stále sám nespíná.
 - Hodnotu EV `managed_<source>_suggested_today` jako solární rozpočet pro
   zbývající úplné plánovací sloty dneška.
+- Režim `managed_<source>_charging_mode` EV plánu podle odjezdu jako vstup pro
+  existující automatizaci Wallboxu. Volbu fáze, proudu a ochranu přetížení
+  ponechte bezpečnostní logice Wallboxu.
 - Per-load managed senzory pro prioritizaci spotřebičů, například nejdřív
   dohřát TUV a teprve potom povolit nabíjení EV.
 
@@ -185,8 +196,8 @@ nezahrne žádné nabíjení ze sítě.
 
 ## Ruční přepočet
 
-Energy Planner se přepočítává automaticky a reaguje také na změny SoC baterie a
-EV požadavku energie.
+Energy Planner se přepočítává automaticky a reaguje také na změny SoC baterie,
+EV požadavku energie, polohy, kabelu a povolení GRIDu.
 
 Ruční přepočet spustíte přes **Developer Tools > Services**:
 
@@ -206,7 +217,8 @@ energy_planner.recalculate
   spotřeby.
 - Nedostupný požadavek energie EV nebo neplatný maximální výkon nabíječky
   zneplatní jen doporučení daného auta. Typ `electric_vehicle` nikdy nepoužije
-  náhradní historii ani neplánuje nabíjení ze sítě.
+  náhradní historii. `solar_only` GRID neplánuje; `deadline_aware` jej pouze
+  vykazuje jako poradní rozhodnutí.
 - Pokud jsou grafy prázdné, zkontrolujte v **Developer Tools > States**, že
   `sensor.energy_planner_soc_forecast` má atribut `points`.
 - Pokud hodnoty po první instalaci vypadají zvláštně, počkejte alespoň 24 až 48

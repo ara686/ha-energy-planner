@@ -23,6 +23,13 @@ from custom_components.energy_planner.const import (
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_STRATEGY,
+    CONF_EV_CONNECTED_ENTITY,
+    CONF_EV_DEPARTURE_TIME,
+    CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_PRESENCE_ENTITY,
+    CONF_EV_RETURN_TIME,
+    CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
@@ -58,6 +65,8 @@ from custom_components.energy_planner.const import (
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_NAME,
     DOMAIN,
+    EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+    EV_CHARGING_STRATEGY_SOLAR_ONLY,
     MANAGED_LOAD_SUBENTRY,
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_GENERIC,
@@ -600,7 +609,48 @@ async def test_managed_load_subentry_flow_accepts_electric_vehicle_model(hass):
     assert result["data"] == {
         **_electric_vehicle_input(priority=5),
         CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+        CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_SOLAR_ONLY,
     }
+
+
+async def test_managed_load_subentry_flow_accepts_deadline_aware_ev(hass):
+    set_source_states(hass)
+    _set_ev_input_states(hass)
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "on")
+    hass.states.async_set("input_boolean.ev_grid_outside_nt", "off")
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, version=5)
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await _select_managed_type(
+        hass,
+        result,
+        load_type=MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+    )
+    deadline_input = {
+        **_electric_vehicle_input(priority=5),
+        CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+        CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
+        CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
+        CONF_EV_GRID_OUTSIDE_NT_ENTITY: "input_boolean.ev_grid_outside_nt",
+        CONF_EV_WORKDAYS: ["0", "1", "2", "3", "4"],
+        CONF_EV_DEPARTURE_TIME: "07:00:00",
+        CONF_EV_RETURN_TIME: "17:00:00",
+    }
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input=deadline_input,
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_EV_WORKDAYS] == [0, 1, 2, 3, 4]
+    assert result["data"][CONF_EV_CHARGING_STRATEGY] == (
+        EV_CHARGING_STRATEGY_DEADLINE_AWARE
+    )
 
 
 async def test_generic_and_ev_reconfigure_prefills_counterpart_and_cleans_fields(hass):
@@ -1010,7 +1060,7 @@ async def test_version_one_entry_migrates_managed_sources_to_subentries(hass):
 
     assert await async_migrate_entry(hass, entry)
 
-    assert entry.version == 4
+    assert entry.version == 5
     assert CONF_MANAGED_ENERGY_ENTITIES not in entry.data
     assert {
         subentry.data[CONF_MANAGED_ENERGY_ENTITY]
@@ -1074,7 +1124,7 @@ async def test_version_two_entry_types_existing_subentries_as_generic(hass):
     assert await async_migrate_entry(hass, entry)
 
     subentry = next(iter(entry.subentries.values()))
-    assert entry.version == 4
+    assert entry.version == 5
     assert subentry.unique_id == "sensor.ev_energy_total"
     assert subentry.data == {
         CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
@@ -1118,9 +1168,10 @@ async def test_version_three_entry_migrates_ev_power_entity_to_kw_value(hass):
     assert await async_migrate_entry(hass, entry)
 
     subentry = next(iter(entry.subentries.values()))
-    assert entry.version == 4
+    assert entry.version == 5
     assert subentry.data[CONF_MAXIMUM_CHARGING_POWER_KW] == 11
     assert CONF_MAXIMUM_CHARGING_POWER_ENTITY not in subentry.data
+    assert subentry.data[CONF_EV_CHARGING_STRATEGY] == EV_CHARGING_STRATEGY_SOLAR_ONLY
 
 
 async def test_version_three_entry_requires_reconfigure_when_power_is_unavailable(
@@ -1152,10 +1203,37 @@ async def test_version_three_entry_requires_reconfigure_when_power_is_unavailabl
     assert await async_migrate_entry(hass, entry)
 
     subentry = next(iter(entry.subentries.values()))
-    assert entry.version == 4
+    assert entry.version == 5
     assert CONF_MAXIMUM_CHARGING_POWER_KW not in subentry.data
     assert CONF_MAXIMUM_CHARGING_POWER_ENTITY not in subentry.data
     assert "reconfigure the load" in caplog.text
+
+
+async def test_version_four_ev_migrates_to_solar_only(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config_data(),
+        unique_id=DOMAIN,
+        version=4,
+        subentries_data=(
+            {
+                "data": {
+                    **_electric_vehicle_input(),
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV charging energy",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, entry)
+
+    subentry = next(iter(entry.subentries.values()))
+    assert entry.version == 5
+    assert subentry.data[CONF_EV_CHARGING_STRATEGY] == EV_CHARGING_STRATEGY_SOLAR_ONLY
 
 
 def test_managed_load_schema_filters_cumulative_and_requested_energy():
