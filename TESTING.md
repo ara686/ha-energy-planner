@@ -58,6 +58,10 @@ Planner tests:
   shortage and per-slot heater/EV power limits
 - EV allocation over the complete remaining day, incomplete-today carry,
   multi-day remainder and no repeated generic demand after tomorrow
+- deadline-aware EV solar/home-battery/low-tariff/high-tariff allocation,
+  weekly absence, live cable/location override, shortfall and solar-if-home
+- safe-SoC and otherwise-lost-surplus limits, incomplete-forecast battery
+  suppression, weekend/DST handling and multi-EV priority
 - complete and incomplete future-day coverage, repeated hot-water demand and
   23/25-hour DST days, including EV today boundaries
 - history correction
@@ -76,7 +80,10 @@ Home Assistant integration tests:
 - unavailable hot-water temperature behavior without a history fallback
 - unavailable EV request or invalid configured power without a history fallback
 - debounced EV input-entity refresh listeners and unload cleanup
+- deadline-aware EV Config Flow, v4 `solar_only` migration, availability and
+  GRID-permission listeners
 - all sensors created with stable unique IDs, translated names, units and device classes
+- enum mode, departure timestamp and compact/unrecorded EV timeline attributes
 - aggregate and per-source EV today recommendation sensors
 - required-data failure marks dependent sensors unavailable
 - main state attributes stay compact and recorder-friendly

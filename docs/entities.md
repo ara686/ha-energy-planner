@@ -77,6 +77,9 @@ typically creates entity IDs like
 |------------------------|----------|-----------|-------------|
 | `sensor.energy_planner_managed_<source>_suggested_today` | Standard | `kWh` | Recommended charger electrical input for an `electric_vehicle` today. Unavailable for non-EV loads and when remaining-today solar coverage is incomplete. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Standard | `kWh` | Recommended energy for this load tomorrow. Common attributes include type, priority, state, method, expected demand and reason. Generic loads add history/request details; hot-water loads add thermal-model values; EV loads add request, power, efficiency and shortfalls. |
+| `sensor.energy_planner_managed_<source>_charging_mode` | Standard | enum | Current deadline-aware EV instruction: `off`, `connect_vehicle`, `wait_for_solar`, `solar`, `home_battery`, `grid_low_tariff`, `grid_high_tariff`, `complete`, `shortfall` or `unavailable`. |
+| `sensor.energy_planner_managed_<source>_next_departure` | Standard | timestamp | Next local workday departure used as the charging deadline. |
+| `sensor.energy_planner_managed_<source>_planned_until_departure` | Standard | `kWh` | Charger-input energy assigned before departure. Attributes contain the source split, shortfall, next action, reason, return time, solar-if-home counterfactual and compact timeline. |
 | `sensor.energy_planner_managed_<source>_today` | Standard | `kWh` | Energy used by this managed load today. Uses `device_class: energy` and `state_class: total_increasing`. |
 | `sensor.energy_planner_managed_<source>_current_hour` | Standard | `kWh` | Energy used by this managed load in the current hour bucket. Useful for live dashboards and automation conditions. |
 | `sensor.energy_planner_managed_<source>_last_hour` | Standard | `kWh` | Energy used by this managed load in the previous completed hour bucket. Useful for hourly charts and decisions that should not use an incomplete current hour. |
@@ -114,6 +117,14 @@ The suggested-today entity is available only for `electric_vehicle`. Its
 charger input, while `battery_*` values are on the vehicle-battery side. Invalid
 EV inputs make only that EV recommendation unavailable and never trigger a
 history fallback.
+
+The three deadline-aware entities use stable unique IDs. The
+`planned_until_departure` attributes include `solar_kwh`, `home_battery_kwh`,
+`grid_low_tariff_kwh`, `grid_high_tariff_kwh`, `shortfall_kwh`,
+`solar_if_home_kwh`, `solar_if_home_covers_request`, `forecast_complete`,
+`reason`, `next_action_start`, `next_action_end` and `timeline`. The timeline is
+marked unrecorded so the future plan is not written into regular recorder
+history.
 
 The multi-day allocation payload is deliberately compact and marked as
 unrecorded together with forecast `points`, so these larger prediction

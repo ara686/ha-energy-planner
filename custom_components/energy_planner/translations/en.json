@@ -111,24 +111,38 @@
         },
         "electric_vehicle": {
           "title": "Configure electric vehicle charging",
-          "description": "Required energy is the current battery-side remainder. Maximum charger power is the fixed technical input limit in kW; available solar surplus separately limits every slot.",
+          "description": "Choose solar-only compatibility or a deadline-aware advisory plan. The planner never controls the wallbox directly.",
           "data": {
             "managed_energy_entity": "Cumulative energy meter",
             "priority": "Priority",
             "required_energy_entity": "Remaining battery energy",
             "maximum_charging_power_kw": "Maximum charger power",
-            "charging_efficiency": "Charging efficiency"
+            "charging_efficiency": "Charging efficiency",
+            "ev_charging_strategy": "Charging strategy",
+            "ev_presence_entity": "Vehicle position",
+            "ev_connected_entity": "Charging cable connected",
+            "ev_grid_outside_nt_entity": "Allow GRID outside low tariff",
+            "ev_workdays": "Workdays",
+            "ev_departure_time": "Departure time",
+            "ev_return_time": "Return time"
           }
         },
         "reconfigure_electric_vehicle": {
           "title": "Edit electric vehicle charging",
-          "description": "Update the energy request, fixed charger-power limit or charging efficiency.",
+          "description": "Update the energy request, charging limits, availability schedule and advisory strategy.",
           "data": {
             "managed_energy_entity": "Cumulative energy meter",
             "priority": "Priority",
             "required_energy_entity": "Remaining battery energy",
             "maximum_charging_power_kw": "Maximum charger power",
-            "charging_efficiency": "Charging efficiency"
+            "charging_efficiency": "Charging efficiency",
+            "ev_charging_strategy": "Charging strategy",
+            "ev_presence_entity": "Vehicle position",
+            "ev_connected_entity": "Charging cable connected",
+            "ev_grid_outside_nt_entity": "Allow GRID outside low tariff",
+            "ev_workdays": "Workdays",
+            "ev_departure_time": "Departure time",
+            "ev_return_time": "Return time"
           }
         }
       },
@@ -144,7 +158,10 @@
         "temperature_sensor_required": "Select a numeric temperature sensor with a supported temperature unit.",
         "temperature_range": "Minimum temperature must be below maximum temperature.",
         "priority_invalid": "Priority must be a whole number of at least 1.",
-        "value_positive": "Tank volume, heater power and thermal conversion factor must be greater than zero."
+        "value_positive": "Tank volume, heater power and thermal conversion factor must be greater than zero.",
+        "entity_required": "Select an available entity of the required type.",
+        "workdays_required": "Select at least one valid workday.",
+        "times_distinct": "Departure and return times must be different."
       }
     }
   },
@@ -154,6 +171,18 @@
         "generic": "Generic (history or request)",
         "hot_water": "Hot water",
         "electric_vehicle": "Electric vehicle"
+      }
+    },
+    "ev_charging_strategy": {
+      "options": {
+        "solar_only": "Solar only (compatible)",
+        "deadline_aware": "Deadline aware"
+      }
+    },
+    "ev_workday": {
+      "options": {
+        "0": "Monday", "1": "Tuesday", "2": "Wednesday", "3": "Thursday",
+        "4": "Friday", "5": "Saturday", "6": "Sunday"
       }
     }
   },
@@ -305,6 +334,9 @@
       },
       "managed_source_suggested_tomorrow": {"name": "Managed {source} suggested tomorrow"},
       "managed_source_suggested_today": {"name": "Managed {source} suggested today"},
+      "managed_source_charging_mode": {"name": "Managed {source} charging mode"},
+      "managed_source_next_departure": {"name": "Managed {source} next departure"},
+      "managed_source_planned_until_departure": {"name": "Managed {source} planned until departure"},
       "update_interval_minutes": {
         "name": "Recalculation interval"
       },

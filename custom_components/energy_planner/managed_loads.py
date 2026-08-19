@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import time
 
 from homeassistant.config_entries import ConfigEntry
 
 from .const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_STRATEGY,
+    CONF_EV_CONNECTED_ENTITY,
+    CONF_EV_DEPARTURE_TIME,
+    CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_PRESENCE_ENTITY,
+    CONF_EV_RETURN_TIME,
+    CONF_EV_WORKDAYS,
     CONF_HEATER_POWER_KW,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
@@ -23,6 +31,10 @@ from .const import (
     CONF_THERMAL_CONVERSION_FACTOR,
     CONF_TOP_TEMPERATURE_ENTITY,
     DEFAULT_EV_CHARGING_EFFICIENCY,
+    DEFAULT_EV_CHARGING_STRATEGY,
+    DEFAULT_EV_DEPARTURE_TIME,
+    DEFAULT_EV_RETURN_TIME,
+    DEFAULT_EV_WORKDAYS,
     DEFAULT_HOT_WATER_MAXIMUM_TEMPERATURE_C,
     DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
     DEFAULT_MANAGED_LOAD_PRIORITY,
@@ -44,6 +56,13 @@ class ManagedLoadConfig:
     required_energy_entity_id: str | None = None
     maximum_charging_power_kw: float | None = None
     charging_efficiency: float = DEFAULT_EV_CHARGING_EFFICIENCY
+    ev_charging_strategy: str = DEFAULT_EV_CHARGING_STRATEGY
+    ev_presence_entity_id: str | None = None
+    ev_connected_entity_id: str | None = None
+    ev_grid_outside_nt_entity_id: str | None = None
+    ev_workdays: frozenset[int] = frozenset(DEFAULT_EV_WORKDAYS)
+    ev_departure_time: time = time.fromisoformat(DEFAULT_EV_DEPARTURE_TIME)
+    ev_return_time: time = time.fromisoformat(DEFAULT_EV_RETURN_TIME)
     top_temperature_entity_id: str | None = None
     bottom_temperature_entity_id: str | None = None
     minimum_temperature_c: float | None = None
@@ -87,6 +106,29 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             charging_efficiency=_float_or_default(
                 subentry.data.get(CONF_CHARGING_EFFICIENCY),
                 DEFAULT_EV_CHARGING_EFFICIENCY,
+            ),
+            ev_charging_strategy=str(
+                subentry.data.get(
+                    CONF_EV_CHARGING_STRATEGY, DEFAULT_EV_CHARGING_STRATEGY
+                )
+            ),
+            ev_presence_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_PRESENCE_ENTITY)
+            ),
+            ev_connected_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_CONNECTED_ENTITY)
+            ),
+            ev_grid_outside_nt_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_GRID_OUTSIDE_NT_ENTITY)
+            ),
+            ev_workdays=_workdays_or_default(subentry.data.get(CONF_EV_WORKDAYS)),
+            ev_departure_time=_time_or_default(
+                subentry.data.get(CONF_EV_DEPARTURE_TIME),
+                DEFAULT_EV_DEPARTURE_TIME,
+            ),
+            ev_return_time=_time_or_default(
+                subentry.data.get(CONF_EV_RETURN_TIME),
+                DEFAULT_EV_RETURN_TIME,
             ),
             top_temperature_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_TOP_TEMPERATURE_ENTITY)
@@ -161,3 +203,27 @@ def _positive_int(value: object, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed >= 1 else default
+
+
+def _workdays_or_default(value: object) -> frozenset[int]:
+    """Return valid weekday indexes or the weekday default."""
+    if not isinstance(value, list | tuple | set | frozenset):
+        return frozenset(DEFAULT_EV_WORKDAYS)
+    parsed: set[int] = set()
+    for item in value:
+        try:
+            day = int(item)
+        except (TypeError, ValueError):
+            return frozenset(DEFAULT_EV_WORKDAYS)
+        if day < 0 or day > 6:
+            return frozenset(DEFAULT_EV_WORKDAYS)
+        parsed.add(day)
+    return frozenset(parsed) or frozenset(DEFAULT_EV_WORKDAYS)
+
+
+def _time_or_default(value: object, default: str) -> time:
+    """Return a configured local time or its safe default."""
+    try:
+        return time.fromisoformat(str(value))
+    except ValueError:
+        return time.fromisoformat(default)
