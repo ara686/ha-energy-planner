@@ -209,6 +209,17 @@ interval. A changed EV energy request, location, cable or GRID permission
 triggers a recalculation after a 10-second debounce; battery SoC and cumulative
 energy-source changes retain their 60-second debounce.
 
+Deadline-aware EV actions use permission windows with a minimum resolution of
+10 minutes while the underlying SoC forecast keeps its configured finer
+resolution. If the configured planning interval is not compatible with 10
+minutes, Energy Planner uses the smallest compatible interval, for example 15
+minutes becomes a 30-minute EV action window. A window permits its advisory
+mode; it does not require maximum charger power for the complete window. The
+planned energy can therefore be lower than the window's maximum capacity, and a
+request reaching zero ends the recommendation early after the input refresh.
+The `planned_until_departure` attributes expose the effective resolution as
+`action_window_minutes`.
+
 You can force a recalculation from **Developer Tools > Services**:
 
 ```text

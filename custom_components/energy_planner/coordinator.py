@@ -43,6 +43,7 @@ from .const import (
     CONF_UPDATE_INTERVAL_MINUTES,
     DEFAULT_CHARGE_WINDOW,
     DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
+    DEFAULT_EV_ACTION_WINDOW_MINUTES,
     DEFAULT_FORECAST_HORIZON_HOURS,
     DEFAULT_GRID_CHARGE_EFFICIENCY,
     DEFAULT_GRID_CHARGE_MAX_KW,
@@ -302,6 +303,7 @@ def _add_ev_charging_plans(
     warnings: list[str],
 ) -> None:
     """Add advisory deadline-aware EV decisions without controlling devices."""
+    action_window_minutes = _ev_action_window_minutes(planner_input.interval_minutes)
     vehicles: list[EVChargingPlanInput] = []
     unavailable: dict[str, dict[str, object]] = {}
     for load in managed_load_configs(entry):
@@ -315,6 +317,7 @@ def _add_ev_charging_plans(
             unavailable[load.source_entity_id] = _unavailable_ev_plan_payload(
                 load.source_entity_id,
                 "invalid_required_energy_source",
+                action_window_minutes=action_window_minutes,
             )
             continue
 
@@ -342,13 +345,17 @@ def _add_ev_charging_plans(
 
     forecast = result.plan.get("soc_forecast")
     raw_points = forecast.get("points") if isinstance(forecast, dict) else None
-    slots = _ev_charging_slots(raw_points)
+    slots = _ev_charging_slots(
+        raw_points,
+        source_interval_minutes=planner_input.interval_minutes,
+        action_window_minutes=action_window_minutes,
+    )
     safe_discharge_soc = result.plan.get("safe_discharge_soc")
     plans = calculate_ev_charging_plans(
         vehicles,
         now=now,
         slots=slots,
-        interval_minutes=planner_input.interval_minutes,
+        interval_minutes=action_window_minutes,
         battery_capacity_kwh=planner_input.battery_capacity_kwh,
         safe_discharge_soc=(
             float(safe_discharge_soc)
@@ -362,9 +369,24 @@ def _add_ev_charging_plans(
     }
 
 
-def _ev_charging_slots(points: object) -> list[EVChargingSlot]:
+def _ev_action_window_minutes(source_interval_minutes: int) -> int:
+    """Return the smallest compatible EV action window of at least ten minutes."""
+    return math.lcm(source_interval_minutes, DEFAULT_EV_ACTION_WINDOW_MINUTES)
+
+
+def _ev_charging_slots(
+    points: object,
+    *,
+    source_interval_minutes: int,
+    action_window_minutes: int,
+) -> list[EVChargingSlot]:
     """Convert the public SoC forecast to the pure EV planner input."""
-    if not isinstance(points, list):
+    if (
+        not isinstance(points, list)
+        or source_interval_minutes <= 0
+        or action_window_minutes <= 0
+        or action_window_minutes % source_interval_minutes != 0
+    ):
         return []
     slots: list[EVChargingSlot] = []
     for point in points:
@@ -390,7 +412,58 @@ def _ev_charging_slots(points: object) -> list[EVChargingSlot]:
                 is_low_tariff=bool(point.get("is_nt")),
             )
         )
-    return slots
+    slots.sort(key=lambda slot: _timeline_time(slot.start))
+    if action_window_minutes == source_interval_minutes:
+        return slots
+    return _aggregate_ev_charging_slots(
+        slots,
+        source_interval_minutes=source_interval_minutes,
+        action_window_minutes=action_window_minutes,
+    )
+
+
+def _aggregate_ev_charging_slots(
+    slots: list[EVChargingSlot],
+    *,
+    source_interval_minutes: int,
+    action_window_minutes: int,
+) -> list[EVChargingSlot]:
+    """Aggregate complete fine forecast slots into EV action windows."""
+    if not slots:
+        return []
+    slot_by_start = {_timeline_time(slot.start): slot for slot in slots}
+    group_size = action_window_minutes // source_interval_minutes
+    cursor = _ceil_to_interval(slots[0].start, action_window_minutes)
+    last_start = _timeline_time(slots[-1].start)
+    aggregated: list[EVChargingSlot] = []
+    while _timeline_time(cursor) <= last_start:
+        group: list[EVChargingSlot] = []
+        group_cursor = cursor
+        for _index in range(group_size):
+            slot = slot_by_start.get(_timeline_time(group_cursor))
+            if slot is None:
+                group = []
+                break
+            group.append(slot)
+            group_cursor = _add_elapsed_time(
+                group_cursor,
+                timedelta(minutes=source_interval_minutes),
+            )
+        if group:
+            aggregated.append(
+                EVChargingSlot(
+                    start=cursor,
+                    unused_surplus_kwh=sum(slot.unused_surplus_kwh for slot in group),
+                    battery_kwh=group[-1].battery_kwh,
+                    solar_coverage=min(slot.solar_coverage for slot in group),
+                    is_low_tariff=all(slot.is_low_tariff for slot in group),
+                )
+            )
+        cursor = _add_elapsed_time(
+            cursor,
+            timedelta(minutes=action_window_minutes),
+        )
+    return aggregated
 
 
 def _binary_state_value(state) -> bool | None:
@@ -414,6 +487,8 @@ def _presence_state_value(state) -> bool | None:
 def _unavailable_ev_plan_payload(
     source_entity_id: str,
     reason: str,
+    *,
+    action_window_minutes: int,
 ) -> dict[str, object]:
     """Return the stable public shape for a runtime-unavailable EV."""
     return {
@@ -423,6 +498,7 @@ def _unavailable_ev_plan_payload(
         "departure": None,
         "return_at": None,
         "required_input_kwh": None,
+        "action_window_minutes": action_window_minutes,
         "planned_kwh": None,
         "solar_kwh": 0.0,
         "home_battery_kwh": 0.0,
