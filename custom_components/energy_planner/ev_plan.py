@@ -251,28 +251,39 @@ def calculate_ev_charging_plan(
     )
     battery_available_kwh = max(departure_battery - safe_battery_kwh, 0.0)
     battery_target = min(remaining, lost_surplus_kwh, battery_available_kwh)
-    home_battery_kwh = _allocate_slots(
-        slots=list(reversed(home_slots)),
-        desired_kwh=battery_target,
-        mode="home_battery",
-        slot_limit_kwh=slot_limit,
-        allocations=allocations,
-        capacity_used=capacity_used,
-        available_fn=lambda _slot: slot_limit,
-    )
-    remaining -= home_battery_kwh
-
     low_tariff_slots = [slot for slot in home_slots if slot.is_low_tariff]
     grid_low_tariff_kwh = _allocate_slots(
         slots=list(reversed(low_tariff_slots)),
-        desired_kwh=remaining,
+        desired_kwh=max(remaining - battery_target, 0.0),
         mode="grid_low_tariff",
         slot_limit_kwh=slot_limit,
         allocations=allocations,
         capacity_used=capacity_used,
         available_fn=lambda _slot: slot_limit,
     )
-    remaining -= grid_low_tariff_kwh
+    home_battery_kwh = _allocate_slots(
+        slots=_battery_slots_near_grid_window(home_slots, allocations),
+        desired_kwh=min(battery_target, remaining - grid_low_tariff_kwh),
+        mode="home_battery",
+        slot_limit_kwh=slot_limit,
+        allocations=allocations,
+        capacity_used=capacity_used,
+        available_fn=lambda _slot: slot_limit,
+    )
+    remaining -= grid_low_tariff_kwh + home_battery_kwh
+
+    if remaining > 1e-9:
+        additional_low_tariff_kwh = _allocate_slots(
+            slots=list(reversed(low_tariff_slots)),
+            desired_kwh=remaining,
+            mode="grid_low_tariff",
+            slot_limit_kwh=slot_limit,
+            allocations=allocations,
+            capacity_used=capacity_used,
+            available_fn=lambda _slot: slot_limit,
+        )
+        grid_low_tariff_kwh += additional_low_tariff_kwh
+        remaining -= additional_low_tariff_kwh
 
     grid_high_tariff_kwh = 0.0
     if data.allow_high_tariff_grid and remaining > 1e-9:
@@ -386,6 +397,56 @@ def _allocate_slots(
         allocated += value
         remaining -= value
     return allocated
+
+
+def _battery_slots_near_grid_window(
+    slots: list[EVChargingSlot],
+    allocations: dict[datetime, tuple[EVChargingMode, float]],
+) -> list[EVChargingSlot]:
+    """Prefer battery slots adjoining the planned low-tariff grid session."""
+    grid_starts = sorted(
+        (
+            start
+            for start, (mode, _energy) in allocations.items()
+            if mode == "grid_low_tariff"
+        ),
+        key=_timeline_time,
+    )
+    if not grid_starts:
+        return list(reversed(slots))
+
+    first_grid_start = grid_starts[0]
+    last_grid_start = grid_starts[-1]
+    free_slots = [slot for slot in slots if slot.start not in allocations]
+    before = sorted(
+        (
+            slot
+            for slot in free_slots
+            if _timeline_time(slot.start) < _timeline_time(first_grid_start)
+        ),
+        key=lambda slot: _timeline_time(slot.start),
+        reverse=True,
+    )
+    after = sorted(
+        (
+            slot
+            for slot in free_slots
+            if _timeline_time(slot.start) > _timeline_time(last_grid_start)
+        ),
+        key=lambda slot: _timeline_time(slot.start),
+    )
+    between = sorted(
+        (
+            slot
+            for slot in free_slots
+            if _timeline_time(first_grid_start)
+            < _timeline_time(slot.start)
+            < _timeline_time(last_grid_start)
+        ),
+        key=lambda slot: _timeline_time(slot.start),
+        reverse=True,
+    )
+    return [*before, *after, *between]
 
 
 def _merge_windows(
