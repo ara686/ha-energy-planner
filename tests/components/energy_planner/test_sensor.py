@@ -987,6 +987,7 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
     planned = states["planned_until_departure"]
     assert planned.state != STATE_UNAVAILABLE
     assert planned.attributes["required_input_kwh"] == 5
+    assert planned.attributes["action_window_minutes"] == 60
     assert "solar_kwh" in planned.attributes
     assert "home_battery_kwh" in planned.attributes
     assert "grid_low_tariff_kwh" in planned.attributes

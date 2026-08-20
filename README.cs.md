@@ -204,6 +204,16 @@ interval. Změna EV požadavku energie, polohy, kabelu nebo povolení GRIDu vyvo
 přepočet po desetisekundovém debounce; změny SoC baterie a kumulativních zdrojů
 energie si zachovávají 60sekundový debounce.
 
+Deadline-aware EV akce používají povolovací okna s minimálním rozlišením 10
+minut, zatímco podkladová SoC prognóza si zachovává nastavené jemnější
+rozlišení. Pokud nastavený interval plánování není kompatibilní s 10 minutami,
+Energy Planner použije nejmenší kompatibilní interval; například 15 minut vede
+na 30minutové EV akční okno. Okno povoluje doporučený režim, ale nevyžaduje
+maximální výkon nabíječky po celou dobu. Plánovaná energie proto může být nižší
+než maximální kapacita okna a požadavek, který klesne na nulu, doporučení po
+obnově vstupu ukončí dříve. Atributy entity `planned_until_departure` uvádějí
+účinné rozlišení jako `action_window_minutes`.
+
 Ruční přepočet spustíte přes **Developer Tools > Services**:
 
 ```text

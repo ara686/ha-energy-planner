@@ -119,6 +119,30 @@ def test_ev_plan_never_shifts_battery_with_incomplete_forecast() -> None:
     assert plan.home_battery_kwh == 0
 
 
+def test_ev_plan_marks_a_gap_between_action_windows_incomplete() -> None:
+    now = datetime(2026, 8, 17, tzinfo=UTC)
+    slots = [
+        EVChargingSlot(
+            start=now + timedelta(minutes=10 * index),
+            unused_surplus_kwh=0,
+            battery_kwh=10,
+        )
+        for index in range(102)
+        if index != 6
+    ]
+
+    plan = calculate_ev_charging_plan(
+        _vehicle(required_input_kwh=1),
+        now=now,
+        slots=slots,
+        interval_minutes=10,
+        battery_capacity_kwh=20,
+        safe_discharge_soc=30,
+    )
+
+    assert plan.forecast_complete is False
+
+
 def test_ev_plan_uses_low_tariff_then_explicitly_allowed_high_tariff_grid() -> None:
     now = datetime(2026, 8, 17, 3, tzinfo=UTC)
     slots = _slots(now, count=14, battery_kwh=6.0, low_tariff_hours={0})
@@ -149,19 +173,21 @@ def test_ev_plan_uses_low_tariff_then_explicitly_allowed_high_tariff_grid() -> N
 
 def test_ev_plan_places_battery_next_to_low_tariff_grid_session() -> None:
     now = datetime(2026, 8, 17, tzinfo=UTC)
-    slots = _slots(
-        now,
-        count=17,
-        surplus_by_hour={8: 1.0},
-        battery_kwh=10.0,
-        low_tariff_hours={1, 2},
-    )
+    slots = [
+        EVChargingSlot(
+            start=now + timedelta(minutes=10 * index),
+            unused_surplus_kwh=1 if index == 48 else 0,
+            battery_kwh=10,
+            is_low_tariff=6 <= index < 18,
+        )
+        for index in range(102)
+    ]
 
     plan = calculate_ev_charging_plan(
         _vehicle(required_input_kwh=4.0),
         now=now,
         slots=slots,
-        interval_minutes=60,
+        interval_minutes=10,
         battery_capacity_kwh=20,
         safe_discharge_soc=30,
     )
@@ -169,12 +195,18 @@ def test_ev_plan_places_battery_next_to_low_tariff_grid_session() -> None:
     assert plan.home_battery_kwh == 1
     assert plan.grid_low_tariff_kwh == 3
     assert plan.shortfall_kwh == 0
-    timeline = [
-        (window.start.hour, window.end.hour, window.mode) for window in plan.timeline
-    ]
+    timeline = [(window.start, window.end, window.mode) for window in plan.timeline]
     assert timeline == [
-        (1, 2, "home_battery"),
-        (2, 3, "grid_low_tariff"),
+        (
+            datetime(2026, 8, 17, 1, 40, tzinfo=UTC),
+            datetime(2026, 8, 17, 2, tzinfo=UTC),
+            "home_battery",
+        ),
+        (
+            datetime(2026, 8, 17, 2, tzinfo=UTC),
+            datetime(2026, 8, 17, 3, tzinfo=UTC),
+            "grid_low_tariff",
+        ),
     ]
 
 

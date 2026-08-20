@@ -89,6 +89,7 @@ class EVChargingPlan:
     departure: datetime | None
     return_at: datetime | None
     required_input_kwh: float
+    action_window_minutes: int
     solar_kwh: float = 0.0
     home_battery_kwh: float = 0.0
     grid_low_tariff_kwh: float = 0.0
@@ -120,6 +121,7 @@ class EVChargingPlan:
             "departure": self.departure.isoformat() if self.departure else None,
             "return_at": self.return_at.isoformat() if self.return_at else None,
             "required_input_kwh": _round(self.required_input_kwh),
+            "action_window_minutes": self.action_window_minutes,
             "planned_kwh": _round(self.planned_kwh),
             "solar_kwh": _round(self.solar_kwh),
             "home_battery_kwh": _round(self.home_battery_kwh),
@@ -156,7 +158,7 @@ def calculate_ev_charging_plan(
         or battery_capacity_kwh <= 0
         or not data.workdays
     ):
-        return _unavailable(data, "invalid_configuration")
+        return _unavailable(data, "invalid_configuration", interval_minutes)
 
     departure = _next_departure(now, data)
     return_at = _combine_local(
@@ -174,6 +176,7 @@ def calculate_ev_charging_plan(
             departure=departure,
             return_at=return_at,
             required_input_kwh=0.0,
+            action_window_minutes=interval_minutes,
             solar_if_home_covers_request=True,
         )
 
@@ -199,6 +202,7 @@ def calculate_ev_charging_plan(
             departure=departure,
             return_at=return_at,
             required_input_kwh=required,
+            action_window_minutes=interval_minutes,
             shortfall_kwh=required,
             forecast_complete=False,
         )
@@ -329,6 +333,7 @@ def calculate_ev_charging_plan(
         departure=departure,
         return_at=return_at,
         required_input_kwh=required,
+        action_window_minutes=interval_minutes,
         solar_kwh=solar_kwh,
         home_battery_kwh=home_battery_kwh,
         grid_low_tariff_kwh=grid_low_tariff_kwh,
@@ -613,7 +618,11 @@ def _timeline_time(timestamp: datetime) -> datetime:
     return timestamp.astimezone(UTC)
 
 
-def _unavailable(data: EVChargingPlanInput, reason: str) -> EVChargingPlan:
+def _unavailable(
+    data: EVChargingPlanInput,
+    reason: str,
+    interval_minutes: int,
+) -> EVChargingPlan:
     return EVChargingPlan(
         source_id=data.source_id,
         mode="unavailable",
@@ -621,6 +630,7 @@ def _unavailable(data: EVChargingPlanInput, reason: str) -> EVChargingPlan:
         departure=None,
         return_at=None,
         required_input_kwh=max(data.required_input_kwh, 0.0),
+        action_window_minutes=max(interval_minutes, 0),
         shortfall_kwh=max(data.required_input_kwh, 0.0),
         forecast_complete=False,
     )

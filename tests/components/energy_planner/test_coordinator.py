@@ -57,6 +57,8 @@ from custom_components.energy_planner.coordinator import (
     _add_surplus_allocation,
     _async_planner_history_from_ha,
     _consumption_from_hourly_profile,
+    _ev_action_window_minutes,
+    _ev_charging_slots,
     _remaining_today_surplus_slots,
     _solcast_entity_ids,
     _solcast_forecast,
@@ -1169,6 +1171,68 @@ def test_deadline_aware_ev_payload_uses_live_state_and_grid_permission(hass):
     assert plan["grid_high_tariff_kwh"] == 3
     assert plan["shortfall_kwh"] == 0
     assert plan["departure"] == "2026-08-17T07:00:00+00:00"
+    assert plan["action_window_minutes"] == 60
+
+
+def test_ev_action_windows_aggregate_complete_forecast_groups() -> None:
+    start = datetime(2026, 8, 17, 20, tzinfo=UTC)
+    points = [
+        {
+            "timestamp": start + timedelta(minutes=5 * index),
+            "battery_kwh": 5 + index,
+            "unused_surplus_kwh": 0.1 * (index + 1),
+            "solar_coverage": 0.8 if index == 1 else 1.0,
+            "is_nt": index != 3,
+        }
+        for index in range(4)
+    ]
+
+    slots = _ev_charging_slots(
+        points,
+        source_interval_minutes=5,
+        action_window_minutes=10,
+    )
+
+    assert [slot.start for slot in slots] == [
+        start,
+        start + timedelta(minutes=10),
+    ]
+    assert round(slots[0].unused_surplus_kwh, 6) == 0.3
+    assert slots[0].battery_kwh == 6
+    assert slots[0].solar_coverage == 0.8
+    assert slots[0].is_low_tariff is True
+    assert round(slots[1].unused_surplus_kwh, 6) == 0.7
+    assert slots[1].battery_kwh == 8
+    assert slots[1].is_low_tariff is False
+
+
+def test_ev_action_windows_skip_incomplete_groups() -> None:
+    start = datetime(2026, 8, 17, 20, tzinfo=UTC)
+    points = [
+        {
+            "timestamp": start + timedelta(minutes=offset),
+            "battery_kwh": 6,
+            "unused_surplus_kwh": 0,
+            "solar_coverage": 1,
+            "is_nt": True,
+        }
+        for offset in (0, 10, 15)
+    ]
+
+    slots = _ev_charging_slots(
+        points,
+        source_interval_minutes=5,
+        action_window_minutes=10,
+    )
+
+    assert [slot.start for slot in slots] == [start + timedelta(minutes=10)]
+
+
+def test_ev_action_window_uses_smallest_compatible_interval() -> None:
+    assert {
+        interval: _ev_action_window_minutes(interval)
+        for interval in (5, 10, 15, 30, 60)
+    } == {5: 10, 10: 10, 15: 30, 30: 30, 60: 60}
 
 
 def _electric_vehicle_entry(
