@@ -339,7 +339,13 @@ def _managed_source_allocation(
     if not isinstance(loads, dict):
         return {}
     payload = loads.get(source_id)
-    return dict(payload) if isinstance(payload, dict) else {}
+    if not isinstance(payload, dict):
+        return {}
+    attributes = dict(payload)
+    for key in ("target_date", "forecast_complete", "available_surplus_kwh"):
+        if key in allocation:
+            attributes[key] = allocation[key]
+    return attributes
 
 
 def _tomorrow_surplus_attributes(result: PlannerResult) -> dict[str, Any]:

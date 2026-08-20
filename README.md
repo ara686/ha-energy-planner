@@ -144,8 +144,8 @@ Most useful entities:
 | `sensor.energy_planner_recommended_managed_energy_today` | Total EV charging input recommended for the complete remaining slots today. It is unavailable when their slot or solar coverage is incomplete. |
 | `sensor.energy_planner_recommended_managed_energy_tomorrow` | Total energy recommended for all managed loads tomorrow. Its attributes include compact allocations for every complete future local day in the horizon. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Complete tomorrow surplus remaining after all recommendations. |
-| `sensor.energy_planner_managed_<source>_suggested_today` | Charger-input energy recommended today for an `electric_vehicle` load. It is unavailable for other load types. |
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Generic attributes describe the history/request; hot-water attributes include average temperature, minimum need, flexible capacity and minimum shortfall; EV attributes include battery/electrical demand and shortfall. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Charger-input energy recommended today for an `electric_vehicle` load. It is unavailable for other load types. Typed allocations expose forecast completeness and a compact per-source solar timeline. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Hot-water attributes include the planned target temperature and its solar timeline; EV attributes include battery/electrical demand, shortfall and its solar timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Current advisory EV action such as `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` or `complete`. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Next configured local departure used as the EV deadline. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Charger-input energy planned before departure. Attributes contain the source split, shortfall, reason, next action, solar-if-home result and compact timeline. |
@@ -166,6 +166,8 @@ Start with these dashboard ideas:
 - Home vs managed consumption history chart.
 - Per-load managed consumption chart, for example EV charging and water heating
   in separate series.
+- Read-only hot-water and EV plan cards with a human summary, exact time windows
+  and a combined household overview.
 
 Lovelace and ApexCharts examples live in [dashboard examples](docs/dashboard.md).
 Screenshots can be added there later without making this README too long.
@@ -201,8 +203,24 @@ included in plan-specific simulations.
 
 ## Manual Recalculation
 
-Energy Planner recalculates automatically. It also reacts to battery SoC and EV
-energy-request, location, cable and GRID-permission changes.
+Energy Planner recalculates automatically at the configured update interval,
+which defaults to 60 minutes and acts as a forecast refresh and safety fallback.
+For deadline-aware EV plans, it also schedules a one-time recalculation at every
+planned mode start and end, so advisory transitions do not wait for the periodic
+interval. A changed EV energy request, location, cable or GRID permission
+triggers a recalculation after a 10-second debounce; battery SoC and cumulative
+energy-source changes retain their 60-second debounce.
+
+Deadline-aware EV actions use permission windows with a minimum resolution of
+10 minutes while the underlying SoC forecast keeps its configured finer
+resolution. If the configured planning interval is not compatible with 10
+minutes, Energy Planner uses the smallest compatible interval, for example 15
+minutes becomes a 30-minute EV action window. A window permits its advisory
+mode; it does not require maximum charger power for the complete window. The
+planned energy can therefore be lower than the window's maximum capacity, and a
+request reaching zero ends the recommendation early after the input refresh.
+The `planned_until_departure` attributes expose the effective resolution as
+`action_window_minutes`.
 
 You can force a recalculation from **Developer Tools > Services**:
 

@@ -140,8 +140,8 @@ Nejužitečnější entity:
 | `sensor.energy_planner_recommended_managed_energy_today` | Celkový elektrický vstup doporučený pro EV ve zbývajících úplných slotech dneška. Při neúplném pokrytí slotů nebo solárních dat je nedostupný. |
 | `sensor.energy_planner_recommended_managed_energy_tomorrow` | Celková energie doporučená pro všechny řízené odběry na zítřek. Atributy obsahují kompaktní alokace pro každý úplný budoucí místní den v horizontu. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Zítřejší přebytek zbývající po všech doporučeních. |
-| `sensor.energy_planner_managed_<source>_suggested_today` | Elektrický vstup nabíječky doporučený dnes pro `electric_vehicle`. Pro jiné typy je entita nedostupná. |
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr. U `generic` atributy popisují historii nebo požadavek; u TUV obsahují průměrnou teplotu, energii do minima, pružnou kapacitu a nedostatek do minima; u EV požadavek a nedostatek na straně baterie i elektrického vstupu. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Elektrický vstup nabíječky doporučený dnes pro `electric_vehicle`. Pro jiné typy je entita nedostupná. Typované alokace zveřejňují úplnost předpovědi a kompaktní solární timeline konkrétního zdroje. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr. Atributy TUV obsahují plánovanou cílovou teplotu a solární timeline; atributy EV požadavek, nedostatek a jeho solární timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Aktuální poradní EV akce, například `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` nebo `complete`. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Příští nastavený místní odjezd použitý jako deadline EV. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Elektrický vstup nabíječky naplánovaný do odjezdu. Atributy obsahují rozpad zdrojů, shortfall, důvod, další akci, variantu se solárem při autě doma a kompaktní časovou osu. |
@@ -161,6 +161,8 @@ Dobré první dashboardy:
 - Graf nevyužitého přebytku FVE.
 - Graf spotřeby domu proti řízené spotřebě.
 - Graf řízených spotřebičů zvlášť, například EV a TUV jako samostatné řady.
+- Informační karty plánů TUV a EV s lidským souhrnem, přesnými časovými okny
+  a společným přehledem domácnosti.
 
 Lovelace a ApexCharts ukázky jsou v [dashboard příkladech](docs/dashboard.md).
 Screenshoty se dají později doplnit tam, bez zbytečného natahování hlavního
@@ -196,8 +198,23 @@ nezahrne žádné nabíjení ze sítě.
 
 ## Ruční přepočet
 
-Energy Planner se přepočítává automaticky a reaguje také na změny SoC baterie,
-EV požadavku energie, polohy, kabelu a povolení GRIDu.
+Energy Planner se přepočítává automaticky v nastaveném intervalu, jehož výchozí
+hodnota je 60 minut a který slouží k obnově předpovědi a jako bezpečnostní
+záloha. Pro EV plán podle odjezdu navíc plánuje jednorázový přepočet na každý
+začátek a konec plánovaného režimu, takže poradní přechody nečekají na periodický
+interval. Změna EV požadavku energie, polohy, kabelu nebo povolení GRIDu vyvolá
+přepočet po desetisekundovém debounce; změny SoC baterie a kumulativních zdrojů
+energie si zachovávají 60sekundový debounce.
+
+Deadline-aware EV akce používají povolovací okna s minimálním rozlišením 10
+minut, zatímco podkladová SoC prognóza si zachovává nastavené jemnější
+rozlišení. Pokud nastavený interval plánování není kompatibilní s 10 minutami,
+Energy Planner použije nejmenší kompatibilní interval; například 15 minut vede
+na 30minutové EV akční okno. Okno povoluje doporučený režim, ale nevyžaduje
+maximální výkon nabíječky po celou dobu. Plánovaná energie proto může být nižší
+než maximální kapacita okna a požadavek, který klesne na nulu, doporučení po
+obnově vstupu ukončí dříve. Atributy entity `planned_until_departure` uvádějí
+účinné rozlišení jako `action_window_minutes`.
 
 Ruční přepočet spustíte přes **Developer Tools > Services**:
 

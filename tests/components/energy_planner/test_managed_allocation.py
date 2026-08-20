@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -129,6 +130,103 @@ def test_hot_water_power_limits_each_slot_across_minimum_and_flexible_phases():
     assert all(value <= 1 for value in result.hot_water_energy_by_slot.values())
 
 
+def test_timeline_is_separate_per_source_and_preserves_slot_gaps():
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=60,
+        surplus_complete=True,
+        surplus_slots=[
+            SurplusSlot(start, 4),
+            SurplusSlot(start + timedelta(hours=1), 4),
+            SurplusSlot(start + timedelta(hours=3), 4),
+        ],
+        loads=[
+            _hot_water("first", required=6, flexible=0, power=10),
+            _hot_water("second", required=6, flexible=0, power=10),
+        ],
+    )
+
+    loads = {load.source_id: load.as_dict() for load in result.loads}
+    assert loads["first"]["timeline"] == [
+        {
+            "start": "2026-08-19T10:00:00",
+            "end": "2026-08-19T12:00:00",
+            "mode": "solar",
+            "energy_kwh": 4,
+        },
+        {
+            "start": "2026-08-19T13:00:00",
+            "end": "2026-08-19T14:00:00",
+            "mode": "solar",
+            "energy_kwh": 2,
+        },
+    ]
+    assert loads["second"]["timeline"] == loads["first"]["timeline"]
+    assert sum(window["energy_kwh"] for window in loads["first"]["timeline"]) == 6
+
+
+def test_timeline_merges_elapsed_slots_across_dst_fallback():
+    timezone = ZoneInfo("Europe/Prague")
+    first = datetime(2026, 10, 25, 2, 30, tzinfo=timezone, fold=0)
+    repeated = (first.astimezone(UTC) + timedelta(hours=1)).astimezone(timezone)
+    result = allocate_managed_day(
+        target_date=first.date(),
+        interval_minutes=60,
+        surplus_complete=True,
+        surplus_slots=[SurplusSlot(first, 1), SurplusSlot(repeated, 1)],
+        loads=[_electric_vehicle("car", required=2, power=2)],
+    )
+
+    assert result.loads[0].as_dict()["timeline"] == [
+        {
+            "start": "2026-10-25T00:30:00+00:00",
+            "end": "2026-10-25T02:30:00+00:00",
+            "mode": "solar",
+            "energy_kwh": 2,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("available", "required", "flexible", "recommended", "target", "shortfall"),
+    [
+        (6, 2, 4, 6, 70, 0),
+        (4, 2, 4, 4, 60, 0),
+        (2, 4, 2, 2, 50, 2),
+        (0, 0, 0, 0, 40, 0),
+    ],
+)
+def test_hot_water_planned_target_temperature(
+    available,
+    required,
+    flexible,
+    recommended,
+    target,
+    shortfall,
+):
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=60,
+        surplus_complete=True,
+        surplus_slots=[SurplusSlot(start, available)],
+        loads=[
+            _hot_water(
+                "boiler",
+                required=required,
+                flexible=flexible,
+                power=20,
+            )
+        ],
+    )
+
+    load = result.loads[0].as_dict()
+    assert load["recommended_kwh"] == recommended
+    assert load["planned_target_temperature"] == target
+    assert load["minimum_shortfall_kwh"] == shortfall
+
+
 def test_lower_number_priority_is_allocated_first():
     start = datetime(2026, 8, 19, 10)
     result = allocate_managed_day(
@@ -196,10 +294,12 @@ def test_incomplete_day_withholds_recommendations():
     )
 
     assert result.state == "insufficient_data"
+    assert result.forecast_complete is False
     assert result.available_surplus_kwh is None
     assert result.recommended_kwh is None
     assert result.loads[0].recommended_kwh is None
     assert result.loads[0].minimum_shortfall_kwh is None
+    assert result.loads[0].as_dict()["timeline"] == []
 
 
 def test_valid_hot_water_load_with_no_deficit_recommends_zero():
