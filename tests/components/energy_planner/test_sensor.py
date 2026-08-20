@@ -1295,7 +1295,7 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "custom_components.energy_planner.MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS",
+        "custom_components.energy_planner.EV_MODEL_REFRESH_DEBOUNCE_SECONDS",
         0,
     )
     set_source_states(hass)

@@ -201,8 +201,13 @@ included in plan-specific simulations.
 
 ## Manual Recalculation
 
-Energy Planner recalculates automatically. It also reacts to battery SoC and EV
-energy-request, location, cable and GRID-permission changes.
+Energy Planner recalculates automatically at the configured update interval,
+which defaults to 60 minutes and acts as a forecast refresh and safety fallback.
+For deadline-aware EV plans, it also schedules a one-time recalculation at every
+planned mode start and end, so advisory transitions do not wait for the periodic
+interval. A changed EV energy request, location, cable or GRID permission
+triggers a recalculation after a 10-second debounce; battery SoC and cumulative
+energy-source changes retain their 60-second debounce.
 
 You can force a recalculation from **Developer Tools > Services**:
 
