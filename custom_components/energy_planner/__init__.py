@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
+from datetime import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -14,7 +16,11 @@ from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.debounce import Debouncer
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_point_in_utc_time,
+    async_track_state_change_event,
+)
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BATTERY_SOC_ENTITY,
@@ -41,6 +47,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 SOC_REFRESH_DEBOUNCE_SECONDS = 60
 MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS = 60
+EV_MODEL_REFRESH_DEBOUNCE_SECONDS = 10
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -88,6 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _register_battery_soc_refresh(hass, entry, coordinator)
     _register_energy_source_history(hass, entry, coordinator)
     _register_managed_model_refresh(hass, entry, coordinator)
+    _register_ev_plan_boundary_refresh(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -324,7 +332,7 @@ def _register_managed_model_refresh(
     debouncer = Debouncer(
         hass,
         _LOGGER,
-        cooldown=MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS,
+        cooldown=EV_MODEL_REFRESH_DEBOUNCE_SECONDS,
         immediate=False,
         function=_request_refresh,
     )
@@ -355,6 +363,88 @@ def _register_managed_model_refresh(
             _handle_managed_model_change,
         )
     )
+
+
+def _register_ev_plan_boundary_refresh(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: Any,
+) -> None:
+    """Refresh the planner exactly at EV charging-plan boundaries."""
+    cancel_boundary: Callable[[], None] | None = None
+
+    @callback
+    def _cancel_boundary() -> None:
+        nonlocal cancel_boundary
+        if cancel_boundary is not None:
+            cancel_boundary()
+            cancel_boundary = None
+
+    async def _handle_boundary(_now: datetime) -> None:
+        nonlocal cancel_boundary
+        cancel_boundary = None
+        await coordinator.async_request_refresh()
+
+    @callback
+    def _schedule_boundary() -> None:
+        nonlocal cancel_boundary
+        _cancel_boundary()
+        boundary = _next_ev_plan_boundary(coordinator.data, now=dt_util.utcnow())
+        if boundary is None:
+            return
+        _LOGGER.debug("Scheduling EV plan refresh at %s", boundary.isoformat())
+        cancel_boundary = async_track_point_in_utc_time(
+            hass,
+            _handle_boundary,
+            boundary,
+        )
+
+    entry.async_on_unload(coordinator.async_add_listener(_schedule_boundary))
+    entry.async_on_unload(_cancel_boundary)
+    _schedule_boundary()
+
+
+def _next_ev_plan_boundary(result: Any, *, now: datetime) -> datetime | None:
+    """Return the earliest valid future boundary across all EV plans."""
+    plan = getattr(result, "plan", None)
+    if not isinstance(plan, dict):
+        return None
+    ev_plans = plan.get("ev_charging_plans")
+    if not isinstance(ev_plans, dict):
+        return None
+
+    now_utc = dt_util.as_utc(now)
+    boundaries: list[datetime] = []
+    for ev_plan in ev_plans.values():
+        if not isinstance(ev_plan, dict):
+            continue
+        timeline = ev_plan.get("timeline")
+        if not isinstance(timeline, list):
+            continue
+        for window in timeline:
+            if not isinstance(window, dict):
+                continue
+            for key in ("start", "end"):
+                boundary = _ev_plan_boundary_datetime(window.get(key))
+                if boundary is not None and boundary > now_utc:
+                    boundaries.append(boundary)
+    return min(boundaries) if boundaries else None
+
+
+def _ev_plan_boundary_datetime(value: Any) -> datetime | None:
+    """Parse one timezone-aware EV plan boundary as UTC."""
+    if isinstance(value, datetime):
+        boundary = value
+    elif isinstance(value, str):
+        try:
+            boundary = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if boundary.tzinfo is None:
+        return None
+    return dt_util.as_utc(boundary)
 
 
 def _energy_source_entities(entry: ConfigEntry) -> list[tuple[str, str]]:

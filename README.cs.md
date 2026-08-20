@@ -196,8 +196,13 @@ nezahrne žádné nabíjení ze sítě.
 
 ## Ruční přepočet
 
-Energy Planner se přepočítává automaticky a reaguje také na změny SoC baterie,
-EV požadavku energie, polohy, kabelu a povolení GRIDu.
+Energy Planner se přepočítává automaticky v nastaveném intervalu, jehož výchozí
+hodnota je 60 minut a který slouží k obnově předpovědi a jako bezpečnostní
+záloha. Pro EV plán podle odjezdu navíc plánuje jednorázový přepočet na každý
+začátek a konec plánovaného režimu, takže poradní přechody nečekají na periodický
+interval. Změna EV požadavku energie, polohy, kabelu nebo povolení GRIDu vyvolá
+přepočet po desetisekundovém debounce; změny SoC baterie a kumulativních zdrojů
+energie si zachovávají 60sekundový debounce.
 
 Ruční přepočet spustíte přes **Developer Tools > Services**:
 
