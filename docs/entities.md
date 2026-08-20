@@ -75,8 +75,8 @@ typically creates entity IDs like
 
 | Typical entity pattern | Category | Unit/type | Description |
 |------------------------|----------|-----------|-------------|
-| `sensor.energy_planner_managed_<source>_suggested_today` | Standard | `kWh` | Recommended charger electrical input for an `electric_vehicle` today. Unavailable for non-EV loads and when remaining-today solar coverage is incomplete. |
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Standard | `kWh` | Recommended energy for this load tomorrow. Common attributes include type, priority, state, method, expected demand and reason. Generic loads add history/request details; hot-water loads add thermal-model values; EV loads add request, power, efficiency and shortfalls. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Standard | `kWh` | Recommended charger electrical input for an `electric_vehicle` today. Unavailable for non-EV loads and when remaining-today solar coverage is incomplete. Attributes include day coverage and this EV's compact solar timeline. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Standard | `kWh` | Recommended energy for this load tomorrow. Common attributes include type, priority, state, method, expected demand, reason, target date, forecast completeness and available surplus. Hot-water and EV loads also expose their own compact solar timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Standard | enum | Current deadline-aware EV instruction: `off`, `connect_vehicle`, `wait_for_solar`, `solar`, `home_battery`, `grid_low_tariff`, `grid_high_tariff`, `complete`, `shortfall` or `unavailable`. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Standard | timestamp | Next local workday departure used as the charging deadline. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Standard | `kWh` | Charger-input energy assigned before departure. Attributes contain the source split, shortfall, next action, reason, return time, solar-if-home counterfactual and compact timeline. |
@@ -106,8 +106,10 @@ history attributes. For `generic`, `method` is `history`, `requested` or
 a guarantee about PV production or device behavior. For `hot_water`, `method`
 is `thermal_model` and the attributes include `average_temperature`,
 `minimum_required_kwh`, `flexible_capacity_kwh`, `minimum_shortfall_kwh` and
-`recommended_kwh`. An unavailable temperature sensor makes only this suggested
-entity unavailable; historical per-source sensors remain available.
+`recommended_kwh`. `planned_target_temperature` is the average tank temperature
+implied by the allocated energy, capped at the configured maximum. An
+unavailable temperature sensor makes only this suggested entity unavailable;
+historical per-source sensors remain available.
 
 The suggested-today entity is available only for `electric_vehicle`. Its
 `method` is `ev_request`; attributes include `battery_required_kwh`,
@@ -117,6 +119,13 @@ The suggested-today entity is available only for `electric_vehicle`. Its
 charger input, while `battery_*` values are on the vehicle-battery side. Invalid
 EV inputs make only that EV recommendation unavailable and never trigger a
 history fallback.
+
+The suggested-today and suggested-tomorrow attributes for typed loads include
+`target_date`, `forecast_complete`, `available_surplus_kwh` and `timeline`.
+Each solar timeline window contains ISO `start` and `end` timestamps, the stable
+mode `solar` and `energy_kwh`. Adjacent slots are merged only when they are
+contiguous; gaps remain separate. The timeline belongs to that one configured
+source, even when several loads share the same priority and surplus slots.
 
 The three deadline-aware entities use stable unique IDs. The
 `planned_until_departure` attributes include `solar_kwh`, `home_battery_kwh`,

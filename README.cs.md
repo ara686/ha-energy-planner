@@ -140,8 +140,8 @@ Nejužitečnější entity:
 | `sensor.energy_planner_recommended_managed_energy_today` | Celkový elektrický vstup doporučený pro EV ve zbývajících úplných slotech dneška. Při neúplném pokrytí slotů nebo solárních dat je nedostupný. |
 | `sensor.energy_planner_recommended_managed_energy_tomorrow` | Celková energie doporučená pro všechny řízené odběry na zítřek. Atributy obsahují kompaktní alokace pro každý úplný budoucí místní den v horizontu. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Zítřejší přebytek zbývající po všech doporučeních. |
-| `sensor.energy_planner_managed_<source>_suggested_today` | Elektrický vstup nabíječky doporučený dnes pro `electric_vehicle`. Pro jiné typy je entita nedostupná. |
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr. U `generic` atributy popisují historii nebo požadavek; u TUV obsahují průměrnou teplotu, energii do minima, pružnou kapacitu a nedostatek do minima; u EV požadavek a nedostatek na straně baterie i elektrického vstupu. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Elektrický vstup nabíječky doporučený dnes pro `electric_vehicle`. Pro jiné typy je entita nedostupná. Typované alokace zveřejňují úplnost předpovědi a kompaktní solární timeline konkrétního zdroje. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr. Atributy TUV obsahují plánovanou cílovou teplotu a solární timeline; atributy EV požadavek, nedostatek a jeho solární timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Aktuální poradní EV akce, například `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` nebo `complete`. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Příští nastavený místní odjezd použitý jako deadline EV. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Elektrický vstup nabíječky naplánovaný do odjezdu. Atributy obsahují rozpad zdrojů, shortfall, důvod, další akci, variantu se solárem při autě doma a kompaktní časovou osu. |
@@ -161,6 +161,8 @@ Dobré první dashboardy:
 - Graf nevyužitého přebytku FVE.
 - Graf spotřeby domu proti řízené spotřebě.
 - Graf řízených spotřebičů zvlášť, například EV a TUV jako samostatné řady.
+- Informační karty plánů TUV a EV s lidským souhrnem, přesnými časovými okny
+  a společným přehledem domácnosti.
 
 Lovelace a ApexCharts ukázky jsou v [dashboard příkladech](docs/dashboard.md).
 Screenshoty se dají později doplnit tam, bez zbytečného natahování hlavního

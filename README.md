@@ -144,8 +144,8 @@ Most useful entities:
 | `sensor.energy_planner_recommended_managed_energy_today` | Total EV charging input recommended for the complete remaining slots today. It is unavailable when their slot or solar coverage is incomplete. |
 | `sensor.energy_planner_recommended_managed_energy_tomorrow` | Total energy recommended for all managed loads tomorrow. Its attributes include compact allocations for every complete future local day in the horizon. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Complete tomorrow surplus remaining after all recommendations. |
-| `sensor.energy_planner_managed_<source>_suggested_today` | Charger-input energy recommended today for an `electric_vehicle` load. It is unavailable for other load types. |
-| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Generic attributes describe the history/request; hot-water attributes include average temperature, minimum need, flexible capacity and minimum shortfall; EV attributes include battery/electrical demand and shortfall. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Charger-input energy recommended today for an `electric_vehicle` load. It is unavailable for other load types. Typed allocations expose forecast completeness and a compact per-source solar timeline. |
+| `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Hot-water attributes include the planned target temperature and its solar timeline; EV attributes include battery/electrical demand, shortfall and its solar timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Current advisory EV action such as `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` or `complete`. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Next configured local departure used as the EV deadline. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Charger-input energy planned before departure. Attributes contain the source split, shortfall, reason, next action, solar-if-home result and compact timeline. |
@@ -166,6 +166,8 @@ Start with these dashboard ideas:
 - Home vs managed consumption history chart.
 - Per-load managed consumption chart, for example EV charging and water heating
   in separate series.
+- Read-only hot-water and EV plan cards with a human summary, exact time windows
+  and a combined household overview.
 
 Lovelace and ApexCharts examples live in [dashboard examples](docs/dashboard.md).
 Screenshots can be added there later without making this README too long.

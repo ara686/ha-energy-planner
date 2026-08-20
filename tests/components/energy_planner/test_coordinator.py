@@ -607,6 +607,16 @@ def test_hot_water_allocation_repeats_demand_for_complete_future_days(hass):
     assert first_load["recommended_kwh"] == 5
     assert second_load["recommended_kwh"] == 1
     assert second_load["minimum_shortfall_kwh"] == 0.163
+    assert 40 < first_load["planned_target_temperature"] < 70
+    assert first_load["timeline"] == [
+        {
+            "start": "2026-08-19T10:00:00",
+            "end": "2026-08-19T11:00:00",
+            "mode": "solar",
+            "energy_kwh": 5,
+        }
+    ]
+    assert first.forecast_complete is True
     assert result.plan["surplus_allocation"] == first.as_dict()
     assert warnings == []
 
