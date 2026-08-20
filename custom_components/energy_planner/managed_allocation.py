@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 from .allocation import ManagedLoadEstimate
@@ -12,6 +12,7 @@ from .hot_water import HotWaterDemand
 
 LoadType = Literal["generic", "hot_water", "electric_vehicle"]
 AllocationState = Literal["ok", "insufficient_data"]
+ManagedTimelineMode = Literal["solar"]
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,25 @@ ManagedAllocationInput = (
 )
 
 
+@dataclass(frozen=True)
+class ManagedLoadTimelineWindow:
+    """One contiguous managed-load recommendation window."""
+
+    start: datetime
+    end: datetime
+    mode: ManagedTimelineMode
+    energy_kwh: float
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a compact public planner payload."""
+        return {
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "mode": self.mode,
+            "energy_kwh": _round(self.energy_kwh),
+        }
+
+
 @dataclass
 class ManagedLoadAllocation:
     """One load's result for one complete local day."""
@@ -86,6 +106,7 @@ class ManagedLoadAllocation:
     minimum_allocated_kwh: float = 0.0
     minimum_shortfall_kwh: float | None = 0.0
     details: dict[str, Any] = field(default_factory=dict)
+    timeline: list[ManagedLoadTimelineWindow] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         payload = {
@@ -114,6 +135,7 @@ class ManagedLoadAllocation:
                         else None
                     ),
                     **self.details,
+                    "timeline": [window.as_dict() for window in self.timeline],
                 }
             )
         elif self.load_type == "electric_vehicle":
@@ -123,6 +145,7 @@ class ManagedLoadAllocation:
                     for key, value in self.details.items()
                 }
             )
+            payload["timeline"] = [window.as_dict() for window in self.timeline]
         else:
             payload.update(self.details)
         return payload
@@ -133,6 +156,7 @@ class ManagedDayAllocation:
     """Allocation and slot schedules for one local calendar day."""
 
     state: AllocationState
+    forecast_complete: bool
     target_date: date
     available_surplus_kwh: float | None
     expected_demand_kwh: float
@@ -148,6 +172,7 @@ class ManagedDayAllocation:
     def as_dict(self) -> dict[str, Any]:
         return {
             "state": self.state,
+            "forecast_complete": self.forecast_complete,
             "target_date": self.target_date.isoformat(),
             "available_surplus_kwh": (
                 _round(self.available_surplus_kwh)
@@ -191,6 +216,7 @@ def allocate_managed_day(
             result.state = "insufficient_data"
         return ManagedDayAllocation(
             state="insufficient_data",
+            forecast_complete=False,
             target_date=target_date,
             available_surplus_kwh=None,
             expected_demand_kwh=expected,
@@ -210,6 +236,7 @@ def allocate_managed_day(
     hot_by_source: dict[str, float] = {}
     ev_schedule: dict[datetime, float] = {}
     ev_by_source: dict[str, float] = {}
+    schedule_by_source_slot: dict[tuple[str, datetime], float] = {}
 
     hot_loads = [load for load in loads if isinstance(load, HotWaterAllocationInput)]
     ev_loads = [
@@ -235,6 +262,7 @@ def allocate_managed_day(
         hot_by_source=hot_by_source,
         ev_schedule=ev_schedule,
         ev_by_source=ev_by_source,
+        schedule_by_source_slot=schedule_by_source_slot,
         minimum_phase=True,
     )
     _allocate_phase(
@@ -256,6 +284,7 @@ def allocate_managed_day(
         hot_by_source=hot_by_source,
         ev_schedule=ev_schedule,
         ev_by_source=ev_by_source,
+        schedule_by_source_slot=schedule_by_source_slot,
     )
     _allocate_phase(
         items=[
@@ -274,6 +303,7 @@ def allocate_managed_day(
         hot_by_source=hot_by_source,
         ev_schedule=ev_schedule,
         ev_by_source=ev_by_source,
+        schedule_by_source_slot=schedule_by_source_slot,
     )
     _allocate_phase(
         items=[
@@ -294,6 +324,7 @@ def allocate_managed_day(
         hot_by_source=hot_by_source,
         ev_schedule=ev_schedule,
         ev_by_source=ev_by_source,
+        schedule_by_source_slot=schedule_by_source_slot,
     )
 
     for result in results.values():
@@ -303,6 +334,16 @@ def allocate_managed_day(
             result.minimum_required_kwh - result.minimum_allocated_kwh,
             0.0,
         )
+        if result.load_type in {"hot_water", "electric_vehicle"}:
+            result.timeline = _merge_source_timeline(
+                source_id=result.source_id,
+                schedule_by_source_slot=schedule_by_source_slot,
+                interval_minutes=interval_minutes,
+            )
+        if result.load_type == "hot_water":
+            result.details["planned_target_temperature"] = (
+                _planned_hot_water_temperature(result)
+            )
         if result.load_type == "electric_vehicle":
             electrical_shortfall = max(
                 result.expected_demand_kwh - result.recommended_kwh,
@@ -325,6 +366,7 @@ def allocate_managed_day(
         warnings.append("Managed loads have no usable demand estimate.")
     return ManagedDayAllocation(
         state="ok" if usable_loads else "insufficient_data",
+        forecast_complete=True,
         target_date=target_date,
         available_surplus_kwh=initial_surplus,
         expected_demand_kwh=expected,
@@ -372,6 +414,7 @@ def _allocate_phase(
     hot_by_source: dict[str, float],
     ev_schedule: dict[datetime, float],
     ev_by_source: dict[str, float],
+    schedule_by_source_slot: dict[tuple[str, datetime], float],
     minimum_phase: bool = False,
 ) -> None:
     for priority in sorted({item.priority for item in items}):
@@ -412,6 +455,10 @@ def _allocate_phase(
                     power_used[(source_id, slot_start)] = (
                         power_used.get((source_id, slot_start), 0.0) + value
                     )
+                    schedule_key = (source_id, slot_start)
+                    schedule_by_source_slot[schedule_key] = (
+                        schedule_by_source_slot.get(schedule_key, 0.0) + value
+                    )
                 if item.schedule_kind == "hot_water":
                     hot_schedule[slot_start] = hot_schedule.get(slot_start, 0.0) + value
                     hot_by_source[source_id] = hot_by_source.get(source_id, 0.0) + value
@@ -419,6 +466,61 @@ def _allocate_phase(
                     ev_schedule[slot_start] = ev_schedule.get(slot_start, 0.0) + value
                     ev_by_source[source_id] = ev_by_source.get(source_id, 0.0) + value
                 slot_pool[slot_start] -= value
+
+
+def _merge_source_timeline(
+    *,
+    source_id: str,
+    schedule_by_source_slot: dict[tuple[str, datetime], float],
+    interval_minutes: int,
+) -> list[ManagedLoadTimelineWindow]:
+    """Merge adjacent surplus slots for one managed load."""
+    allocations = {
+        start: energy
+        for (candidate_source_id, start), energy in schedule_by_source_slot.items()
+        if candidate_source_id == source_id and energy > 0
+    }
+    windows: list[ManagedLoadTimelineWindow] = []
+    delta = timedelta(minutes=interval_minutes)
+    for start in sorted(allocations, key=_timeline_time):
+        energy = allocations[start]
+        end = _add_elapsed_time(start, delta)
+        if windows and _timeline_time(windows[-1].end) == _timeline_time(start):
+            previous = windows[-1]
+            windows[-1] = ManagedLoadTimelineWindow(
+                start=previous.start,
+                end=end,
+                mode="solar",
+                energy_kwh=previous.energy_kwh + energy,
+            )
+        else:
+            windows.append(
+                ManagedLoadTimelineWindow(
+                    start=start,
+                    end=end,
+                    mode="solar",
+                    energy_kwh=energy,
+                )
+            )
+    return windows
+
+
+def _planned_hot_water_temperature(result: ManagedLoadAllocation) -> float | None:
+    """Return the average water temperature implied by allocated energy."""
+    average = result.details.get("average_temperature")
+    maximum = result.details.get("maximum_temperature")
+    maximum_capacity = result.details.get("maximum_capacity_kwh")
+    recommended = result.recommended_kwh
+    if not all(
+        isinstance(value, int | float)
+        for value in (average, maximum, maximum_capacity, recommended)
+    ):
+        return None
+    if maximum_capacity <= 1e-12:
+        return round(min(float(average), float(maximum)), 3)
+    fraction = min(max(float(recommended) / float(maximum_capacity), 0.0), 1.0)
+    target = float(average) + (float(maximum) - float(average)) * fraction
+    return round(min(target, float(maximum)), 3)
 
 
 def _proportional_capped_allocations(
@@ -528,3 +630,9 @@ def _timeline_time(timestamp: datetime) -> datetime:
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         return timestamp
     return timestamp.astimezone(UTC)
+
+
+def _add_elapsed_time(timestamp: datetime, delta: timedelta) -> datetime:
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return timestamp + delta
+    return (timestamp.astimezone(UTC) + delta).astimezone(timestamp.tzinfo)

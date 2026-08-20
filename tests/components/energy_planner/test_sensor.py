@@ -605,6 +605,14 @@ def test_managed_soc_forecast_attributes_include_compact_managed_energy():
                                 "recommended_kwh": 2,
                                 "minimum_shortfall_kwh": 0,
                                 "average_temperature": 40,
+                                "timeline": [
+                                    {
+                                        "start": "2026-07-06T12:00:00+00:00",
+                                        "end": "2026-07-06T13:00:00+00:00",
+                                        "mode": "solar",
+                                        "energy_kwh": 2,
+                                    }
+                                ],
                             }
                         },
                     }
@@ -798,6 +806,9 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
             updated=dt_util.utcnow(),
             plan={
                 "surplus_allocation": {
+                    "target_date": "2026-08-20",
+                    "forecast_complete": True,
+                    "available_surplus_kwh": 8.5,
                     "loads": {
                         "sensor.ev_energy_total": {
                             "state": "ok",
@@ -808,7 +819,7 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
                             "recommended_kwh": 4.0,
                             "confidence": "medium",
                         }
-                    }
+                    },
                 }
             },
         )
@@ -827,6 +838,9 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
             updated=dt_util.utcnow(),
             plan={
                 "surplus_allocation": {
+                    "target_date": "2026-08-20",
+                    "forecast_complete": True,
+                    "available_surplus_kwh": 8.5,
                     "loads": {
                         "sensor.ev_energy_total": {
                             "state": "ok",
@@ -838,8 +852,17 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
                             "flexible_capacity_kwh": 5.815,
                             "minimum_shortfall_kwh": 0.163,
                             "recommended_kwh": 1,
+                            "planned_target_temperature": 44.3,
+                            "timeline": [
+                                {
+                                    "start": "2026-08-20T12:00:00+02:00",
+                                    "end": "2026-08-20T13:00:00+02:00",
+                                    "mode": "solar",
+                                    "energy_kwh": 1,
+                                }
+                            ],
                         }
-                    }
+                    },
                 }
             },
         )
@@ -854,6 +877,20 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     assert ev_suggested.attributes["minimum_required_kwh"] == 1.163
     assert ev_suggested.attributes["flexible_capacity_kwh"] == 5.815
     assert ev_suggested.attributes["minimum_shortfall_kwh"] == 0.163
+    assert ev_suggested.attributes["target_date"] == "2026-08-20"
+    assert ev_suggested.attributes["forecast_complete"] is True
+    assert ev_suggested.attributes["available_surplus_kwh"] == 8.5
+    assert ev_suggested.attributes["planned_target_temperature"] == 44.3
+    assert ev_suggested.attributes["timeline"] == [
+        {
+            "start": "2026-08-20T12:00:00+02:00",
+            "end": "2026-08-20T13:00:00+02:00",
+            "mode": "solar",
+            "energy_kwh": 1,
+        }
+    ]
+    assert ev_suggested.state_info is not None
+    assert "timeline" in ev_suggested.state_info["unrecorded_attributes"]
 
     ev_history_entity_id = registry.async_get_entity_id(
         "sensor",
@@ -1083,9 +1120,18 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
         "charging_efficiency": 0.9,
         "maximum_charging_power_kw": 11,
         "recommended_kwh": 3.5,
+        "timeline": [
+            {
+                "start": "2026-08-18T12:00:00+02:00",
+                "end": "2026-08-18T13:00:00+02:00",
+                "mode": "solar",
+                "energy_kwh": 3.5,
+            }
+        ],
     }
     allocation = {
         "state": "ok",
+        "forecast_complete": True,
         "target_date": "2026-08-18",
         "available_surplus_kwh": 3.5,
         "expected_demand_kwh": 10,
@@ -1122,6 +1168,9 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
     assert ev_today.attributes["method"] == "ev_request"
     assert ev_today.attributes["electrical_shortfall_kwh"] == 6.5
     assert ev_today.attributes["battery_shortfall_kwh"] == 5.85
+    assert ev_today.attributes["forecast_complete"] is True
+    assert ev_today.attributes["target_date"] == "2026-08-18"
+    assert ev_today.attributes["timeline"][0]["mode"] == "solar"
     assert generic_today is not None
     assert generic_today.state == STATE_UNAVAILABLE
 

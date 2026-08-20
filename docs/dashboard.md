@@ -324,3 +324,287 @@ series:
         ];
       });
 ```
+
+## Human-Readable Managed-Load Plans
+
+The cards below use only Home Assistant's built-in Markdown card. They are
+read-only explanations of the plan; they do not control a water heater, vehicle
+or charger. Replace every example entity ID with the actual ID shown under
+**Settings > Devices & services > Energy Planner > Entities**.
+
+All timestamps are converted to the Home Assistant local time zone. A
+`timeline` item contains stable English fields: `start`, `end`, `mode` and
+`energy_kwh`. Hot-water and solar-only EV allocations use the `solar` mode;
+deadline-aware EV plans can additionally use `home_battery`,
+`grid_low_tariff` and `grid_high_tariff`.
+
+### Hot-Water Plan — Czech
+
+```yaml
+type: markdown
+title: Plán ohřevu TUV
+entity_id: sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow
+content: |
+  {% set entity = 'sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow' %}
+  {% set available = states(entity) not in ['unknown', 'unavailable'] %}
+  {% set complete = state_attr(entity, 'forecast_complete') == true %}
+  {% set energy = states(entity) | float(0) %}
+  {% set shortfall = state_attr(entity, 'minimum_shortfall_kwh') | float(0) %}
+  {% set current = state_attr(entity, 'average_temperature') | float(0) %}
+  {% set target = state_attr(entity, 'planned_target_temperature') | float(0) %}
+  {% set maximum = state_attr(entity, 'maximum_temperature') | float(0) %}
+  {% set capacity = state_attr(entity, 'maximum_capacity_kwh') | float(0) %}
+  {% set surplus = state_attr(entity, 'available_surplus_kwh') | float(0) %}
+  {% set timeline = state_attr(entity, 'timeline') or [] %}
+
+  {% if not available or not complete %}
+  ⚠️ **Spolehlivý plán zatím není k dispozici.** Zkontrolujte předpověď a vstupní teploty.
+  {% elif shortfall > 0.01 %}
+  ⚠️ Solární přebytek nestačí ani na minimální teplotu. Chybí přibližně **{{ shortfall | round(1) }} kWh**.
+  {% elif energy <= 0.01 and capacity <= 0.01 %}
+  ✅ Další ohřev není potřeba. Průměrná teplota je **{{ current | round(1) }} °C**.
+  {% elif energy <= 0.01 %}
+  Zítra není naplánovaný solární ohřev. Aktuální průměrná teplota je **{{ current | round(1) }} °C**.
+  {% elif target >= maximum - 0.1 %}
+  ☀️ Je k dispozici dost solárního přebytku. Zásobník se může ohřát na maximum **{{ maximum | round(1) }} °C**; plán počítá s **{{ energy | round(1) }} kWh** z dostupných {{ surplus | round(1) }} kWh.
+  {% else %}
+  ☀️ Solární přebytek pokryje částečný ohřev na přibližně **{{ target | round(1) }} °C**. Plánovaná energie je **{{ energy | round(1) }} kWh**.
+  {% endif %}
+
+  {% if timeline %}
+  **Časový plán**
+  {% for window in timeline %}
+  - {{ (as_datetime(window['start']) | as_local).strftime('%H:%M') }}–{{ (as_datetime(window['end']) | as_local).strftime('%H:%M') }} · solární přebytek · {{ window['energy_kwh'] | round(1) }} kWh
+  {% endfor %}
+  {% endif %}
+```
+
+### Hot-Water Plan — English
+
+```yaml
+type: markdown
+title: Hot-water plan
+entity_id: sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow
+content: |
+  {% set entity = 'sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow' %}
+  {% set available = states(entity) not in ['unknown', 'unavailable'] %}
+  {% set complete = state_attr(entity, 'forecast_complete') == true %}
+  {% set energy = states(entity) | float(0) %}
+  {% set shortfall = state_attr(entity, 'minimum_shortfall_kwh') | float(0) %}
+  {% set current = state_attr(entity, 'average_temperature') | float(0) %}
+  {% set target = state_attr(entity, 'planned_target_temperature') | float(0) %}
+  {% set maximum = state_attr(entity, 'maximum_temperature') | float(0) %}
+  {% set capacity = state_attr(entity, 'maximum_capacity_kwh') | float(0) %}
+  {% set surplus = state_attr(entity, 'available_surplus_kwh') | float(0) %}
+  {% set timeline = state_attr(entity, 'timeline') or [] %}
+
+  {% if not available or not complete %}
+  ⚠️ **A reliable plan is not available yet.** Check the forecast and temperature inputs.
+  {% elif shortfall > 0.01 %}
+  ⚠️ The solar surplus cannot reach the minimum temperature. About **{{ shortfall | round(1) }} kWh** is missing.
+  {% elif energy <= 0.01 and capacity <= 0.01 %}
+  ✅ No additional heating is needed. The average temperature is **{{ current | round(1) }} °C**.
+  {% elif energy <= 0.01 %}
+  No solar water heating is scheduled tomorrow. The current average temperature is **{{ current | round(1) }} °C**.
+  {% elif target >= maximum - 0.1 %}
+  ☀️ Enough solar surplus is available to heat the tank to its **{{ maximum | round(1) }} °C** maximum. The plan uses **{{ energy | round(1) }} kWh** of {{ surplus | round(1) }} kWh available.
+  {% else %}
+  ☀️ The solar surplus supports partial heating to about **{{ target | round(1) }} °C** using **{{ energy | round(1) }} kWh**.
+  {% endif %}
+
+  {% if timeline %}
+  **Timeline**
+  {% for window in timeline %}
+  - {{ (as_datetime(window['start']) | as_local).strftime('%H:%M') }}–{{ (as_datetime(window['end']) | as_local).strftime('%H:%M') }} · solar surplus · {{ window['energy_kwh'] | round(1) }} kWh
+  {% endfor %}
+  {% endif %}
+```
+
+### EV Plan — Czech
+
+This card automatically prefers the deadline-aware plan. When that strategy is
+not active, it shows the solar-only recommendations for today and tomorrow.
+
+```yaml
+type: markdown
+title: Plán nabíjení EV
+entity_id:
+  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_charging_energy_suggested_today
+  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+content: |
+  {% set deadline = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
+  {% set today = 'sensor.energy_planner_managed_ev_charging_energy_suggested_today' %}
+  {% set tomorrow = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
+
+  {% if deadline_plan %}
+    {% set planned = states(deadline) | float(0) %}
+    {% set required = state_attr(deadline, 'required_input_kwh') | float(0) %}
+    {% set solar = state_attr(deadline, 'solar_kwh') | float(0) %}
+    {% set battery = state_attr(deadline, 'home_battery_kwh') | float(0) %}
+    {% set nt = state_attr(deadline, 'grid_low_tariff_kwh') | float(0) %}
+    {% set grid = state_attr(deadline, 'grid_high_tariff_kwh') | float(0) %}
+    {% set shortfall = state_attr(deadline, 'shortfall_kwh') | float(0) %}
+    {% set departure = as_datetime(state_attr(deadline, 'departure')) | as_local %}
+    {% set timeline = state_attr(deadline, 'timeline') or [] %}
+    {% if state_attr(deadline, 'forecast_complete') != true %}
+  ⚠️ Předpověď nepokrývá celé období do návratu auta; plán může být neúplný.
+    {% endif %}
+    {% if required <= 0.01 %}
+  ✅ Požadavek je splněný; před odjezdem v **{{ departure.strftime('%H:%M') }}** není potřeba další nabíjení.
+    {% elif shortfall > 0.01 %}
+  ⚠️ Do odjezdu v **{{ departure.strftime('%H:%M') }}** je naplánováno **{{ planned | round(1) }} kWh**, ale stále chybí **{{ shortfall | round(1) }} kWh**.
+    {% else %}
+  ✅ Do odjezdu v **{{ departure.strftime('%H:%M') }}** je naplánováno požadovaných **{{ planned | round(1) }} kWh**.
+    {% endif %}
+    {% if solar + 0.01 < required %}
+  Přímý solární přebytek před odjezdem nestačí, proto plán kombinuje dostupné zdroje.
+    {% endif %}
+    {% if battery > 0.01 %}
+  Z domácí baterie se využije **{{ battery | round(1) }} kWh**, protože planner očekává přebytek v době, kdy bude auto pryč, a baterie zůstane nad bezpečným SoC.
+    {% endif %}
+
+  **Rozpad energie:** FVE {{ solar | round(1) }} kWh · baterie {{ battery | round(1) }} kWh · NT {{ nt | round(1) }} kWh · síť mimo NT {{ grid | round(1) }} kWh
+
+    {% if timeline %}
+  **Časový plán**
+    {% for window in timeline %}
+      {% set mode = window['mode'] %}
+      {% if mode == 'solar' %}{% set label = 'solární přebytek' %}
+      {% elif mode == 'home_battery' %}{% set label = 'domácí baterie' %}
+      {% elif mode == 'grid_low_tariff' %}{% set label = 'nízký tarif' %}
+      {% else %}{% set label = 'síť mimo NT' %}{% endif %}
+  - {{ (as_datetime(window['start']) | as_local).strftime('%d.%m. %H:%M') }}–{{ (as_datetime(window['end']) | as_local).strftime('%H:%M') }} · {{ label }} · {{ window['energy_kwh'] | round(1) }} kWh
+    {% endfor %}
+    {% endif %}
+  {% else %}
+    {% set today_ok = states(today) not in ['unknown', 'unavailable'] and state_attr(today, 'forecast_complete') == true %}
+    {% set tomorrow_ok = states(tomorrow) not in ['unknown', 'unavailable'] and state_attr(tomorrow, 'forecast_complete') == true %}
+    {% if not today_ok and not tomorrow_ok %}
+  ⚠️ **Spolehlivý solární plán zatím není k dispozici.** Zkontrolujte předpověď a požadovanou energii EV.
+    {% else %}
+      {% if not today_ok or not tomorrow_ok %}⚠️ Předpověď nepokrývá oba dny úplně; nedostupný den není do doporučení započtený.{% endif %}
+  Režim pouze ze soláru doporučuje dnes **{{ states(today) | float(0) | round(1) }} kWh** a zítra **{{ states(tomorrow) | float(0) | round(1) }} kWh**.
+      {% set remaining = state_attr(tomorrow, 'electrical_shortfall_kwh') | float(0) %}
+      {% if remaining > 0.01 %}⚠️ Po zítřejším plánu bude stále chybět přibližně **{{ remaining | round(1) }} kWh**.{% endif %}
+      {% for entity in [today, tomorrow] %}
+        {% for window in state_attr(entity, 'timeline') or [] %}
+  - {{ (as_datetime(window['start']) | as_local).strftime('%d.%m. %H:%M') }}–{{ (as_datetime(window['end']) | as_local).strftime('%H:%M') }} · solární přebytek · {{ window['energy_kwh'] | round(1) }} kWh
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+```
+
+### EV Plan — English
+
+```yaml
+type: markdown
+title: EV charging plan
+entity_id:
+  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_charging_energy_suggested_today
+  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+content: |
+  {% set deadline = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
+  {% set today = 'sensor.energy_planner_managed_ev_charging_energy_suggested_today' %}
+  {% set tomorrow = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
+
+  {% if deadline_plan %}
+    {% set planned = states(deadline) | float(0) %}
+    {% set required = state_attr(deadline, 'required_input_kwh') | float(0) %}
+    {% set solar = state_attr(deadline, 'solar_kwh') | float(0) %}
+    {% set battery = state_attr(deadline, 'home_battery_kwh') | float(0) %}
+    {% set nt = state_attr(deadline, 'grid_low_tariff_kwh') | float(0) %}
+    {% set grid = state_attr(deadline, 'grid_high_tariff_kwh') | float(0) %}
+    {% set shortfall = state_attr(deadline, 'shortfall_kwh') | float(0) %}
+    {% set departure = as_datetime(state_attr(deadline, 'departure')) | as_local %}
+    {% set timeline = state_attr(deadline, 'timeline') or [] %}
+    {% if state_attr(deadline, 'forecast_complete') != true %}
+  ⚠️ The forecast does not cover the complete period through the vehicle's return; this plan may be incomplete.
+    {% endif %}
+    {% if required <= 0.01 %}
+  ✅ The request is complete; no charging is needed before the **{{ departure.strftime('%H:%M') }}** departure.
+    {% elif shortfall > 0.01 %}
+  ⚠️ **{{ planned | round(1) }} kWh** is planned before the **{{ departure.strftime('%H:%M') }}** departure, but **{{ shortfall | round(1) }} kWh** is still missing.
+    {% else %}
+  ✅ The requested **{{ planned | round(1) }} kWh** is planned before the **{{ departure.strftime('%H:%M') }}** departure.
+    {% endif %}
+    {% if solar + 0.01 < required %}
+  Direct solar surplus before departure is insufficient, so the plan combines available sources.
+    {% endif %}
+    {% if battery > 0.01 %}
+  **{{ battery | round(1) }} kWh** comes from the home battery because the planner expects otherwise-unused surplus while the car is away and keeps the battery above safe SoC.
+    {% endif %}
+
+  **Energy split:** solar {{ solar | round(1) }} kWh · battery {{ battery | round(1) }} kWh · low tariff {{ nt | round(1) }} kWh · other grid {{ grid | round(1) }} kWh
+
+    {% if timeline %}
+  **Timeline**
+    {% for window in timeline %}
+      {% set mode = window['mode'] %}
+      {% if mode == 'solar' %}{% set label = 'solar surplus' %}
+      {% elif mode == 'home_battery' %}{% set label = 'home battery' %}
+      {% elif mode == 'grid_low_tariff' %}{% set label = 'low tariff' %}
+      {% else %}{% set label = 'grid outside low tariff' %}{% endif %}
+  - {{ (as_datetime(window['start']) | as_local).strftime('%d %b %H:%M') }}–{{ (as_datetime(window['end']) | as_local).strftime('%H:%M') }} · {{ label }} · {{ window['energy_kwh'] | round(1) }} kWh
+    {% endfor %}
+    {% endif %}
+  {% else %}
+    {% set today_ok = states(today) not in ['unknown', 'unavailable'] and state_attr(today, 'forecast_complete') == true %}
+    {% set tomorrow_ok = states(tomorrow) not in ['unknown', 'unavailable'] and state_attr(tomorrow, 'forecast_complete') == true %}
+    {% if not today_ok and not tomorrow_ok %}
+  ⚠️ **A reliable solar plan is not available yet.** Check the forecast and requested EV energy.
+    {% else %}
+      {% if not today_ok or not tomorrow_ok %}⚠️ The forecast does not fully cover both days; the unavailable day is omitted from the recommendation.{% endif %}
+  Solar-only mode recommends **{{ states(today) | float(0) | round(1) }} kWh** today and **{{ states(tomorrow) | float(0) | round(1) }} kWh** tomorrow.
+      {% set remaining = state_attr(tomorrow, 'electrical_shortfall_kwh') | float(0) %}
+      {% if remaining > 0.01 %}⚠️ About **{{ remaining | round(1) }} kWh** will remain after tomorrow's plan.{% endif %}
+      {% for entity in [today, tomorrow] %}
+        {% for window in state_attr(entity, 'timeline') or [] %}
+  - {{ (as_datetime(window['start']) | as_local).strftime('%d %b %H:%M') }}–{{ (as_datetime(window['end']) | as_local).strftime('%H:%M') }} · solar surplus · {{ window['energy_kwh'] | round(1) }} kWh
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+```
+
+### Household Overview — Czech
+
+```yaml
+type: markdown
+title: Energetický plán domácnosti
+entity_id:
+  - sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow
+  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+content: |
+  {% set boiler = 'sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow' %}
+  {% set ev = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
+  {% set ev_solar = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  - <ha-icon icon="mdi:water-boiler"></ha-icon> **TUV:** {% if states(boiler) in ['unknown', 'unavailable'] %}plán není dostupný{% else %}{{ states(boiler) | float(0) | round(1) }} kWh, cíl {{ state_attr(boiler, 'planned_target_temperature') | float(0) | round(1) }} °C{% endif %}
+  - <ha-icon icon="mdi:car-electric"></ha-icon> **EV:** {% if states(ev) not in ['unknown', 'unavailable'] %}{{ states(ev) | float(0) | round(1) }} kWh do odjezdu{% elif states(ev_solar) not in ['unknown', 'unavailable'] %}{{ states(ev_solar) | float(0) | round(1) }} kWh ze zítřejšího přebytku{% else %}plán není dostupný{% endif %}
+
+  Podrobné důvody a časová okna jsou v samostatných kartách TUV a EV.
+```
+
+### Household Overview — English
+
+```yaml
+type: markdown
+title: Household energy plan
+entity_id:
+  - sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow
+  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+content: |
+  {% set boiler = 'sensor.energy_planner_managed_water_heater_energy_suggested_tomorrow' %}
+  {% set ev = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
+  {% set ev_solar = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  - <ha-icon icon="mdi:water-boiler"></ha-icon> **Hot water:** {% if states(boiler) in ['unknown', 'unavailable'] %}plan unavailable{% else %}{{ states(boiler) | float(0) | round(1) }} kWh, target {{ state_attr(boiler, 'planned_target_temperature') | float(0) | round(1) }} °C{% endif %}
+  - <ha-icon icon="mdi:car-electric"></ha-icon> **EV:** {% if states(ev) not in ['unknown', 'unavailable'] %}{{ states(ev) | float(0) | round(1) }} kWh before departure{% elif states(ev_solar) not in ['unknown', 'unavailable'] %}{{ states(ev_solar) | float(0) | round(1) }} kWh from tomorrow's surplus{% else %}plan unavailable{% endif %}
+
+  See the separate hot-water and EV cards for reasons and exact windows.
+```
