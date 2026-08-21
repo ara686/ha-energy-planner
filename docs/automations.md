@@ -103,7 +103,7 @@ alias: Energy Planner - enable EV for today's solar recommendation
 mode: restart
 triggers:
   - trigger: numeric_state
-    entity_id: sensor.energy_planner_managed_ev_charging_energy_suggested_today
+    entity_id: sensor.energy_planner_managed_ev_station_total_energy_suggested_today
     above: 0.5
 actions:
   - action: switch.turn_on
@@ -173,7 +173,7 @@ conditions:
     entity_id: sensor.energy_planner_managed_boiler_energy_total_today
     above: 2
   - condition: numeric_state
-    entity_id: sensor.energy_planner_managed_ev_charging_energy_today
+    entity_id: sensor.energy_planner_managed_ev_station_total_energy_today
     below: 20
   - condition: state
     entity_id: binary_sensor.energy_planner_discharge_allowed
