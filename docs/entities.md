@@ -71,7 +71,7 @@ For every configured `Managed energy source`, Energy Planner also creates a
 small group of per-source entities. The final entity IDs depend on the selected
 source entity name. For example, a source with friendly name `EV charging energy`
 typically creates entity IDs like
-`sensor.energy_planner_managed_ev_charging_energy_today`.
+`sensor.energy_planner_managed_ev_station_total_energy_today`.
 
 | Typical entity pattern | Category | Unit/type | Description |
 |------------------------|----------|-----------|-------------|

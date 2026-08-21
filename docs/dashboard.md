@@ -7,9 +7,10 @@ entity exists. For example, a hot-water source meter named
 `sensor.boiler_energy_total` produces
 `sensor.energy_planner_managed_boiler_energy_total_suggested_tomorrow`.
 
-The managed-load examples below use that hypothetical `boiler_energy_total`
-source. Replace it with the source-specific ID that exists in your own Home
-Assistant instance.
+The managed-load examples below use hypothetical `boiler_energy_total` and
+`ev_station_total_energy` sources. Replace them with the source-specific IDs
+that exist in your own Home Assistant instance. In particular, copy the exact
+deadline-aware EV entity IDs if you have renamed them in the entity registry.
 
 Screenshots can be added here later, for example:
 
@@ -209,7 +210,7 @@ configured managed source. Enable the relevant entities in **Settings > Devices
 
 The example below uses these hypothetical source-specific entity IDs:
 
-- `sensor.energy_planner_managed_ev_charging_energy_history`
+- `sensor.energy_planner_managed_ev_station_total_energy_history`
 - `sensor.energy_planner_managed_boiler_energy_total_history`
 
 Adjust them to match the actual entities created for your configured sources.
@@ -227,7 +228,7 @@ yaxis:
   - min: 0
     decimals: 2
 series:
-  - entity: sensor.energy_planner_managed_ev_charging_energy_history
+  - entity: sensor.energy_planner_managed_ev_station_total_energy_history
     name: EV charging
     type: column
     unit: kWh
@@ -252,10 +253,10 @@ series:
 For simple cards and automation conditions, use the enabled summary entities
 instead, for example:
 
-- `sensor.energy_planner_managed_ev_charging_energy_today`
-- `sensor.energy_planner_managed_ev_charging_energy_current_hour`
-- `sensor.energy_planner_managed_ev_charging_energy_last_hour`
-- `sensor.energy_planner_managed_ev_charging_energy_tracked_total`
+- `sensor.energy_planner_managed_ev_station_total_energy_today`
+- `sensor.energy_planner_managed_ev_station_total_energy_current_hour`
+- `sensor.energy_planner_managed_ev_station_total_energy_last_hour`
+- `sensor.energy_planner_managed_ev_station_total_energy_tracked_total`
 
 ## Home And Managed Power History With ApexCharts
 
@@ -437,13 +438,13 @@ not active, it shows the solar-only recommendations for today and tomorrow.
 type: markdown
 title: Plán nabíjení EV
 entity_id:
-  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
-  - sensor.energy_planner_managed_ev_charging_energy_suggested_today
-  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+  - sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_station_total_energy_suggested_today
+  - sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow
 content: |
-  {% set deadline = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
-  {% set today = 'sensor.energy_planner_managed_ev_charging_energy_suggested_today' %}
-  {% set tomorrow = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  {% set deadline = 'sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure' %}
+  {% set today = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_today' %}
+  {% set tomorrow = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow' %}
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
@@ -511,13 +512,13 @@ content: |
 type: markdown
 title: EV charging plan
 entity_id:
-  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
-  - sensor.energy_planner_managed_ev_charging_energy_suggested_today
-  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+  - sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_station_total_energy_suggested_today
+  - sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow
 content: |
-  {% set deadline = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
-  {% set today = 'sensor.energy_planner_managed_ev_charging_energy_suggested_today' %}
-  {% set tomorrow = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  {% set deadline = 'sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure' %}
+  {% set today = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_today' %}
+  {% set tomorrow = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow' %}
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
@@ -586,12 +587,12 @@ type: markdown
 title: Energetický plán domácnosti
 entity_id:
   - sensor.energy_planner_managed_boiler_energy_total_suggested_tomorrow
-  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
-  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+  - sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow
 content: |
   {% set boiler = 'sensor.energy_planner_managed_boiler_energy_total_suggested_tomorrow' %}
-  {% set ev = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
-  {% set ev_solar = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  {% set ev = 'sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure' %}
+  {% set ev_solar = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow' %}
   - <ha-icon icon="mdi:water-boiler"></ha-icon> **TUV:** {% if states(boiler) in ['unknown', 'unavailable'] %}plán není dostupný{% else %}{{ states(boiler) | float(0) | round(1) }} kWh, cíl {{ state_attr(boiler, 'planned_target_temperature') | float(0) | round(1) }} °C{% endif %}
   - <ha-icon icon="mdi:car-electric"></ha-icon> **EV:** {% if states(ev) not in ['unknown', 'unavailable'] %}{{ states(ev) | float(0) | round(1) }} kWh do odjezdu{% elif states(ev_solar) not in ['unknown', 'unavailable'] %}{{ states(ev_solar) | float(0) | round(1) }} kWh ze zítřejšího přebytku{% else %}plán není dostupný{% endif %}
 
@@ -605,12 +606,12 @@ type: markdown
 title: Household energy plan
 entity_id:
   - sensor.energy_planner_managed_boiler_energy_total_suggested_tomorrow
-  - sensor.energy_planner_managed_ev_charging_energy_planned_until_departure
-  - sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow
+  - sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow
 content: |
   {% set boiler = 'sensor.energy_planner_managed_boiler_energy_total_suggested_tomorrow' %}
-  {% set ev = 'sensor.energy_planner_managed_ev_charging_energy_planned_until_departure' %}
-  {% set ev_solar = 'sensor.energy_planner_managed_ev_charging_energy_suggested_tomorrow' %}
+  {% set ev = 'sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure' %}
+  {% set ev_solar = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow' %}
   - <ha-icon icon="mdi:water-boiler"></ha-icon> **Hot water:** {% if states(boiler) in ['unknown', 'unavailable'] %}plan unavailable{% else %}{{ states(boiler) | float(0) | round(1) }} kWh, target {{ state_attr(boiler, 'planned_target_temperature') | float(0) | round(1) }} °C{% endif %}
   - <ha-icon icon="mdi:car-electric"></ha-icon> **EV:** {% if states(ev) not in ['unknown', 'unavailable'] %}{{ states(ev) | float(0) | round(1) }} kWh before departure{% elif states(ev_solar) not in ['unknown', 'unavailable'] %}{{ states(ev_solar) | float(0) | round(1) }} kWh from tomorrow's surplus{% else %}plan unavailable{% endif %}
 
