@@ -157,8 +157,9 @@ still does not call this selector itself.
 ## Prioritize Water Heating Before EV Charging
 
 This example allows EV charging from PV surplus only after the water heater has
-already consumed at least a minimum amount today. Replace the managed entity IDs
-with the IDs created in your Home Assistant.
+already consumed at least a minimum amount today. It uses the hypothetical
+source meter `sensor.boiler_energy_total`; replace both managed entity IDs with
+the source-specific IDs created in your Home Assistant.
 
 ```yaml
 alias: Energy Planner - allow EV after water heating
@@ -169,7 +170,7 @@ triggers:
     above: 5
 conditions:
   - condition: numeric_state
-    entity_id: sensor.energy_planner_managed_water_heater_energy_today
+    entity_id: sensor.energy_planner_managed_boiler_energy_total_today
     above: 2
   - condition: numeric_state
     entity_id: sensor.energy_planner_managed_ev_charging_energy_today
