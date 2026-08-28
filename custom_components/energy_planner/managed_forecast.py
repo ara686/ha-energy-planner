@@ -28,6 +28,7 @@ def build_managed_demand_schedule(
     interval_minutes: int,
     expected_by_source: Mapping[str, float],
     hourly_profiles: Mapping[str, Mapping[int, float]],
+    normalize_to_available_slots: bool = False,
 ) -> ManagedDemandSchedule:
     """Distribute expected daily managed energy using historical hourly shape."""
     target_slots = [
@@ -35,10 +36,14 @@ def build_managed_demand_schedule(
         for slot in slots
         if _local_timestamp(slot.start, reference).date() == target_date
     ]
-    day_hours = _day_slot_hours(
-        target_date=target_date,
-        reference=reference,
-        interval_minutes=interval_minutes,
+    day_hours = (
+        [_local_timestamp(slot.start, reference).hour for slot in target_slots]
+        if normalize_to_available_slots
+        else _day_slot_hours(
+            target_date=target_date,
+            reference=reference,
+            interval_minutes=interval_minutes,
+        )
     )
     energy_by_slot: dict[datetime, float] = {}
     scheduled_by_source: dict[str, float] = {}

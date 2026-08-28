@@ -1109,7 +1109,7 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
     assert "timeline" in planned.state_info["unrecorded_attributes"]
 
 
-async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
+async def test_today_sensors_expose_all_managed_source_recommendations(hass):
     set_source_states(hass)
     hass.states.async_set(
         "sensor.enyaq_charge_kwh",
@@ -1202,22 +1202,35 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
             }
         ],
     }
+    generic_load = {
+        "source_entity_id": "sensor.water_heater_energy_total",
+        "load_type": "generic",
+        "priority": 100,
+        "state": "ok",
+        "method": "history",
+        "expected_demand_kwh": 1.25,
+        "recommended_kwh": 1.25,
+        "reason": "historical_remaining_today",
+    }
     allocation = {
         "state": "ok",
         "forecast_complete": True,
         "target_date": "2026-08-18",
-        "available_surplus_kwh": 3.5,
-        "expected_demand_kwh": 10,
-        "recommended_kwh": 3.5,
+        "available_surplus_kwh": 4.75,
+        "expected_demand_kwh": 11.25,
+        "recommended_kwh": 4.75,
         "unallocated_surplus_kwh": 0,
-        "loads": {"sensor.ev_energy_total": load},
+        "loads": {
+            "sensor.ev_energy_total": load,
+            "sensor.water_heater_energy_total": generic_load,
+        },
     }
     entry.runtime_data.async_set_updated_data(
         PlannerResult(
             state="ok",
             updated=dt_util.utcnow(),
             plan={
-                "managed_recommended_today_kwh": 3.5,
+                "managed_recommended_today_kwh": 4.75,
                 "surplus_allocation_today": allocation,
                 "managed_allocation_by_day": [allocation],
             },
@@ -1229,7 +1242,7 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
     ev_today = hass.states.get(ev_entity_id)
     generic_today = hass.states.get(generic_entity_id)
     assert aggregate is not None
-    assert float(aggregate.state) == 3.5
+    assert float(aggregate.state) == 4.75
     assert (
         aggregate.attributes["managed_allocation_by_day"][0]["loads"][
             "sensor.ev_energy_total"
@@ -1245,7 +1258,9 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
     assert ev_today.attributes["target_date"] == "2026-08-18"
     assert ev_today.attributes["timeline"][0]["mode"] == "solar"
     assert generic_today is not None
-    assert generic_today.state == STATE_UNAVAILABLE
+    assert float(generic_today.state) == 1.25
+    assert generic_today.attributes["method"] == "history"
+    assert generic_today.attributes["reason"] == "historical_remaining_today"
 
     entry.runtime_data.async_set_updated_data(
         PlannerResult(
@@ -1271,6 +1286,7 @@ async def test_today_sensors_expose_only_electric_vehicle_recommendations(hass):
     await hass.async_block_till_done()
     assert hass.states.get(aggregate_entity_id).state == STATE_UNAVAILABLE
     assert hass.states.get(ev_entity_id).state == STATE_UNAVAILABLE
+    assert hass.states.get(generic_entity_id).state == STATE_UNAVAILABLE
 
 
 async def test_sensors_are_unavailable_when_required_data_is_invalid(

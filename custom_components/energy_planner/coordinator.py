@@ -572,12 +572,17 @@ def _add_managed_allocations(
     generic_inputs = [
         load for load in load_inputs if isinstance(load, GenericAllocationInput)
     ]
+    today_inputs = _remaining_today_allocation_inputs(
+        load_inputs,
+        history=history,
+        now=now,
+    )
     forecast = result.plan.get("soc_forecast")
     points = forecast.get("points", []) if isinstance(forecast, dict) else []
     allocations: list[ManagedDayAllocation] = []
     carried_ev_inputs = electric_vehicle_inputs
 
-    if electric_vehicle_inputs:
+    if today_inputs:
         today_slots, today_complete = _remaining_today_surplus_slots(
             points,
             now=now,
@@ -588,7 +593,7 @@ def _add_managed_allocations(
             interval_minutes=interval_minutes,
             surplus_complete=today_complete,
             surplus_slots=today_slots,
-            loads=electric_vehicle_inputs,
+            loads=today_inputs,
         )
         allocations.append(today_allocation)
         carried_ev_inputs = _carry_electric_vehicle_inputs(
@@ -679,6 +684,53 @@ def _add_managed_allocations(
         tomorrow_allocation.unallocated_surplus_kwh
     )
     return allocations
+
+
+def _remaining_today_allocation_inputs(
+    inputs: list[ManagedAllocationInput],
+    *,
+    history: EnergyHistory,
+    now: datetime,
+) -> list[ManagedAllocationInput]:
+    """Return live and history-based managed demand remaining for today."""
+    remaining: list[ManagedAllocationInput] = []
+    for load in inputs:
+        if not isinstance(load, GenericAllocationInput):
+            remaining.append(load)
+            continue
+
+        daily_usage = history.managed_source_daily_usage(
+            load.source_id,
+            now=now,
+            learning_days=DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
+            minimum_coverage_ratio=DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
+        )
+        history_estimate = estimate_managed_load(
+            ManagedLoadDemandInput(
+                load.source_id,
+                [item.energy_kwh for item in daily_usage],
+            )
+        )
+        consumed_today_kwh = history.managed_source_today_kwh(load.source_id, now=now)
+        remaining_today_kwh = max(
+            history_estimate.expected_demand_kwh - consumed_today_kwh,
+            0.0,
+        )
+        remaining.append(
+            replace(
+                load,
+                estimate=replace(
+                    history_estimate,
+                    expected_demand_kwh=round(remaining_today_kwh, 6),
+                    reason=(
+                        "historical_remaining_today"
+                        if history_estimate.method == "history"
+                        else history_estimate.reason
+                    ),
+                ),
+            )
+        )
+    return remaining
 
 
 def _managed_allocation_inputs(
@@ -924,7 +976,7 @@ def _add_managed_soc_forecast(
         expected_by_source = {
             load.source_id: load.expected_demand_kwh
             for load in allocation.loads
-            if load.load_type == "generic" and allocation.target_date == tomorrow
+            if load.load_type == "generic"
         }
         hourly_profiles = {
             source_id: history.managed_source_hourly_profile(
@@ -942,6 +994,7 @@ def _add_managed_soc_forecast(
             interval_minutes=planner_input.interval_minutes,
             expected_by_source=expected_by_source,
             hourly_profiles=hourly_profiles,
+            normalize_to_available_slots=allocation.target_date == now.date(),
         )
         _merge_slot_energy(energy_by_slot, generic_schedule.energy_by_slot)
         _merge_source_energy(scheduled_by_source, generic_schedule.scheduled_by_source)

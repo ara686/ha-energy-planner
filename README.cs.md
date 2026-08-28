@@ -138,10 +138,10 @@ Nejužitečnější entity:
 | `sensor.energy_planner_safe_discharge_soc` | Nejnižší SoC, které ještě zachová plán. |
 | `sensor.energy_planner_unused_surplus_today` | Odhad nevyužitého přebytku z FVE pro dnešek z pasivní predikce. |
 | `sensor.energy_planner_unused_surplus_tomorrow` | Rozdělitelný přebytek na zítřek. Hodnotu má jen při pokrytí celého místního dne i solárních vstupů. |
-| `sensor.energy_planner_recommended_managed_energy_today` | Celkový elektrický vstup doporučený pro EV ve zbývajících úplných slotech dneška. Při neúplném pokrytí slotů nebo solárních dat je nedostupný. |
+| `sensor.energy_planner_recommended_managed_energy_today` | Celková energie doporučená pro všechny řízené odběry ve zbývajících úplných slotech dneška. Aktuální požadavek EV a TUV se kombinuje se zbývajícím historickým odhadem generických odběrů po odečtení dnešní již spotřebované energie. Při neúplném pokrytí slotů nebo solárních dat je nedostupný. |
 | `sensor.energy_planner_recommended_managed_energy_tomorrow` | Celková energie doporučená pro všechny řízené odběry na zítřek. Atributy obsahují kompaktní alokace pro každý úplný budoucí místní den v horizontu. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Zítřejší přebytek zbývající po všech doporučeních. |
-| `sensor.energy_planner_managed_<source>_suggested_today` | Elektrický vstup nabíječky doporučený dnes pro `electric_vehicle`. Pro jiné typy je entita nedostupná. Typované alokace zveřejňují úplnost předpovědi a kompaktní solární timeline konkrétního zdroje. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Energie doporučená dnes pro jeden řízený odběr. EV a TUV používají aktuální vstupy modelu, generické odběry zbývající část historického denního odhadu. Typované alokace zveřejňují úplnost předpovědi a kompaktní podrobnosti konkrétního zdroje. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr. Atributy TUV obsahují plánovanou cílovou teplotu a solární timeline; atributy EV požadavek, nedostatek a jeho solární timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Aktuální poradní EV akce, například `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` nebo `complete`. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Příští nastavený místní odjezd použitý jako deadline EV. |
@@ -157,7 +157,8 @@ Dobré první dashboardy:
 
 - Graf budoucího SoC z `sensor.energy_planner_soc_forecast`.
 - Porovnávací graf z `sensor.energy_planner_soc_forecast` a
-  `sensor.energy_planner_soc_forecast_with_managed_loads`.
+  `sensor.energy_planner_soc_forecast_with_managed_loads` se souhrnným
+  plánovaným výkonem řízených odběrů, aby byly vidět i při využití přebytku.
 - Gauge s hodnotou SoC za 24 hodin z `sensor.energy_planner_soc_forecast_24h`.
 - Graf nevyužitého přebytku FVE.
 - Graf spotřeby domu proti řízené spotřebě.
@@ -180,7 +181,7 @@ automatizace:
   když je dost předpokládaného přebytku z FVE.
 - Hodnotu každého `managed_<source>_suggested_tomorrow` jako vstup vlastní
   automatizace na další den; Energy Planner zařízení stále sám nespíná.
-- Hodnotu EV `managed_<source>_suggested_today` jako solární rozpočet pro
+- Hodnotu každého `managed_<source>_suggested_today` jako solární rozpočet pro
   zbývající úplné plánovací sloty dneška.
 - Režim `managed_<source>_charging_mode` EV plánu podle odjezdu jako vstup pro
   existující automatizaci Wallboxu. Volbu fáze, proudu a ochranu přetížení

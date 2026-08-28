@@ -56,8 +56,9 @@ Planner tests:
   positive numeric maximum charger power with a `11.0 kW` default and one-decimal precision
 - four-phase allocation, priority ordering, equal-priority proportional
   shortage and per-slot heater/EV power limits
-- EV allocation over the complete remaining day, incomplete-today carry,
-  multi-day remainder and no repeated generic demand after tomorrow
+- all managed types over the complete remaining day, including generic daily
+  estimate minus today's measured use, incomplete-today EV carry, multi-day
+  remainder and no repeated generic demand after tomorrow
 - deadline-aware EV solar/home-battery/low-tariff/high-tariff allocation,
   weekly absence, live cable/location override, shortfall and solar-if-home
 - safe-SoC and otherwise-lost-surplus limits, incomplete-forecast battery

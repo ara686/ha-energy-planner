@@ -231,15 +231,17 @@ part. EV allocation uses the equivalent
 `maximum_charging_power_kw × slot duration` limit and reports electrical and
 battery-side shortfalls.
 
-EV is first allocated from the next complete planner boundary through today's
-local midnight. If that whole remaining period is not covered, today's EV
-recommendation is unavailable and the complete request carries to tomorrow; if
-no slot remains, today's recommendation is zero. Tomorrow includes every load
-type. Later complete days repeat the current hot-water deficit, carry only the
-unmet EV remainder and do not repeat generic demand. Each day's solar surplus
-and allocation remains separate. The model neither carries simulated tank
-temperature nor changes the EV input entity; its next state corrects the plan at
-the following recalculation. The backward-compatible `suggested_today` and
-`suggested_tomorrow` outputs remain solar-only managed-load allocation.
+Every managed type is first allocated from the next complete planner boundary
+through today's local midnight. EV and hot water use their live model inputs.
+Generic loads use their history-based daily estimate minus energy already
+measured today; the optional requested-energy entity remains a tomorrow-only
+override. If the whole remaining period is not covered, today's recommendations
+are unavailable; if no slot remains, they are zero. Tomorrow includes every
+load type. Later complete days repeat the current hot-water deficit, carry only
+the unmet EV remainder and do not repeat generic demand. Each day's solar
+surplus and allocation remains separate. The model neither carries simulated
+tank temperature nor changes the EV input entity; its next state corrects the
+plan at the following recalculation. The `suggested_today` and
+`suggested_tomorrow` outputs remain solar-only managed-load allocations.
 Deadline-aware battery and GRID decisions are exposed separately by the EV plan
 entities and are not added to the passive managed-load SoC forecast.
