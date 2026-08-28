@@ -29,7 +29,7 @@ Install `apexcharts-card` through HACS, then add a manual card:
 
 ```yaml
 type: custom:apexcharts-card
-graph_span: 24h
+graph_span: 48h
 span:
   start: hour
 locale: en
@@ -39,12 +39,35 @@ header:
   show_states: true
   colorize_states: true
 yaxis:
-  - min: 0
+  - id: soc
+    min: 0
     max: 100
     decimals: 0
+  - id: managed
+    min: 0
+    decimals: 1
+    opposite: true
 series:
   - entity: sensor.energy_planner_soc_forecast
-    name: Forecast SoC
+    yaxis_id: soc
+    name: Forecast SoC without managed loads
+    type: area
+    opacity: 0.15
+    stroke_width: 2
+    unit: "%"
+    show:
+      in_header: raw
+      extremas: true
+    data_generator: |
+      const points = entity.attributes.points || [];
+      return points
+        .filter((point) => point.timestamp && point.soc_percent !== undefined)
+        .map((point) => {
+          return [new Date(point.timestamp).getTime(), Number(point.soc_percent)];
+        });
+  - entity: sensor.energy_planner_soc_forecast_with_managed_loads
+    yaxis_id: soc
+    name: Forecast SoC with managed loads
     type: area
     opacity: 0.35
     stroke_width: 2
@@ -59,10 +82,39 @@ series:
         .map((point) => {
           return [new Date(point.timestamp).getTime(), Number(point.soc_percent)];
         });
+  - entity: sensor.energy_planner_soc_forecast_with_managed_loads
+    yaxis_id: managed
+    name: Planned managed power
+    type: column
+    opacity: 0.45
+    unit: kW
+    show:
+      in_header: false
+    data_generator: |
+      const points = entity.attributes.points || [];
+      const intervalHours = (index) => {
+        const current = new Date(points[index]?.timestamp).getTime();
+        const next = new Date(points[index + 1]?.timestamp).getTime();
+        const previous = new Date(points[index - 1]?.timestamp).getTime();
+        if (Number.isFinite(current) && Number.isFinite(next) && next > current) {
+          return (next - current) / 3600000;
+        }
+        if (Number.isFinite(previous) && Number.isFinite(current) && current > previous) {
+          return (current - previous) / 3600000;
+        }
+        return 1;
+      };
+      return points.map((point, index) => [
+        new Date(point.timestamp).getTime(),
+        Number(point.managed_consumption_kwh ?? 0) / intervalHours(index),
+      ]);
 ```
 
-The important part is `entity.attributes.points`. Each point uses `timestamp`
-and `soc_percent`. This planned series includes grid charging and holds
+The important part is `entity.attributes.points`. Each point uses `timestamp`,
+`soc_percent` and the aggregate `managed_consumption_kwh` for every configured
+managed source. The power columns remain visible even when managed demand uses
+otherwise-curtailed PV after the battery reaches 100%, so both SoC lines overlap.
+The planned series includes grid charging and holds
 `sensor.energy_planner_lock_soc` during low tariff. Use
 `sensor.energy_planner_soc_forecast_passive` instead when you want a diagnostic
 comparison without planner actions. The attribute payload is compacted for Home

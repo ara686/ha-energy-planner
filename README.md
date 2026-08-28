@@ -141,10 +141,10 @@ Most useful entities:
 | `sensor.energy_planner_safe_discharge_soc` | Lowest SoC that should still preserve the plan. |
 | `sensor.energy_planner_unused_surplus_today` | Estimated unused PV surplus for today from the passive forecast. |
 | `sensor.energy_planner_unused_surplus_tomorrow` | Tomorrow's allocatable surplus. It has a value only when the complete local day and its solar input are covered. |
-| `sensor.energy_planner_recommended_managed_energy_today` | Total EV charging input recommended for the complete remaining slots today. It is unavailable when their slot or solar coverage is incomplete. |
+| `sensor.energy_planner_recommended_managed_energy_today` | Total energy recommended for all managed loads in the complete remaining slots today. Live EV and hot-water demand is combined with remaining history-based generic demand after subtracting energy already used today. It is unavailable when slot or solar coverage is incomplete. |
 | `sensor.energy_planner_recommended_managed_energy_tomorrow` | Total energy recommended for all managed loads tomorrow. Its attributes include compact allocations for every complete future local day in the horizon. |
 | `sensor.energy_planner_unallocated_surplus_tomorrow` | Complete tomorrow surplus remaining after all recommendations. |
-| `sensor.energy_planner_managed_<source>_suggested_today` | Charger-input energy recommended today for an `electric_vehicle` load. It is unavailable for other load types. Typed allocations expose forecast completeness and a compact per-source solar timeline. |
+| `sensor.energy_planner_managed_<source>_suggested_today` | Energy recommended today for one managed load. EV and hot-water loads use live model inputs; generic loads use their remaining history-based daily estimate. Typed allocations expose forecast completeness and compact per-source details. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Hot-water attributes include the planned target temperature and its solar timeline; EV attributes include battery/electrical demand, shortfall and its solar timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Current advisory EV action such as `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` or `complete`. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Next configured local departure used as the EV deadline. |
@@ -160,7 +160,8 @@ Start with these dashboard ideas:
 
 - Future SoC chart from `sensor.energy_planner_soc_forecast`.
 - Comparison chart using `sensor.energy_planner_soc_forecast` and
-  `sensor.energy_planner_soc_forecast_with_managed_loads`.
+  `sensor.energy_planner_soc_forecast_with_managed_loads`, with aggregate
+  planned managed power so surplus-only loads remain visible.
 - 24 hour SoC gauge from `sensor.energy_planner_soc_forecast_24h`.
 - Unused PV surplus chart.
 - Home vs managed consumption history chart.
@@ -184,8 +185,8 @@ for automations:
   there is enough predicted PV surplus.
 - Use each `managed_<source>_suggested_tomorrow` value as an input to your own
   next-day automation; Energy Planner still does not switch the device itself.
-- Use an EV load's `managed_<source>_suggested_today` as a solar-only charging
-  budget for the remaining complete planner slots today.
+- Use each load's `managed_<source>_suggested_today` as its solar-only budget
+  for the remaining complete planner slots today.
 - Map a deadline-aware EV's `managed_<source>_charging_mode` to your existing
   Wallbox mode automation. Keep phase, current and overload protection in the
   Wallbox's own safety logic.

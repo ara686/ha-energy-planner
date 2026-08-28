@@ -59,6 +59,27 @@ def test_managed_demand_does_not_compress_full_day_into_partial_horizon():
     assert schedule.scheduled_by_source == {"ev": 12}
 
 
+def test_remaining_today_demand_is_normalized_over_only_future_slots():
+    target_date = date(2026, 7, 22)
+    reference = datetime(2026, 7, 22, 12, 30)
+    start = datetime(2026, 7, 22, 13)
+
+    schedule = build_managed_demand_schedule(
+        slots=_slots(start, 11),
+        target_date=target_date,
+        reference=reference,
+        interval_minutes=60,
+        expected_by_source={"pool": 5.5},
+        hourly_profiles={},
+        normalize_to_available_slots=True,
+    )
+
+    assert schedule.expected_kwh == 5.5
+    assert schedule.scheduled_kwh == 5.5
+    assert schedule.scheduled_by_source == {"pool": 5.5}
+    assert all(value == 0.5 for value in schedule.energy_by_slot.values())
+
+
 def test_managed_demand_handles_invalid_interval_without_dividing_by_zero():
     target_date = date(2026, 7, 22)
     start = datetime(2026, 7, 22, 0, 0)

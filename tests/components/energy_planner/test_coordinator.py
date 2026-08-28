@@ -541,23 +541,26 @@ def test_build_planner_result_adds_soc_forecast_with_managed_estimates(hass):
     result = build_planner_result(hass, entry, history=history, now=now)
 
     managed_forecast = result.plan["soc_forecast_with_managed"]
-    assert len(result.plan["managed_allocation_by_day"]) == 1
+    assert len(result.plan["managed_allocation_by_day"]) == 2
     assert result.plan["managed_expected_demand_tomorrow_kwh"] == 3
     assert result.plan["soc_at_forecast_horizon_with_managed"] == (
-        result.plan["soc_at_forecast_horizon"] - 3
+        result.plan["soc_at_forecast_horizon"] - 6
     )
-    assert managed_forecast["managed_expected_kwh"] == 3
-    assert managed_forecast["managed_scheduled_kwh"] == 3
-    assert managed_forecast["managed_scheduled_by_source"] == {source_id: 3}
+    assert managed_forecast["managed_expected_kwh"] == 6
+    assert managed_forecast["managed_scheduled_kwh"] == 6
+    assert managed_forecast["managed_scheduled_by_source"] == {source_id: 6}
     assert managed_forecast["fallback_source_ids"] == []
     managed_points = [
         point
         for point in managed_forecast["points"]
         if point.get("managed_consumption_kwh", 0) > 0
     ]
-    assert len(managed_points) == 1
-    assert managed_points[0]["timestamp"] == "2026-07-22T12:00:00"
-    assert managed_points[0]["managed_consumption_kwh"] == 3
+    assert len(managed_points) == 2
+    assert [point["timestamp"] for point in managed_points] == [
+        "2026-07-21T12:00:00",
+        "2026-07-22T12:00:00",
+    ]
+    assert [point["managed_consumption_kwh"] for point in managed_points] == [3, 3]
 
 
 def test_hot_water_allocation_repeats_demand_for_complete_future_days(hass):
@@ -597,7 +600,8 @@ def test_hot_water_allocation_repeats_demand_for_complete_future_days(hass):
         warnings=warnings,
     )
 
-    first, second = allocations
+    today, first, second = allocations
+    assert today.state == "insufficient_data"
     first_load = first.as_dict()["loads"]["sensor.boiler_energy_total"]
     second_load = second.as_dict()["loads"]["sensor.boiler_energy_total"]
     assert first_load["method"] == "thermal_model"
@@ -697,9 +701,9 @@ def test_hot_water_allocation_covers_all_25_hours_of_fall_dst_day(hass):
         warnings=[],
     )
 
-    assert allocations[0].available_surplus_kwh == 25
-    assert allocations[0].recommended_kwh == 25
-    assert len(allocations[0].hot_water_energy_by_slot) == 25
+    assert allocations[1].available_surplus_kwh == 25
+    assert allocations[1].recommended_kwh == 25
+    assert len(allocations[1].hot_water_energy_by_slot) == 25
 
 
 def test_hot_water_soc_forecast_uses_only_allocated_surplus_slots(hass):
@@ -816,13 +820,16 @@ def test_ev_allocation_uses_remaining_today_then_carries_across_days(hass):
     )
 
     today, tomorrow, third_day = allocations
-    today_ev = today.as_dict()["loads"]["sensor.ev_energy_total"]
+    today_loads = today.as_dict()["loads"]
+    today_ev = today_loads["sensor.ev_energy_total"]
     tomorrow_loads = tomorrow.as_dict()["loads"]
     tomorrow_ev = tomorrow_loads["sensor.ev_energy_total"]
     third_day_loads = third_day.as_dict()["loads"]
     third_day_ev = third_day_loads["sensor.ev_energy_total"]
     assert today_ev["recommended_kwh"] == 4
     assert today_ev["electrical_shortfall_kwh"] == 6
+    assert today_loads["sensor.generic_energy_total"]["state"] == ("insufficient_data")
+    assert today_loads["sensor.generic_energy_total"]["recommended_kwh"] == 0
     assert tomorrow_ev["electrical_remaining_before_kwh"] == 6
     assert tomorrow_ev["recommended_kwh"] == 4
     assert tomorrow_ev["electrical_shortfall_kwh"] == 2
@@ -832,6 +839,107 @@ def test_ev_allocation_uses_remaining_today_then_carries_across_days(hass):
     assert "sensor.generic_energy_total" not in third_day_loads
     assert result.plan["managed_recommended_today_kwh"] == 4
     assert result.plan["managed_recommended_tomorrow_kwh"] == 4
+
+
+def test_generic_today_uses_history_minus_consumed_and_not_tomorrow_request(hass):
+    now = datetime(2026, 8, 18, 12, 30)
+    source_id = "sensor.generic_energy_total"
+    history = _generic_history(
+        source_id=source_id,
+        now=now,
+        daily_kwh=4,
+        consumed_today_kwh=1,
+    )
+    hass.states.async_set(
+        "input_number.generic_requested_energy",
+        "9",
+        {"unit_of_measurement": "kWh"},
+    )
+    today_points = [
+        {
+            "timestamp": datetime(2026, 8, 18, hour),
+            "unused_surplus_kwh": 1,
+            "solar_coverage": 1,
+        }
+        for hour in range(13, 24)
+    ]
+    tomorrow_points = [
+        {
+            "timestamp": datetime(2026, 8, 19, hour),
+            "unused_surplus_kwh": 1,
+        }
+        for hour in range(24)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": True}],
+            "soc_forecast": {"points": [*today_points, *tomorrow_points]},
+        },
+    )
+
+    today, tomorrow = _add_surplus_allocation(
+        hass,
+        _generic_entry(),
+        history=history,
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    today_load = today.as_dict()["loads"][source_id]
+    tomorrow_load = tomorrow.as_dict()["loads"][source_id]
+    assert today_load["method"] == "history"
+    assert today_load["reason"] == "historical_remaining_today"
+    assert today_load["expected_demand_kwh"] == 3
+    assert today_load["recommended_kwh"] == 3
+    assert tomorrow_load["method"] == "requested"
+    assert tomorrow_load["expected_demand_kwh"] == 9
+    assert result.plan["managed_recommended_today_kwh"] == 3
+    assert result.plan["managed_recommended_tomorrow_kwh"] == 9
+
+
+def test_generic_today_remaining_demand_is_clamped_to_zero(hass):
+    now = datetime(2026, 8, 18, 12, 30)
+    source_id = "sensor.generic_energy_total"
+    history = _generic_history(
+        source_id=source_id,
+        now=now,
+        daily_kwh=4,
+        consumed_today_kwh=5,
+    )
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": True}],
+            "soc_forecast": {
+                "points": [
+                    {
+                        "timestamp": datetime(2026, 8, 18, hour),
+                        "unused_surplus_kwh": 1,
+                        "solar_coverage": 1,
+                    }
+                    for hour in range(13, 24)
+                ]
+            },
+        },
+    )
+
+    allocations = _add_surplus_allocation(
+        hass,
+        _generic_entry(requested=False),
+        history=history,
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    today_load = allocations[0].as_dict()["loads"][source_id]
+    assert today_load["expected_demand_kwh"] == 0
+    assert today_load["recommended_kwh"] == 0
+    assert result.plan["managed_recommended_today_kwh"] == 0
 
 
 def test_incomplete_today_ev_data_carries_full_request_to_tomorrow(hass):
@@ -1286,6 +1394,64 @@ def _electric_vehicle_entry(
         version=4,
         subentries_data=tuple(subentries),
     )
+
+
+def _generic_entry(*, requested: bool = True) -> MockConfigEntry:
+    data = {
+        CONF_MANAGED_ENERGY_ENTITY: "sensor.generic_energy_total",
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+        CONF_PRIORITY: 100,
+    }
+    if requested:
+        data[CONF_REQUESTED_ENERGY_ENTITY] = "input_number.generic_requested_energy"
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={CONF_INTERVAL_MINUTES: 60},
+        version=4,
+        subentries_data=(
+            {
+                "data": data,
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Generic",
+                "unique_id": "sensor.generic_energy_total",
+            },
+        ),
+    )
+
+
+def _generic_history(
+    *,
+    source_id: str,
+    now: datetime,
+    daily_kwh: float,
+    consumed_today_kwh: float,
+) -> EnergyHistory:
+    history = EnergyHistory()
+    for days_ago in range(1, 8):
+        day_start = (now - timedelta(days=days_ago)).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        for hour in range(24):
+            managed_kwh = daily_kwh if hour == 15 else 0
+            history.add_hourly_sample(
+                day_start + timedelta(hours=hour),
+                home_kwh=managed_kwh,
+                managed_kwh=managed_kwh,
+                managed_source_id=source_id,
+                observed_source_ids={source_id},
+            )
+    history.add_hourly_sample(
+        now.replace(minute=0, second=0, microsecond=0),
+        home_kwh=consumed_today_kwh,
+        managed_kwh=consumed_today_kwh,
+        managed_source_id=source_id,
+        observed_source_ids={source_id},
+    )
+    return history
 
 
 def _set_electric_vehicle_inputs(
