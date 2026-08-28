@@ -67,7 +67,8 @@ Planner tests:
 - history correction
 - partial current hour and forecast horizon boundary
 - planned SoC forecast respecting the NT lock, plus passive comparison, for exactly 24 hours and longer horizons
-- separate SoC forecast with expected managed demand and hourly-profile fallback
+- planned SoC forecast with expected managed demand, the same NT lock and grid
+  charging behavior as the base forecast, and hourly-profile fallback
 - SoC forecast using Solcast attributes from HA entities
 - `lock_soc`, `charge_to_soc`, `safe_discharge_soc` and unused surplus
 

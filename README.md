@@ -132,7 +132,7 @@ Most useful entities:
 |--------|---------------|
 | `sensor.energy_planner_soc_forecast` | Planned SoC at the configured forecast horizon. It includes the planner's grid-charge target and preserves `lock_soc` during low tariff, so its attributes represent the expected controlled battery path in graphs. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostic passive SoC forecast without planned grid charging or the planner's low-tariff lock. It shows what the battery would do with only its configured physical minimum SoC. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Passive forecasted SoC at the configured horizon with generic demand and actually allocated hot-water and EV solar slots included. Attributes contain compact graph points, per-day allocations and managed-demand scheduling details. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Planned SoC at the configured horizon with generic demand and actually allocated hot-water and EV solar slots included. It uses the same grid-charge target and low-tariff `lock_soc` as the base forecast. Attributes contain compact graph points, per-day allocations and managed-demand scheduling details. |
 | `sensor.energy_planner_soc_forecast_24h` | Planned SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |

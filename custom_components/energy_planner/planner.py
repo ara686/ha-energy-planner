@@ -77,7 +77,7 @@ class _Simulation:
 
 @dataclass(frozen=True)
 class SocForecastSimulation:
-    """Passive SoC forecast calculated from plain planner inputs."""
+    """SoC forecast calculated from plain planner inputs."""
 
     points: list[SocForecastPoint]
     point_24h: SocForecastPoint | None
@@ -88,8 +88,10 @@ def calculate_soc_forecast(
     data: PlannerInput,
     *,
     managed_consumption_by_slot: Mapping[datetime, float] | None = None,
+    grid_charge_target_soc: float | None = None,
+    nt_lock_soc: float | None = None,
 ) -> SocForecastSimulation:
-    """Calculate a passive SoC forecast with optional managed consumption."""
+    """Calculate a SoC forecast with optional managed demand and planner actions."""
     slots = _normalized_slots(data)
     if managed_consumption_by_slot:
         normalized_managed_consumption = {
@@ -110,8 +112,12 @@ def calculate_soc_forecast(
         data=data,
         slots=slots,
         initial_soc=_clamp(data.battery_soc, 0.0, 100.0),
-        grid_charge_target_soc=None,
-        nt_lock_soc=_clamp(data.battery_min_soc, 0.0, 100.0),
+        grid_charge_target_soc=grid_charge_target_soc,
+        nt_lock_soc=(
+            _clamp(nt_lock_soc, 0.0, 100.0)
+            if nt_lock_soc is not None
+            else _clamp(data.battery_min_soc, 0.0, 100.0)
+        ),
     )
     horizon_end = data.now + timedelta(hours=max(data.forecast_horizon_hours, 24))
     point_24h = _point_at_or_project_end(
