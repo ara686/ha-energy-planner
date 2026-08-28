@@ -62,9 +62,12 @@ series:
 ```
 
 The important part is `entity.attributes.points`. Each point uses `timestamp`
-and `soc_percent`. The attribute payload is compacted for Home Assistant's
-recorder, so the graph points may use a lower resolution than the internal
-planner calculation.
+and `soc_percent`. This planned series includes grid charging and holds
+`sensor.energy_planner_lock_soc` during low tariff. Use
+`sensor.energy_planner_soc_forecast_passive` instead when you want a diagnostic
+comparison without planner actions. The attribute payload is compacted for Home
+Assistant's recorder, so graph points may use a lower resolution than the
+internal planner calculation.
 
 ## Future Unused PV Surplus With ApexCharts
 
@@ -89,7 +92,7 @@ yaxis:
   - min: 0
     decimals: 2
 series:
-  - entity: sensor.energy_planner_soc_forecast
+  - entity: sensor.energy_planner_soc_forecast_passive
     name: Unused surplus
     type: area
     opacity: 0.45

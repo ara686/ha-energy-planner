@@ -247,9 +247,17 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
         data.now + timedelta(hours=24),
         data.interval_minutes,
     )
+    planned_forecast_24h = _point_at_or_project_end(
+        planned_simulation.points,
+        data.now + timedelta(hours=24),
+        data.interval_minutes,
+    )
     forecast_horizon = _point_at_or_project_end(
         forecast_simulation.points, horizon_end, data.interval_minutes
     ) or (forecast_simulation.points[-1] if forecast_simulation.points else None)
+    planned_forecast_horizon = _point_at_or_project_end(
+        planned_simulation.points, horizon_end, data.interval_minutes
+    ) or (planned_simulation.points[-1] if planned_simulation.points else None)
 
     state = "warning" if warnings else "ok"
     if not forecast_24h:
@@ -315,10 +323,26 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
                 "source": "ha_entities",
                 "points": points,
             },
+            "soc_forecast_planned": {
+                "horizon_hours": data.forecast_horizon_hours,
+                "source": "ha_entities_and_planner_actions",
+                "points": [point.as_dict() for point in planned_simulation.points],
+            },
             "soc_forecast_24h": soc_forecast_24h,
+            "soc_forecast_planned_24h": (
+                planned_forecast_24h.as_dict() if planned_forecast_24h else None
+            ),
             "soc_at_forecast_horizon": (
                 forecast_horizon.soc_percent
                 if forecast_horizon
+                else _round_soc_percent(
+                    _soc_to_kwh(current_soc, data.battery_capacity_kwh),
+                    data.battery_capacity_kwh,
+                )
+            ),
+            "soc_at_forecast_horizon_planned": (
+                planned_forecast_horizon.soc_percent
+                if planned_forecast_horizon
                 else _round_soc_percent(
                     _soc_to_kwh(current_soc, data.battery_capacity_kwh),
                     data.battery_capacity_kwh,
@@ -481,8 +505,18 @@ def _empty_plan(
             "source": "ha_entities",
             "points": [],
         },
+        "soc_forecast_planned": {
+            "horizon_hours": data.forecast_horizon_hours,
+            "source": "ha_entities_and_planner_actions",
+            "points": [],
+        },
         "soc_forecast_24h": None,
+        "soc_forecast_planned_24h": None,
         "soc_at_forecast_horizon": _round_soc_percent(
+            current_kwh,
+            data.battery_capacity_kwh,
+        ),
+        "soc_at_forecast_horizon_planned": _round_soc_percent(
             current_kwh,
             data.battery_capacity_kwh,
         ),

@@ -140,6 +140,10 @@ def _consumption_history_attributes(result: PlannerResult) -> dict[str, Any]:
 
 
 def _soc_forecast_attributes(result: PlannerResult) -> dict[str, Any]:
+    return _forecast_attributes(result, "soc_forecast_planned")
+
+
+def _soc_forecast_passive_attributes(result: PlannerResult) -> dict[str, Any]:
     return _forecast_attributes(result, "soc_forecast")
 
 
@@ -503,8 +507,17 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         translation_key="soc_forecast",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
-        value_fn=lambda result: result.plan.get("soc_at_forecast_horizon"),
+        value_fn=lambda result: result.plan.get("soc_at_forecast_horizon_planned"),
         attr_fn=_soc_forecast_attributes,
+    ),
+    EnergyPlannerSensorDescription(
+        key="soc_forecast_passive",
+        translation_key="soc_forecast_passive",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda result: result.plan.get("soc_at_forecast_horizon"),
+        attr_fn=_soc_forecast_passive_attributes,
     ),
     EnergyPlannerSensorDescription(
         key="soc_forecast_with_managed",
@@ -519,7 +532,7 @@ SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
         translation_key="soc_forecast_24h",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda result: _forecast_24h_soc(result),
-        attr_fn=lambda result: {"point": result.plan.get("soc_forecast_24h")},
+        attr_fn=lambda result: {"point": result.plan.get("soc_forecast_planned_24h")},
     ),
     EnergyPlannerSensorDescription(
         key="sun_start",
@@ -1043,7 +1056,7 @@ def _datetime_value(value: Any) -> datetime | None:
 
 
 def _forecast_24h_soc(result: PlannerResult) -> int | None:
-    point = result.plan.get("soc_forecast_24h")
+    point = result.plan.get("soc_forecast_planned_24h")
     if not isinstance(point, dict):
         return None
     value = point.get("soc_percent")

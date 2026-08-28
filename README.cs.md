@@ -18,8 +18,8 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
 
 ## S čím pomůže
 
-- Porovná pasivní predikci SoC baterie s druhou predikcí, která započítává
-  očekávanou řízenou spotřebu na zítřek.
+- Porovná plánovaný průběh baterie s pasivní predikcí a predikcí se započtenou
+  očekávanou řízenou spotřebou na zítřek.
 - Pomůže rozhodnout, jestli má smysl baterii nabíjet v nízkém tarifu.
 - U instalací bez dvoutarifu umožní okna nízkého tarifu úplně vypnout.
 - Plánování nabíjení ze sítě lze vypnout nezávisle, pokud se baterie ze sítě
@@ -127,9 +127,10 @@ Nejužitečnější entity:
 
 | Entita | Význam |
 |--------|--------|
-| `sensor.energy_planner_soc_forecast` | Pasivně predikované SoC na konci nastaveného horizontu. Používá aktuální SoC, historii spotřeby a předpověď FVE, bez předpokladu, že automatizace Energy Planneru už baterii nabila nebo zamkla. V atributech obsahuje body pro graf. |
+| `sensor.energy_planner_soc_forecast` | Plánované SoC na konci nastaveného horizontu. Zahrnuje cílové nabití ze sítě a během NT zachovává `lock_soc`, takže body v atributech odpovídají očekávanému řízenému průběhu baterie v grafu. |
+| `sensor.energy_planner_soc_forecast_passive` | Diagnostická pasivní predikce bez plánovaného nabíjení ze sítě a bez zámku planneru v NT. Ukazuje průběh pouze s nastaveným fyzickým minimem SoC baterie. |
 | `sensor.energy_planner_soc_forecast_with_managed_loads` | Pasivně predikované SoC na konci nastaveného horizontu se započteným obecným odběrem a skutečně přidělenými solárními sloty TUV a EV. Atributy obsahují kompaktní body pro graf, alokace po dnech a podrobnosti rozložení řízené spotřeby. |
-| `sensor.energy_planner_soc_forecast_24h` | Pasivně predikované SoC přesně za 24 hodin od posledního výpočtu. |
+| `sensor.energy_planner_soc_forecast_24h` | Plánované SoC přesně za 24 hodin od posledního výpočtu. |
 | `binary_sensor.energy_planner_charge_now` | Zapnuto, když povolené plánování nabíjení ze sítě říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |
 | `sensor.energy_planner_target_soc` | Cílové SoC použité plannerem. |
