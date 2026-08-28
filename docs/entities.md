@@ -35,7 +35,7 @@ Entities**.
 | `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | Diagnostic | `%` | Predicted SoC at the start of the lock/protection window. |
 | `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is planned SoC at the configured forecast horizon. Its recorder-safe `points` include planned grid charging and hold `lock_soc` during low tariff. |
 | `sensor.energy_planner_soc_forecast_passive` | `soc_forecast_passive` | Diagnostic | `%` | Passive comparison forecast without planner grid charging or the low-tariff lock; only the physical minimum SoC is enforced. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | `soc_forecast_with_managed` | Standard | `%` | State is passive predicted SoC at the configured horizon with tomorrow's generic demand and actually allocated hot-water and EV slots added to consumption. Attributes include compact graph points, `managed_allocation_by_day` and scheduled-demand details. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | `soc_forecast_with_managed` | Standard | `%` | State is planned SoC at the configured horizon with tomorrow's generic demand and actually allocated hot-water and EV slots added to consumption. It uses the same grid-charge target and low-tariff lock as the base forecast. Attributes include compact graph points, `managed_allocation_by_day` and scheduled-demand details. |
 | `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Planned SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
@@ -57,7 +57,8 @@ passive calculations from the current battery SoC, consumption history and PV
 forecast. `vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target`
 summarize the plan-specific simulation.
 
-`soc_forecast_with_managed` starts from the same passive simulation. For
+`soc_forecast_with_managed` starts from the same planned simulation as
+`soc_forecast`, including grid charging and the low-tariff lock. For
 `generic` loads, it adds tomorrow's full historical or requested demand using
 the historical hourly shape; a load without a usable shape is spread evenly.
 For `hot_water`, it adds only energy actually allocated to surplus slots for
