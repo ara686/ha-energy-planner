@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.energy_planner import sensor as sensor_module
 from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIPTIONS
 from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
@@ -66,6 +67,7 @@ from custom_components.energy_planner.sensor import (
     _charge_window_option_value,
     _consumption_history_attributes,
     _consumption_history_value,
+    _managed_source_device_info,
     _soc_forecast_attributes,
     _soc_forecast_passive_attributes,
     _soc_forecast_with_managed_attributes,
@@ -73,6 +75,38 @@ from custom_components.energy_planner.sensor import (
 )
 
 from .conftest import config_data, options_data, set_source_states
+
+
+def test_managed_source_device_info_uses_via_device_id_when_supported(
+    config_entry, monkeypatch
+):
+    monkeypatch.setattr(sensor_module, "_DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID", True)
+
+    device_info = _managed_source_device_info(
+        entry=config_entry,
+        load_identifier="managed-load",
+        source_name="Managed load",
+        parent_device_id="parent-device-id",
+    )
+
+    assert device_info["via_device_id"] == "parent-device-id"
+    assert "via_device" not in device_info
+
+
+def test_managed_source_device_info_uses_legacy_via_device_when_required(
+    config_entry, monkeypatch
+):
+    monkeypatch.setattr(sensor_module, "_DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID", False)
+
+    device_info = _managed_source_device_info(
+        entry=config_entry,
+        load_identifier="managed-load",
+        source_name="Managed load",
+        parent_device_id="parent-device-id",
+    )
+
+    assert device_info["via_device"] == (DOMAIN, config_entry.entry_id)
+    assert "via_device_id" not in device_info
 
 
 async def test_setup_entry_creates_all_sensors(hass, config_entry):
