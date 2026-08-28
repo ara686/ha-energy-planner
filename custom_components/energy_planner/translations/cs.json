@@ -296,6 +296,9 @@
       "soc_forecast": {
         "name": "Predikce SoC"
       },
+      "soc_forecast_passive": {
+        "name": "Pasivní predikce SoC"
+      },
       "soc_forecast_with_managed": {
         "name": "Predikce SoC s řízenou spotřebou"
       },

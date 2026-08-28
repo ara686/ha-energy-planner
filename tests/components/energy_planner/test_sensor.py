@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.energy_planner import sensor as sensor_module
 from custom_components.energy_planner.binary_sensor import BINARY_SENSOR_DESCRIPTIONS
 from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
@@ -66,12 +67,46 @@ from custom_components.energy_planner.sensor import (
     _charge_window_option_value,
     _consumption_history_attributes,
     _consumption_history_value,
+    _managed_source_device_info,
     _soc_forecast_attributes,
+    _soc_forecast_passive_attributes,
     _soc_forecast_with_managed_attributes,
     _windows_option_value,
 )
 
 from .conftest import config_data, options_data, set_source_states
+
+
+def test_managed_source_device_info_uses_via_device_id_when_supported(
+    config_entry, monkeypatch
+):
+    monkeypatch.setattr(sensor_module, "_DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID", True)
+
+    device_info = _managed_source_device_info(
+        entry=config_entry,
+        load_identifier="managed-load",
+        source_name="Managed load",
+        parent_device_id="parent-device-id",
+    )
+
+    assert device_info["via_device_id"] == "parent-device-id"
+    assert "via_device" not in device_info
+
+
+def test_managed_source_device_info_uses_legacy_via_device_when_required(
+    config_entry, monkeypatch
+):
+    monkeypatch.setattr(sensor_module, "_DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID", False)
+
+    device_info = _managed_source_device_info(
+        entry=config_entry,
+        load_identifier="managed-load",
+        source_name="Managed load",
+        parent_device_id="parent-device-id",
+    )
+
+    assert device_info["via_device"] == (DOMAIN, config_entry.entry_id)
+    assert "via_device_id" not in device_info
 
 
 async def test_setup_entry_creates_all_sensors(hass, config_entry):
@@ -223,6 +258,7 @@ async def test_technical_sensors_are_diagnostic_entities(hass, config_entry):
     assert categories[CONF_NT_WINDOWS] is EntityCategory.DIAGNOSTIC
     assert categories[CONF_CHARGE_WINDOW] is EntityCategory.DIAGNOSTIC
     assert categories[CONF_FORECAST_HORIZON_HOURS] is EntityCategory.DIAGNOSTIC
+    assert categories["soc_forecast_passive"] is EntityCategory.DIAGNOSTIC
     assert categories["target_soc"] is None
     assert categories["soc_forecast"] is None
     assert categories["soc_forecast_with_managed"] is None
@@ -245,6 +281,14 @@ async def test_horizon_soc_forecasts_use_battery_device_class(hass, config_entry
     assert soc_forecast.attributes["device_class"] == "battery"
     assert soc_forecast.attributes["unit_of_measurement"] == "%"
     assert "state_class" not in soc_forecast.attributes
+
+    passive_soc_forecast = hass.states.get(
+        entity_ids[f"{config_entry.entry_id}_soc_forecast_passive"]
+    )
+    assert passive_soc_forecast is not None
+    assert passive_soc_forecast.attributes["device_class"] == "battery"
+    assert passive_soc_forecast.attributes["unit_of_measurement"] == "%"
+    assert "state_class" not in passive_soc_forecast.attributes
 
     managed_soc_forecast = hass.states.get(
         entity_ids[f"{config_entry.entry_id}_soc_forecast_with_managed"]
@@ -554,7 +598,7 @@ def test_soc_forecast_attributes_stay_under_recorder_limit_with_five_minute_poin
         state="ok",
         updated=now,
         plan={
-            "soc_forecast": {
+            "soc_forecast_planned": {
                 "horizon_hours": 36,
                 "source": "ha_entities",
                 "points": points,
@@ -575,6 +619,35 @@ def test_soc_forecast_attributes_stay_under_recorder_limit_with_five_minute_poin
         "unused_surplus_kwh": 0.1,
     }
     assert len(json.dumps(attributes, separators=(",", ":"))) < 16_384
+
+
+def test_passive_soc_forecast_attributes_remain_available_for_diagnostics():
+    result = PlannerResult(
+        state="ok",
+        updated=datetime(2026, 7, 5, 16, 30, tzinfo=UTC),
+        plan={
+            "soc_forecast": {
+                "horizon_hours": 24,
+                "source": "ha_entities",
+                "points": [
+                    {
+                        "timestamp": "2026-07-05T17:00:00+00:00",
+                        "soc_percent": 20,
+                    }
+                ],
+            }
+        },
+    )
+
+    attributes = _soc_forecast_passive_attributes(result)
+
+    assert attributes["points"] == [
+        {
+            "timestamp": "2026-07-05T17:00:00+00:00",
+            "soc_percent": 20,
+            "unused_surplus_kwh": 0,
+        }
+    ]
 
 
 def test_managed_soc_forecast_attributes_include_compact_managed_energy():

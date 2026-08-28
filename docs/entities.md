@@ -33,28 +33,29 @@ Entities**.
 | `sensor.energy_planner_charged_total_at_target` | `charged_kwh_total_at_target` | Standard | `kWh` | Total grid energy the simulation charges into the battery to reach `target_soc`. |
 | `sensor.energy_planner_soc_at_planner_start` | `soc_at_planner_start` | Diagnostic | `%` | Predicted SoC at the start of the planning window. |
 | `sensor.energy_planner_soc_at_lock_start` | `soc_at_lock_start` | Diagnostic | `%` | Predicted SoC at the start of the lock/protection window. |
-| `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is passive predicted SoC at the configured forecast horizon. Attributes include `horizon_hours`, `source` and a recorder-safe future `points` array for graph cards. |
+| `sensor.energy_planner_soc_forecast` | `soc_forecast` | Standard | `%` | State is planned SoC at the configured forecast horizon. Its recorder-safe `points` include planned grid charging and hold `lock_soc` during low tariff. |
+| `sensor.energy_planner_soc_forecast_passive` | `soc_forecast_passive` | Diagnostic | `%` | Passive comparison forecast without planner grid charging or the low-tariff lock; only the physical minimum SoC is enforced. |
 | `sensor.energy_planner_soc_forecast_with_managed_loads` | `soc_forecast_with_managed` | Standard | `%` | State is passive predicted SoC at the configured horizon with tomorrow's generic demand and actually allocated hot-water and EV slots added to consumption. Attributes include compact graph points, `managed_allocation_by_day` and scheduled-demand details. |
-| `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Passive predicted SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
+| `sensor.energy_planner_soc_forecast_24h` | `soc_forecast_24h` | Standard | `%` | Planned SoC exactly 24 hours from the calculation time. Attribute `point` contains the full forecast point. |
 | `sensor.energy_planner_solar_start` | `sun_start` | Diagnostic | timestamp | Start of the next usable solar production period detected from forecast slots. |
 | `sensor.energy_planner_lock_start` | `lock_start` | Diagnostic | timestamp | Start of the period where the calculated lock SoC is relevant. |
 | `sensor.energy_planner_updated` | `updated` | Diagnostic | timestamp | Time of the last successful coordinator calculation. |
 | `sensor.energy_planner_history_status` | `history_status` | Diagnostic, disabled by default | text | Compact status for the consumption history source and coverage used by the planner. Full details are also available in integration diagnostics. |
 | `sensor.energy_planner_consumption_history` | `consumption_history` | Diagnostic | `kWh` | Latest usable hourly base consumption bucket used by the planner. Attributes include compact hourly `points` with `home_kwh`, `managed_kwh`, `base_kwh` and `base_usable` values for graph cards. |
 
-The two horizon forecast sensors use Home Assistant's `battery` device class.
+The three horizon forecast sensors use Home Assistant's `battery` device class.
 The other SoC outputs are planning setpoints, limits or future helper values, so
 they remain plain percentage sensors.
 
 Forecast `soc_percent` values are rounded to whole integer percentages because
 most PV and battery systems do not provide meaningful decimal SoC precision.
 
-`soc_forecast`, `soc_forecast_24h`, `unused_surplus_today_kwh`,
-`unused_surplus_total_kwh` and `first_full_time` are passive forecasts from the
-current battery SoC, consumption history and PV forecast. They do not assume
-Energy Planner automations have already charged the battery or prevented
-discharge. Plan-specific simulations are exposed separately by
-`vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target`.
+`soc_forecast` and `soc_forecast_24h` expose the planned battery path, including
+the charging target and the low-tariff lock. `soc_forecast_passive`,
+`unused_surplus_today_kwh`, `unused_surplus_total_kwh` and `first_full_time` are
+passive calculations from the current battery SoC, consumption history and PV
+forecast. `vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target`
+summarize the plan-specific simulation.
 
 `soc_forecast_with_managed` starts from the same passive simulation. For
 `generic` loads, it adds tomorrow's full historical or requested demand using
@@ -71,7 +72,7 @@ For every configured `Managed energy source`, Energy Planner also creates a
 small group of per-source entities. The final entity IDs depend on the selected
 source entity name. For example, a source with friendly name `EV charging energy`
 typically creates entity IDs like
-`sensor.energy_planner_managed_ev_charging_energy_today`.
+`sensor.energy_planner_managed_ev_station_total_energy_today`.
 
 | Typical entity pattern | Category | Unit/type | Description |
 |------------------------|----------|-----------|-------------|

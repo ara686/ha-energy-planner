@@ -257,6 +257,40 @@ def test_soc_forecast_uses_battery_in_nt_until_minimum_soc():
     assert result.plan["charged_kwh_total_at_target"] == 8.0
 
 
+def test_planned_soc_forecast_holds_lock_soc_during_nt():
+    now = datetime(2026, 7, 3, 22, 0)
+    slots = [
+        ForecastSlot(
+            start=now + timedelta(hours=index),
+            solar_kwh=0.2 if index >= 8 else 0.0,
+            consumption_kwh=0.1,
+        )
+        for index in range(24)
+    ]
+    result = calculate_plan(
+        _input(
+            now=now,
+            slots=slots,
+            battery_soc=27,
+            battery_capacity_kwh=10,
+            battery_min_soc=20,
+            nt_windows=[TimeWindow(start="22:00", end="00:00")],
+            charge_window=TimeWindow(start="12:00", end="13:00"),
+            grid_charging_enabled=False,
+            forecast_horizon_hours=24,
+        )
+    )
+
+    lock_soc = result.plan["lock_soc"]
+    passive_points = result.plan["soc_forecast"]["points"]
+    planned_points = result.plan["soc_forecast_planned"]["points"]
+
+    assert lock_soc == 27.0
+    assert min(point["soc_percent"] for point in passive_points[:2]) == 25
+    assert min(point["soc_percent"] for point in planned_points[:2]) == lock_soc
+    assert planned_points[2]["soc_percent"] < lock_soc
+
+
 def test_equal_start_end_window_is_empty():
     now = datetime(2026, 7, 3, 22, 0)
     result = calculate_plan(
