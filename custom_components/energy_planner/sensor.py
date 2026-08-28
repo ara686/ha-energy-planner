@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.util import slugify
@@ -51,6 +52,7 @@ from .options import merged_options, serialize_window, serialize_windows
 
 _FORECAST_ATTRIBUTE_MIN_STEP_MINUTES = 15
 _ENERGY_ATTRIBUTE_PRECISION = 1
+_DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID = "via_device_id" in DeviceInfo.__annotations__
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -798,6 +800,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up Energy Planner sensors."""
     coordinator: EnergyPlannerCoordinator = entry.runtime_data
+    parent_device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name=entry.title,
+    )
     entities: list[SensorEntity] = [
         EnergyPlannerSensor(coordinator, entry, description)
         for description in SENSOR_DESCRIPTIONS
@@ -815,6 +822,7 @@ async def async_setup_entry(
                 source_entity_id=load.source_entity_id,
                 source_name=source_name,
                 subentry_id=load.subentry_id,
+                parent_device_id=parent_device.id,
                 description=description,
             )
             for description in descriptions
@@ -881,6 +889,25 @@ class EnergyPlannerSensor(CoordinatorEntity[EnergyPlannerCoordinator], SensorEnt
         return self.entity_description.attr_fn(result)
 
 
+def _managed_source_device_info(
+    *,
+    entry: ConfigEntry,
+    load_identifier: str,
+    source_name: str,
+    parent_device_id: str,
+) -> DeviceInfo:
+    """Build managed-load device info across supported HA device APIs."""
+    device_info: dict[str, Any] = {
+        "identifiers": {(DOMAIN, f"{entry.entry_id}_managed_load_{load_identifier}")},
+        "name": source_name,
+    }
+    if _DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID:
+        device_info["via_device_id"] = parent_device_id
+    else:
+        device_info["via_device"] = (DOMAIN, entry.entry_id)
+    return DeviceInfo(**device_info)
+
+
 class EnergyPlannerManagedSourceSensor(
     CoordinatorEntity[EnergyPlannerCoordinator],
     SensorEntity,
@@ -900,6 +927,7 @@ class EnergyPlannerManagedSourceSensor(
         source_entity_id: str,
         source_name: str,
         subentry_id: str | None,
+        parent_device_id: str,
         description: ManagedSourceSensorDescription,
     ) -> None:
         super().__init__(coordinator)
@@ -920,10 +948,11 @@ class EnergyPlannerManagedSourceSensor(
         if description.key == "charging_mode":
             self._attr_options = list(EV_CHARGING_MODES)
         load_identifier = subentry_id or slugify(source_entity_id)
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_managed_load_{load_identifier}")},
-            name=source_name,
-            via_device=(DOMAIN, entry.entry_id),
+        self._attr_device_info = _managed_source_device_info(
+            entry=entry,
+            load_identifier=load_identifier,
+            source_name=source_name,
+            parent_device_id=parent_device_id,
         )
 
     @property
