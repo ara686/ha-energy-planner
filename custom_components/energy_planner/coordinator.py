@@ -914,7 +914,7 @@ def _add_managed_soc_forecast(
     allocations: list[ManagedDayAllocation],
     result: PlannerResult,
 ) -> None:
-    """Add a passive SoC forecast including expected managed demand."""
+    """Add the planned SoC forecast including expected managed demand."""
     energy_by_slot: dict[datetime, float] = {}
     scheduled_by_source: dict[str, float] = {}
     fallback_source_ids: set[str] = set()
@@ -964,9 +964,19 @@ def _add_managed_soc_forecast(
             + sum(allocation.electric_vehicle_scheduled_by_source.values())
         )
 
+    target_soc = result.plan.get("target_soc")
+    lock_soc = result.plan.get("lock_soc")
     forecast = calculate_soc_forecast(
         planner_input,
         managed_consumption_by_slot=energy_by_slot,
+        grid_charge_target_soc=(
+            float(target_soc) if isinstance(target_soc, int | float) else None
+        ),
+        nt_lock_soc=(
+            float(lock_soc)
+            if isinstance(lock_soc, int | float)
+            else planner_input.battery_min_soc
+        ),
     )
     points = [point.as_dict() for point in forecast.points]
     result.plan["soc_forecast_with_managed"] = {
@@ -991,7 +1001,7 @@ def _add_managed_soc_forecast(
     result.plan["soc_at_forecast_horizon_with_managed"] = (
         forecast.horizon_point.soc_percent
         if forecast.horizon_point is not None
-        else result.plan.get("soc_at_forecast_horizon")
+        else result.plan.get("soc_at_forecast_horizon_planned")
     )
 
 

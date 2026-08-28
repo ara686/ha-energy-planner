@@ -129,7 +129,7 @@ Nejužitečnější entity:
 |--------|--------|
 | `sensor.energy_planner_soc_forecast` | Plánované SoC na konci nastaveného horizontu. Zahrnuje cílové nabití ze sítě a během NT zachovává `lock_soc`, takže body v atributech odpovídají očekávanému řízenému průběhu baterie v grafu. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostická pasivní predikce bez plánovaného nabíjení ze sítě a bez zámku planneru v NT. Ukazuje průběh pouze s nastaveným fyzickým minimem SoC baterie. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Pasivně predikované SoC na konci nastaveného horizontu se započteným obecným odběrem a skutečně přidělenými solárními sloty TUV a EV. Atributy obsahují kompaktní body pro graf, alokace po dnech a podrobnosti rozložení řízené spotřeby. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Plánované SoC na konci nastaveného horizontu se započteným obecným odběrem a skutečně přidělenými solárními sloty TUV a EV. Používá stejné cílové nabití ze sítě a `lock_soc` v NT jako základní predikce. Atributy obsahují kompaktní body pro graf, alokace po dnech a podrobnosti rozložení řízené spotřeby. |
 | `sensor.energy_planner_soc_forecast_24h` | Plánované SoC přesně za 24 hodin od posledního výpočtu. |
 | `binary_sensor.energy_planner_charge_now` | Zapnuto, když povolené plánování nabíjení ze sítě říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |

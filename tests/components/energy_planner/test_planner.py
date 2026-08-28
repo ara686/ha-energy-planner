@@ -235,6 +235,39 @@ def test_soc_forecast_can_include_managed_consumption_by_slot():
     assert managed_point["consumption_kwh"] == 2
 
 
+def test_soc_forecast_with_managed_consumption_holds_planner_lock_during_nt():
+    now = datetime(2026, 7, 3, 22, 0)
+    data = _input(
+        now=now,
+        slots=_slots(now, 24, solar_kwh=0.0, consumption_kwh=0.1),
+        battery_soc=27,
+        battery_capacity_kwh=10,
+        battery_min_soc=20,
+        nt_windows=[TimeWindow(start="22:00", end="00:00")],
+        charge_window=TimeWindow(start="12:00", end="13:00"),
+        grid_charging_enabled=False,
+        forecast_horizon_hours=24,
+    )
+    managed_consumption = {
+        now: 0.1,
+        now + timedelta(hours=1): 0.1,
+    }
+
+    passive = calculate_soc_forecast(
+        data,
+        managed_consumption_by_slot=managed_consumption,
+    )
+    planned = calculate_soc_forecast(
+        data,
+        managed_consumption_by_slot=managed_consumption,
+        nt_lock_soc=27,
+    )
+
+    assert min(point.soc_percent for point in passive.points[:2]) == 23
+    assert min(point.soc_percent for point in planned.points[:2]) == 27
+    assert sum(point.grid_import_kwh for point in planned.points[:2]) == 0.4
+
+
 def test_soc_forecast_uses_battery_in_nt_until_minimum_soc():
     now = datetime(2026, 7, 3, 23, 0)
     result = calculate_plan(
