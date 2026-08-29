@@ -43,12 +43,14 @@ from .const import (
     CONF_SUN_START_REQUIRED_MINUTES,
     CONF_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
+    EV_CHARGING_STRATEGY_DEADLINE_AWARE,
 )
 from .coordinator import EnergyPlannerCoordinator
 from .ev_plan import EV_CHARGING_MODES
-from .managed_loads import managed_load_configs
+from .managed_loads import ManagedLoadConfig, managed_load_configs
 from .models import PlannerResult
 from .options import merged_options, serialize_window, serialize_windows
+from .wallbox import WallboxModeOptions, recommended_wallbox_mode
 
 _FORECAST_ATTRIBUTE_MIN_STEP_MINUTES = 15
 _ENERGY_ATTRIBUTE_PRECISION = 1
@@ -792,6 +794,14 @@ EV_PLAN_SENSOR_DESCRIPTIONS: tuple[ManagedSourceSensorDescription, ...] = (
     ),
 )
 
+WALLBOX_MODE_SENSOR_DESCRIPTION = ManagedSourceSensorDescription(
+    key="recommended_wallbox_mode",
+    ev_plan_value_key="mode",
+    translation_key="managed_source_recommended_wallbox_mode",
+    icon="mdi:ev-station-auto",
+    device_class=SensorDeviceClass.ENUM,
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -815,6 +825,12 @@ async def async_setup_entry(
         descriptions = list(MANAGED_SOURCE_SENSOR_DESCRIPTIONS)
         if load.is_electric_vehicle:
             descriptions.extend(EV_PLAN_SENSOR_DESCRIPTIONS)
+        if (
+            load.is_electric_vehicle
+            and load.ev_charging_strategy == EV_CHARGING_STRATEGY_DEADLINE_AWARE
+            and load.has_wallbox_mode_mapping
+        ):
+            descriptions.append(WALLBOX_MODE_SENSOR_DESCRIPTION)
         source_entities = [
             EnergyPlannerManagedSourceSensor(
                 coordinator,
@@ -824,6 +840,8 @@ async def async_setup_entry(
                 subentry_id=load.subentry_id,
                 parent_device_id=parent_device.id,
                 description=description,
+                wallbox_mode_entity_id=load.ev_wallbox_mode_entity_id,
+                wallbox_mode_options=_wallbox_mode_options(load),
             )
             for description in descriptions
         ]
@@ -929,10 +947,14 @@ class EnergyPlannerManagedSourceSensor(
         subentry_id: str | None,
         parent_device_id: str,
         description: ManagedSourceSensorDescription,
+        wallbox_mode_entity_id: str | None = None,
+        wallbox_mode_options: WallboxModeOptions | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._source_entity_id = source_entity_id
         self._source_name = source_name
+        self._wallbox_mode_entity_id = wallbox_mode_entity_id
+        self._wallbox_mode_options = wallbox_mode_options
         self.entity_description = description
         self._attr_unique_id = (
             f"{entry.entry_id}_managed_{slugify(source_entity_id)}_{description.key}"
@@ -947,6 +969,11 @@ class EnergyPlannerManagedSourceSensor(
         self._attr_translation_placeholders = {"source": source_name}
         if description.key == "charging_mode":
             self._attr_options = list(EV_CHARGING_MODES)
+        elif (
+            description.key == "recommended_wallbox_mode"
+            and wallbox_mode_options is not None
+        ):
+            self._attr_options = list(wallbox_mode_options.values)
         load_identifier = subentry_id or slugify(source_entity_id)
         self._attr_device_info = _managed_source_device_info(
             entry=entry,
@@ -962,6 +989,10 @@ class EnergyPlannerManagedSourceSensor(
             return False
         if self.entity_description.ev_plan_value_key is not None:
             plan = _ev_charging_plan(result, self._source_entity_id)
+            if self.entity_description.key == "recommended_wallbox_mode":
+                return self._wallbox_mapping_valid() and isinstance(
+                    plan.get("mode"), str
+                )
             if self.entity_description.key == "charging_mode":
                 return isinstance(plan.get("mode"), str)
             return plan.get(self.entity_description.ev_plan_value_key) is not None
@@ -990,6 +1021,13 @@ class EnergyPlannerManagedSourceSensor(
         if result is None:
             return None
         if self.entity_description.ev_plan_value_key is not None:
+            if self.entity_description.key == "recommended_wallbox_mode":
+                plan = _ev_charging_plan(result, self._source_entity_id)
+                if self._wallbox_mode_options is None:
+                    return None
+                return recommended_wallbox_mode(
+                    plan.get("mode"), self._wallbox_mode_options
+                )
             value = _ev_charging_plan(result, self._source_entity_id).get(
                 self.entity_description.ev_plan_value_key
             )
@@ -1023,6 +1061,9 @@ class EnergyPlannerManagedSourceSensor(
 
         if self.entity_description.ev_plan_value_key is not None:
             plan = _ev_charging_plan(result, self._source_entity_id)
+            if self.entity_description.key == "recommended_wallbox_mode":
+                attributes.update(self._wallbox_mode_attributes(plan))
+                return attributes
             if self.entity_description.include_ev_plan_attributes:
                 attributes.update(plan)
             else:
@@ -1060,6 +1101,34 @@ class EnergyPlannerManagedSourceSensor(
             attributes["points_compacted"] = True
         return attributes
 
+    def _wallbox_mapping_valid(self) -> bool:
+        if self._wallbox_mode_entity_id is None or self._wallbox_mode_options is None:
+            return False
+        state = self.coordinator.hass.states.get(self._wallbox_mode_entity_id)
+        options = state.attributes.get("options") if state is not None else None
+        return isinstance(options, list) and all(
+            option in options for option in self._wallbox_mode_options.values
+        )
+
+    def _wallbox_mode_attributes(self, plan: dict[str, Any]) -> dict[str, Any]:
+        attributes: dict[str, Any] = {
+            "target_entity_id": self._wallbox_mode_entity_id,
+            "planner_mode": plan.get("mode"),
+            "reason": plan.get("reason"),
+            "next_action_start": plan.get("next_action_start"),
+            "next_action_end": plan.get("next_action_end"),
+            "next_action_mode": plan.get("next_action_mode"),
+        }
+        if self._wallbox_mode_options is not None:
+            attributes["off_option"] = self._wallbox_mode_options.off
+            next_mode = plan.get("next_action_mode")
+            attributes["next_wallbox_mode"] = (
+                recommended_wallbox_mode(next_mode, self._wallbox_mode_options)
+                if next_mode is not None
+                else None
+            )
+        return attributes
+
 
 def _ev_charging_plan(
     result: PlannerResult,
@@ -1071,6 +1140,21 @@ def _ev_charging_plan(
         return {}
     plan = plans.get(source_entity_id)
     return plan if isinstance(plan, dict) else {}
+
+
+def _wallbox_mode_options(load: ManagedLoadConfig) -> WallboxModeOptions | None:
+    if not load.has_wallbox_mode_mapping:
+        return None
+    assert load.ev_wallbox_solar_option is not None
+    assert load.ev_wallbox_home_battery_option is not None
+    assert load.ev_wallbox_grid_option is not None
+    assert load.ev_wallbox_off_option is not None
+    return WallboxModeOptions(
+        solar=load.ev_wallbox_solar_option,
+        home_battery=load.ev_wallbox_home_battery_option,
+        grid=load.ev_wallbox_grid_option,
+        off=load.ev_wallbox_off_option,
+    )
 
 
 def _datetime_value(value: Any) -> datetime | None:

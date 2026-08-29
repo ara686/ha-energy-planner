@@ -122,6 +122,7 @@
             "ev_presence_entity": "Vehicle position",
             "ev_connected_entity": "Charging cable connected",
             "ev_grid_outside_nt_entity": "Allow GRID outside low tariff",
+            "ev_wallbox_mode_entity": "Wallbox mode selector (optional)",
             "ev_workdays": "Workdays",
             "ev_departure_time": "Departure time",
             "ev_return_time": "Return time"
@@ -140,9 +141,30 @@
             "ev_presence_entity": "Vehicle position",
             "ev_connected_entity": "Charging cable connected",
             "ev_grid_outside_nt_entity": "Allow GRID outside low tariff",
+            "ev_wallbox_mode_entity": "Wallbox mode selector (optional)",
             "ev_workdays": "Workdays",
             "ev_departure_time": "Departure time",
             "ev_return_time": "Return time"
+          }
+        },
+        "wallbox_modes": {
+          "title": "Map wallbox modes",
+          "description": "Map planner actions to exact options exposed by the selected wallbox mode helper.",
+          "data": {
+            "ev_wallbox_solar_option": "Solar option",
+            "ev_wallbox_home_battery_option": "Home battery option",
+            "ev_wallbox_grid_option": "GRID option",
+            "ev_wallbox_off_option": "Safe OFF option"
+          }
+        },
+        "reconfigure_wallbox_modes": {
+          "title": "Map wallbox modes",
+          "description": "Map planner actions to exact options exposed by the selected wallbox mode helper.",
+          "data": {
+            "ev_wallbox_solar_option": "Solar option",
+            "ev_wallbox_home_battery_option": "Home battery option",
+            "ev_wallbox_grid_option": "GRID option",
+            "ev_wallbox_off_option": "Safe OFF option"
           }
         }
       },
@@ -161,7 +183,8 @@
         "value_positive": "Tank volume, heater power and thermal conversion factor must be greater than zero.",
         "entity_required": "Select an available entity of the required type.",
         "workdays_required": "Select at least one valid workday.",
-        "times_distinct": "Departure and return times must be different."
+        "times_distinct": "Departure and return times must be different.",
+        "wallbox_option_invalid": "Select one of the options currently exposed by the wallbox mode helper."
       }
     }
   },
@@ -340,6 +363,7 @@
       "managed_source_charging_mode": {"name": "Managed {source} charging mode"},
       "managed_source_next_departure": {"name": "Managed {source} next departure"},
       "managed_source_planned_until_departure": {"name": "Managed {source} planned until departure"},
+      "managed_source_recommended_wallbox_mode": {"name": "Managed {source} recommended wallbox mode"},
       "update_interval_minutes": {
         "name": "Recalculation interval"
       },

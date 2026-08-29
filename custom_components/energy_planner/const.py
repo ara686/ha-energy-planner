@@ -23,6 +23,11 @@ CONF_EV_GRID_OUTSIDE_NT_ENTITY = "ev_grid_outside_nt_entity"
 CONF_EV_WORKDAYS = "ev_workdays"
 CONF_EV_DEPARTURE_TIME = "ev_departure_time"
 CONF_EV_RETURN_TIME = "ev_return_time"
+CONF_EV_WALLBOX_MODE_ENTITY = "ev_wallbox_mode_entity"
+CONF_EV_WALLBOX_SOLAR_OPTION = "ev_wallbox_solar_option"
+CONF_EV_WALLBOX_HOME_BATTERY_OPTION = "ev_wallbox_home_battery_option"
+CONF_EV_WALLBOX_GRID_OPTION = "ev_wallbox_grid_option"
+CONF_EV_WALLBOX_OFF_OPTION = "ev_wallbox_off_option"
 CONF_TOP_TEMPERATURE_ENTITY = "top_temperature_entity"
 CONF_BOTTOM_TEMPERATURE_ENTITY = "bottom_temperature_entity"
 CONF_MINIMUM_TEMPERATURE_C = "minimum_temperature_c"
@@ -91,6 +96,13 @@ DEFAULT_EV_CHARGING_STRATEGY = EV_CHARGING_STRATEGY_SOLAR_ONLY
 DEFAULT_EV_WORKDAYS = [0, 1, 2, 3, 4]
 DEFAULT_EV_DEPARTURE_TIME = "07:00:00"
 DEFAULT_EV_RETURN_TIME = "17:00:00"
+
+EV_WALLBOX_OPTION_KEYS = (
+    CONF_EV_WALLBOX_SOLAR_OPTION,
+    CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
+    CONF_EV_WALLBOX_GRID_OPTION,
+    CONF_EV_WALLBOX_OFF_OPTION,
+)
 
 DEFAULT_NT_WINDOWS = [
     {"start": "17:00", "end": "19:00"},

@@ -28,6 +28,11 @@ from custom_components.energy_planner.const import (
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_WALLBOX_GRID_OPTION,
+    CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
+    CONF_EV_WALLBOX_MODE_ENTITY,
+    CONF_EV_WALLBOX_OFF_OPTION,
+    CONF_EV_WALLBOX_SOLAR_OPTION,
     CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGING_ENABLED,
@@ -62,6 +67,7 @@ from custom_components.energy_planner.sensor import (
     EV_PLAN_SENSOR_DESCRIPTIONS,
     MANAGED_SOURCE_SENSOR_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
+    WALLBOX_MODE_SENSOR_DESCRIPTION,
     EnergyPlannerManagedSourceSensor,
     EnergyPlannerSensor,
     _charge_window_option_value,
@@ -1043,6 +1049,10 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
     hass.states.async_set("device_tracker.enyaq", "home")
     hass.states.async_set("binary_sensor.enyaq_connected", "off")
     hass.states.async_set("input_boolean.ev_grid_outside_nt", "off")
+    wallbox_options = ["EKO - Solar", "Battery Free kWh", "GRID", "OFF"]
+    hass.states.async_set(
+        "input_select.wallbox_mode", "OFF", {"options": wallbox_options}
+    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Energy Planner",
@@ -1068,6 +1078,11 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
                     CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
                     CONF_EV_DEPARTURE_TIME: "07:00:00",
                     CONF_EV_RETURN_TIME: "17:00:00",
+                    CONF_EV_WALLBOX_MODE_ENTITY: "input_select.wallbox_mode",
+                    CONF_EV_WALLBOX_SOLAR_OPTION: "EKO - Solar",
+                    CONF_EV_WALLBOX_HOME_BATTERY_OPTION: "Battery Free kWh",
+                    CONF_EV_WALLBOX_GRID_OPTION: "GRID",
+                    CONF_EV_WALLBOX_OFF_OPTION: "OFF",
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
                 "title": "EV charging energy",
@@ -1107,6 +1122,75 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
     assert "timeline" in planned.attributes
     assert planned.state_info is not None
     assert "timeline" in planned.state_info["unrecorded_attributes"]
+
+    wallbox_entity_id = registry.async_get_entity_id(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{prefix}_{WALLBOX_MODE_SENSOR_DESCRIPTION.key}",
+    )
+    assert wallbox_entity_id is not None
+    wallbox = hass.states.get(wallbox_entity_id)
+    assert wallbox is not None
+    assert wallbox.state == "OFF"
+    assert wallbox.attributes["options"] == wallbox_options
+    assert wallbox.attributes["target_entity_id"] == "input_select.wallbox_mode"
+    assert wallbox.attributes["planner_mode"] == "connect_vehicle"
+
+    entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "ev_charging_plans": {
+                    "sensor.ev_energy_total": {
+                        "mode": "wait_for_solar",
+                        "reason": "next_action_solar",
+                        "next_action_mode": "solar",
+                        "next_action_start": "2026-08-30T11:40:00+02:00",
+                        "next_action_end": "2026-08-30T17:30:00+02:00",
+                    }
+                }
+            },
+        )
+    )
+    await hass.async_block_till_done()
+    wallbox = hass.states.get(wallbox_entity_id)
+    assert wallbox.state == "OFF"
+    assert wallbox.attributes["next_wallbox_mode"] == "EKO - Solar"
+
+    for planner_mode, expected in (
+        ("solar", "EKO - Solar"),
+        ("home_battery", "Battery Free kWh"),
+        ("grid_low_tariff", "GRID"),
+        ("grid_high_tariff", "GRID"),
+        ("complete", "OFF"),
+    ):
+        entry.runtime_data.async_set_updated_data(
+            PlannerResult(
+                state="ok",
+                updated=dt_util.utcnow(),
+                plan={
+                    "ev_charging_plans": {
+                        "sensor.ev_energy_total": {
+                            "mode": planner_mode,
+                            "reason": f"charging_from_{planner_mode}",
+                            "next_action_mode": planner_mode,
+                        }
+                    }
+                },
+            )
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(wallbox_entity_id).state == expected
+
+    hass.states.async_set(
+        "input_select.wallbox_mode",
+        "GRID",
+        {"options": ["EKO - Solar", "Battery Free kWh", "GRID"]},
+    )
+    entry.runtime_data.async_set_updated_data(entry.runtime_data.data)
+    await hass.async_block_till_done()
+    assert hass.states.get(wallbox_entity_id).state == STATE_UNAVAILABLE
 
 
 async def test_today_sensors_expose_all_managed_source_recommendations(hass):

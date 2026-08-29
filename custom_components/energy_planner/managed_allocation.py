@@ -166,6 +166,9 @@ class ManagedDayAllocation:
     hot_water_energy_by_slot: dict[datetime, float] = field(default_factory=dict)
     hot_water_scheduled_by_source: dict[str, float] = field(default_factory=dict)
     electric_vehicle_energy_by_slot: dict[datetime, float] = field(default_factory=dict)
+    electric_vehicle_energy_by_source_slot: dict[tuple[str, datetime], float] = field(
+        default_factory=dict
+    )
     electric_vehicle_scheduled_by_source: dict[str, float] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
@@ -381,6 +384,11 @@ def allocate_managed_day(
         },
         electric_vehicle_energy_by_slot={
             start: value for start, value in ev_schedule.items() if value > 0
+        },
+        electric_vehicle_energy_by_source_slot={
+            (source_id, start): value
+            for (source_id, start), value in schedule_by_source_slot.items()
+            if source_id in ev_by_source and value > 0
         },
         electric_vehicle_scheduled_by_source={
             source_id: _round(value) for source_id, value in ev_by_source.items()
