@@ -106,6 +106,13 @@ load's recommendation; it never falls back to history.
 | Workdays | `ev_workdays` | Deadline-aware | One or more weekdays. Default Monday through Friday. |
 | Departure time | `ev_departure_time` | Deadline-aware | Local departure deadline; default `07:00`. |
 | Return time | `ev_return_time` | Deadline-aware | Local return and end of the expected absence; default `17:00`. |
+| Wallbox mode selector | `ev_wallbox_mode_entity` | Optional, deadline-aware | An `input_select` consumed by an external automation. Selecting it opens a mapping step for solar, home-battery, GRID and safe-OFF options. Energy Planner only publishes advice and never changes this helper. |
+
+When a Wallbox selector is configured, the mapping step validates every stored
+value against its current options. Known option names such as `EKO - Solar`,
+`Battery Free kWh`, `GRID` and `OFF` are suggested when present but are not
+hard-coded requirements. Removing the selector or changing strategy removes the
+mapping on reconfigure.
 
 The request is converted to charger-input energy:
 

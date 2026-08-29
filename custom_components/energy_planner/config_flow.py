@@ -38,6 +38,11 @@ from .const import (
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_WALLBOX_GRID_OPTION,
+    CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
+    CONF_EV_WALLBOX_MODE_ENTITY,
+    CONF_EV_WALLBOX_OFF_OPTION,
+    CONF_EV_WALLBOX_SOLAR_OPTION,
     CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
@@ -89,6 +94,7 @@ from .const import (
     DOMAIN,
     EV_CHARGING_STRATEGY_DEADLINE_AWARE,
     EV_CHARGING_STRATEGY_SOLAR_ONLY,
+    EV_WALLBOX_OPTION_KEYS,
     MANAGED_LOAD_SUBENTRY,
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_GENERIC,
@@ -120,6 +126,7 @@ ERR_TEMPERATURE_SENSOR_REQUIRED = "temperature_sensor_required"
 ERR_VALUE_POSITIVE = "value_positive"
 ERR_WORKDAYS_REQUIRED = "workdays_required"
 ERR_TIMES_DISTINCT = "times_distinct"
+ERR_WALLBOX_OPTION_INVALID = "wallbox_option_invalid"
 ENERGY_STATE_CLASSES = {
     "total",
     "total_increasing",
@@ -216,6 +223,9 @@ EV_CONNECTED_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
 EV_GRID_PERMISSION_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {"domain": "input_boolean"},
 ]
+EV_WALLBOX_MODE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {"domain": "input_select"},
+]
 
 
 def _number_selector(
@@ -310,6 +320,8 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
     """Add or reconfigure one managed load."""
 
     _selected_load_type: str = DEFAULT_MANAGED_LOAD_TYPE
+    _pending_load_input: dict[str, Any] | None = None
+    _pending_reconfigure = False
 
     async def async_step_user(
         self,
@@ -384,6 +396,18 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
         """Reconfigure an electric-vehicle managed load."""
         return await self._async_step_details(user_input, reconfigure=True)
 
+    async def async_step_wallbox_modes(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Configure external wallbox selector option mappings."""
+        return await self._async_step_wallbox_modes(user_input)
+
+    async def async_step_reconfigure_wallbox_modes(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Reconfigure external wallbox selector option mappings."""
+        return await self._async_step_wallbox_modes(user_input)
+
     async def _async_step_details(
         self,
         user_input: dict[str, Any] | None = None,
@@ -405,21 +429,11 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
                 current_subentry_id=subentry.subentry_id if subentry else None,
             )
             if not errors:
-                source_id = complete_input[CONF_MANAGED_ENERGY_ENTITY]
-                data = _clean_managed_load_data(complete_input)
-                if subentry is not None:
-                    return self.async_update_and_abort(
-                        entry,
-                        subentry,
-                        title=_source_display_name(self.hass, source_id),
-                        data=data,
-                        unique_id=source_id,
-                    )
-                return self.async_create_entry(
-                    title=_source_display_name(self.hass, source_id),
-                    data=data,
-                    unique_id=source_id,
-                )
+                if _needs_wallbox_mapping(complete_input):
+                    self._pending_load_input = complete_input
+                    self._pending_reconfigure = reconfigure
+                    return await self._async_step_wallbox_modes()
+                return self._finish_load(complete_input, reconfigure=reconfigure)
 
         step_id = (
             f"reconfigure_{self._selected_load_type}"
@@ -449,6 +463,84 @@ class ManagedLoadSubentryFlowHandler(ConfigSubentryFlow):
                 user_input if user_input is not None else suggested,
             ),
             errors=errors,
+        )
+
+    async def _async_step_wallbox_modes(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> SubentryFlowResult:
+        pending = self._pending_load_input
+        if pending is None:
+            return self.async_abort(reason="invalid_flow")
+        options = _wallbox_options(
+            self.hass,
+            str(pending[CONF_EV_WALLBOX_MODE_ENTITY]),
+        )
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = {
+                key: ERR_WALLBOX_OPTION_INVALID
+                for key in EV_WALLBOX_OPTION_KEYS
+                if user_input.get(key) not in options
+            }
+            if not errors:
+                return self._finish_load(
+                    {**pending, **user_input},
+                    reconfigure=self._pending_reconfigure,
+                )
+
+        subentry = (
+            self._get_reconfigure_subentry() if self._pending_reconfigure else None
+        )
+        suggested = {
+            key: value
+            for key, value in (dict(subentry.data).items() if subentry else ())
+            if key in EV_WALLBOX_OPTION_KEYS and value in options
+        }
+        defaults = {
+            CONF_EV_WALLBOX_SOLAR_OPTION: "EKO - Solar",
+            CONF_EV_WALLBOX_HOME_BATTERY_OPTION: "Battery Free kWh",
+            CONF_EV_WALLBOX_GRID_OPTION: "GRID",
+            CONF_EV_WALLBOX_OFF_OPTION: "OFF",
+        }
+        for key, value in defaults.items():
+            if key not in suggested and value in options:
+                suggested[key] = value
+        step_id = (
+            "reconfigure_wallbox_modes"
+            if self._pending_reconfigure
+            else "wallbox_modes"
+        )
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(
+                _wallbox_mapping_schema(options),
+                user_input if user_input is not None else suggested,
+            ),
+            errors=errors,
+        )
+
+    def _finish_load(
+        self,
+        complete_input: dict[str, Any],
+        *,
+        reconfigure: bool,
+    ) -> SubentryFlowResult:
+        entry = self._get_entry()
+        source_id = complete_input[CONF_MANAGED_ENERGY_ENTITY]
+        data = _clean_managed_load_data(complete_input)
+        if reconfigure:
+            return self.async_update_and_abort(
+                entry,
+                self._get_reconfigure_subentry(),
+                title=_source_display_name(self.hass, source_id),
+                data=data,
+                unique_id=source_id,
+            )
+        return self.async_create_entry(
+            title=_source_display_name(self.hass, source_id),
+            data=data,
+            unique_id=source_id,
         )
 
 
@@ -732,6 +824,9 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
                 vol.Optional(CONF_EV_GRID_OUTSIDE_NT_ENTITY): _entity_selector(
                     EV_GRID_PERMISSION_ENTITY_FILTERS
                 ),
+                vol.Optional(CONF_EV_WALLBOX_MODE_ENTITY): _entity_selector(
+                    EV_WALLBOX_MODE_ENTITY_FILTERS
+                ),
                 vol.Required(
                     CONF_EV_WORKDAYS,
                     default=[str(day) for day in DEFAULT_EV_WORKDAYS],
@@ -845,6 +940,11 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
             ):
                 if entity_id := user_input.get(key):
                     data[key] = str(entity_id)
+            if wallbox_entity_id := user_input.get(CONF_EV_WALLBOX_MODE_ENTITY):
+                data[CONF_EV_WALLBOX_MODE_ENTITY] = str(wallbox_entity_id)
+                data.update(
+                    {key: str(user_input[key]) for key in EV_WALLBOX_OPTION_KEYS}
+                )
     elif requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
         data[CONF_REQUESTED_ENERGY_ENTITY] = str(requested_entity_id)
     return data
@@ -998,6 +1098,10 @@ def _validate_electric_vehicle_input(
         if state is None or state.domain != domain:
             errors[key] = ERR_ENTITY_REQUIRED
 
+    wallbox_entity_id = user_input.get(CONF_EV_WALLBOX_MODE_ENTITY)
+    if wallbox_entity_id and not _wallbox_options(hass, str(wallbox_entity_id)):
+        errors[CONF_EV_WALLBOX_MODE_ENTITY] = ERR_ENTITY_REQUIRED
+
     workdays = user_input.get(CONF_EV_WORKDAYS)
     if not isinstance(workdays, list) or not workdays:
         errors[CONF_EV_WORKDAYS] = ERR_WORKDAYS_REQUIRED
@@ -1017,6 +1121,36 @@ def _validate_electric_vehicle_input(
     else:
         if departure == return_at:
             errors[CONF_EV_RETURN_TIME] = ERR_TIMES_DISTINCT
+
+
+def _needs_wallbox_mapping(user_input: dict[str, Any]) -> bool:
+    return user_input.get(
+        CONF_EV_CHARGING_STRATEGY
+    ) == EV_CHARGING_STRATEGY_DEADLINE_AWARE and bool(
+        user_input.get(CONF_EV_WALLBOX_MODE_ENTITY)
+    )
+
+
+def _wallbox_options(hass: HomeAssistant, entity_id: str) -> list[str]:
+    state = hass.states.get(entity_id)
+    if state is None or state.domain != "input_select":
+        return []
+    options = state.attributes.get("options")
+    if not isinstance(options, list):
+        return []
+    return [option for option in options if isinstance(option, str) and option]
+
+
+def _wallbox_mapping_schema(options: list[str]) -> vol.Schema:
+    fields: dict[vol.Marker, selector.SelectSelector] = {}
+    for key in EV_WALLBOX_OPTION_KEYS:
+        fields[vol.Required(key)] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=options,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+    return vol.Schema(fields)
 
 
 def _compatible_device_class(state, allowed: set[str]) -> bool:

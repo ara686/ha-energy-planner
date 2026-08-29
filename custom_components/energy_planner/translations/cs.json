@@ -122,6 +122,7 @@
             "ev_presence_entity": "Poloha vozidla",
             "ev_connected_entity": "Připojení nabíjecího kabelu",
             "ev_grid_outside_nt_entity": "Povolit GRID mimo nízký tarif",
+            "ev_wallbox_mode_entity": "Výběr režimu wallboxu (volitelné)",
             "ev_workdays": "Pracovní dny",
             "ev_departure_time": "Čas odjezdu",
             "ev_return_time": "Čas návratu"
@@ -140,9 +141,30 @@
             "ev_presence_entity": "Poloha vozidla",
             "ev_connected_entity": "Připojení nabíjecího kabelu",
             "ev_grid_outside_nt_entity": "Povolit GRID mimo nízký tarif",
+            "ev_wallbox_mode_entity": "Výběr režimu wallboxu (volitelné)",
             "ev_workdays": "Pracovní dny",
             "ev_departure_time": "Čas odjezdu",
             "ev_return_time": "Čas návratu"
+          }
+        },
+        "wallbox_modes": {
+          "title": "Namapovat režimy wallboxu",
+          "description": "Přiřaďte akcím planneru přesné možnosti vybraného helperu režimu wallboxu.",
+          "data": {
+            "ev_wallbox_solar_option": "Režim pro solár",
+            "ev_wallbox_home_battery_option": "Režim pro domácí baterii",
+            "ev_wallbox_grid_option": "Režim pro GRID",
+            "ev_wallbox_off_option": "Bezpečný režim OFF"
+          }
+        },
+        "reconfigure_wallbox_modes": {
+          "title": "Namapovat režimy wallboxu",
+          "description": "Přiřaďte akcím planneru přesné možnosti vybraného helperu režimu wallboxu.",
+          "data": {
+            "ev_wallbox_solar_option": "Režim pro solár",
+            "ev_wallbox_home_battery_option": "Režim pro domácí baterii",
+            "ev_wallbox_grid_option": "Režim pro GRID",
+            "ev_wallbox_off_option": "Bezpečný režim OFF"
           }
         }
       },
@@ -161,7 +183,8 @@
         "value_positive": "Objem nádrže, příkon ohřevu a faktor přeměny musí být větší než nula.",
         "entity_required": "Vyberte dostupnou entitu požadovaného typu.",
         "workdays_required": "Vyberte alespoň jeden platný pracovní den.",
-        "times_distinct": "Čas odjezdu a návratu musí být odlišný."
+        "times_distinct": "Čas odjezdu a návratu musí být odlišný.",
+        "wallbox_option_invalid": "Vyberte jednu z možností, které aktuálně nabízí helper režimu wallboxu."
       }
     }
   },
@@ -340,6 +363,7 @@
       "managed_source_charging_mode": {"name": "Řízená spotřeba {source} režim nabíjení"},
       "managed_source_next_departure": {"name": "Řízená spotřeba {source} příští odjezd"},
       "managed_source_planned_until_departure": {"name": "Řízená spotřeba {source} plán do odjezdu"},
+      "managed_source_recommended_wallbox_mode": {"name": "Řízená spotřeba {source} doporučený režim wallboxu"},
       "update_interval_minutes": {
         "name": "Interval přepočtu"
       },

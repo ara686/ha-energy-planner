@@ -16,6 +16,11 @@ from .const import (
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_WALLBOX_GRID_OPTION,
+    CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
+    CONF_EV_WALLBOX_MODE_ENTITY,
+    CONF_EV_WALLBOX_OFF_OPTION,
+    CONF_EV_WALLBOX_SOLAR_OPTION,
     CONF_EV_WORKDAYS,
     CONF_HEATER_POWER_KW,
     CONF_MANAGED_ENERGY_ENTITIES,
@@ -63,6 +68,11 @@ class ManagedLoadConfig:
     ev_workdays: frozenset[int] = frozenset(DEFAULT_EV_WORKDAYS)
     ev_departure_time: time = time.fromisoformat(DEFAULT_EV_DEPARTURE_TIME)
     ev_return_time: time = time.fromisoformat(DEFAULT_EV_RETURN_TIME)
+    ev_wallbox_mode_entity_id: str | None = None
+    ev_wallbox_solar_option: str | None = None
+    ev_wallbox_home_battery_option: str | None = None
+    ev_wallbox_grid_option: str | None = None
+    ev_wallbox_off_option: str | None = None
     top_temperature_entity_id: str | None = None
     bottom_temperature_entity_id: str | None = None
     minimum_temperature_c: float | None = None
@@ -81,6 +91,19 @@ class ManagedLoadConfig:
     def is_electric_vehicle(self) -> bool:
         """Return whether this load uses the electric-vehicle model."""
         return self.load_type == MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE
+
+    @property
+    def has_wallbox_mode_mapping(self) -> bool:
+        """Return whether this load has a complete wallbox option mapping."""
+        return all(
+            (
+                self.ev_wallbox_mode_entity_id,
+                self.ev_wallbox_solar_option,
+                self.ev_wallbox_home_battery_option,
+                self.ev_wallbox_grid_option,
+                self.ev_wallbox_off_option,
+            )
+        )
 
 
 def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
@@ -129,6 +152,21 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             ev_return_time=_time_or_default(
                 subentry.data.get(CONF_EV_RETURN_TIME),
                 DEFAULT_EV_RETURN_TIME,
+            ),
+            ev_wallbox_mode_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_WALLBOX_MODE_ENTITY)
+            ),
+            ev_wallbox_solar_option=_optional_string(
+                subentry.data.get(CONF_EV_WALLBOX_SOLAR_OPTION)
+            ),
+            ev_wallbox_home_battery_option=_optional_string(
+                subentry.data.get(CONF_EV_WALLBOX_HOME_BATTERY_OPTION)
+            ),
+            ev_wallbox_grid_option=_optional_string(
+                subentry.data.get(CONF_EV_WALLBOX_GRID_OPTION)
+            ),
+            ev_wallbox_off_option=_optional_string(
+                subentry.data.get(CONF_EV_WALLBOX_OFF_OPTION)
             ),
             top_temperature_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_TOP_TEMPERATURE_ENTITY)
@@ -180,6 +218,12 @@ def managed_energy_entity_ids(entry: ConfigEntry) -> list[str]:
 
 
 def _optional_entity_id(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return value
+
+
+def _optional_string(value: object) -> str | None:
     if not isinstance(value, str) or not value:
         return None
     return value

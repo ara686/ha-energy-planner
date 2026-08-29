@@ -118,8 +118,8 @@ for the charger.
 
 ## Map A Deadline-aware EV Plan To A Wallbox Mode
 
-This advisory mapping matches the recommended modes to an existing Wallbox
-selector. Replace the planner entity ID with the one created for your managed
+Configure the Wallbox selector and its option mapping in the managed EV first.
+Then replace the recommendation entity ID below with the one created for your
 EV. Phase selection, current limiting and overload protection must remain in the
 Wallbox's existing safety logic.
 
@@ -128,31 +128,36 @@ alias: Energy Planner - apply advisory EV mode
 mode: restart
 triggers:
   - trigger: state
-    entity_id: sensor.energy_planner_managed_your_ev_charging_mode
+    entity_id: sensor.energy_planner_managed_your_ev_recommended_wallbox_mode
+  - trigger: homeassistant
+    event: start
 actions:
   - variables:
-      planner_mode: >-
-        {{ states('sensor.energy_planner_managed_your_ev_charging_mode') }}
-      wallbox_mode: >-
-        {% if planner_mode == 'solar' %}
-          EKO - Solar
-        {% elif planner_mode == 'home_battery' %}
-          Battery Free kWh
-        {% elif planner_mode in ['grid_low_tariff', 'grid_high_tariff'] %}
-          GRID
-        {% else %}
-          OFF
-        {% endif %}
-  - action: input_select.select_option
-    target:
-      entity_id: input_select.wallbox_mode
-    data:
-      option: "{{ wallbox_mode | trim }}"
+      recommendation: sensor.energy_planner_managed_your_ev_recommended_wallbox_mode
+      target_selector: input_select.wallbox_mode
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ states(recommendation)
+                 in (state_attr(target_selector, 'options') or []) }}
+        sequence:
+          - action: input_select.select_option
+            target:
+              entity_id: input_select.wallbox_mode
+            data:
+              option: "{{ states(recommendation) }}"
+    default:
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.wallbox_mode
+        data:
+          option: "OFF"
 ```
 
-The fallback deliberately maps `off`, `connect_vehicle`, `wait_for_solar`,
-`complete`, `shortfall`, `unavailable` and unknown values to `OFF`. The planner
-still does not call this selector itself.
+The recommendation sensor itself maps non-charging states to the configured safe
+OFF option. The automation also falls back to `OFF` while that sensor is missing
+or unavailable. The planner still does not call the selector itself.
 
 ## Prioritize Water Heating Before EV Charging
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigSubentry
@@ -14,6 +15,7 @@ from custom_components.energy_planner.config_flow import (
     _managed_load_schema,
     _user_schema,
     _validate_managed_load_input,
+    _wallbox_mapping_schema,
 )
 from custom_components.energy_planner.const import (
     CONF_BATTERY_CAPACITY_ENTITY,
@@ -29,6 +31,11 @@ from custom_components.energy_planner.const import (
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_WALLBOX_GRID_OPTION,
+    CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
+    CONF_EV_WALLBOX_MODE_ENTITY,
+    CONF_EV_WALLBOX_OFF_OPTION,
+    CONF_EV_WALLBOX_SOLAR_OPTION,
     CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
@@ -651,6 +658,148 @@ async def test_managed_load_subentry_flow_accepts_deadline_aware_ev(hass):
     assert result["data"][CONF_EV_CHARGING_STRATEGY] == (
         EV_CHARGING_STRATEGY_DEADLINE_AWARE
     )
+
+
+async def test_deadline_aware_ev_maps_exact_wallbox_options(hass):
+    set_source_states(hass)
+    _set_ev_input_states(hass)
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "on")
+    hass.states.async_set("input_boolean.ev_grid_outside_nt", "off")
+    options = [
+        "EKO - Solar",
+        "EKO - Solar 3F",
+        "Battery Free kWh",
+        "GRID",
+        "OFF",
+    ]
+    hass.states.async_set("input_select.wallbox_mode", "OFF", {"options": options})
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, version=5)
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, MANAGED_LOAD_SUBENTRY),
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result = await _select_managed_type(
+        hass,
+        result,
+        load_type=MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+    )
+    deadline_input = {
+        **_electric_vehicle_input(priority=5),
+        CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+        CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
+        CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
+        CONF_EV_GRID_OUTSIDE_NT_ENTITY: "input_boolean.ev_grid_outside_nt",
+        CONF_EV_WORKDAYS: ["0", "1", "2", "3", "4"],
+        CONF_EV_DEPARTURE_TIME: "07:00:00",
+        CONF_EV_RETURN_TIME: "17:00:00",
+        CONF_EV_WALLBOX_MODE_ENTITY: "input_select.wallbox_mode",
+    }
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], user_input=deadline_input
+    )
+
+    assert result["step_id"] == "wallbox_modes"
+    assert _suggested_values(result["data_schema"]) == {
+        CONF_EV_WALLBOX_SOLAR_OPTION: "EKO - Solar",
+        CONF_EV_WALLBOX_HOME_BATTERY_OPTION: "Battery Free kWh",
+        CONF_EV_WALLBOX_GRID_OPTION: "GRID",
+        CONF_EV_WALLBOX_OFF_OPTION: "OFF",
+    }
+    mapping = {
+        CONF_EV_WALLBOX_SOLAR_OPTION: "EKO - Solar",
+        CONF_EV_WALLBOX_HOME_BATTERY_OPTION: "Battery Free kWh",
+        CONF_EV_WALLBOX_GRID_OPTION: "GRID",
+        CONF_EV_WALLBOX_OFF_OPTION: "OFF",
+    }
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], user_input=mapping
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        **deadline_input,
+        **mapping,
+        CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+        CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
+    }
+
+
+async def test_reconfigure_removes_wallbox_mapping_with_selector(hass):
+    set_source_states(hass)
+    _set_ev_input_states(hass)
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "on")
+    hass.states.async_set("input_boolean.ev_grid_outside_nt", "off")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        unique_id=DOMAIN,
+        version=5,
+        subentries_data=(
+            {
+                "data": {
+                    **_electric_vehicle_input(),
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                    CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+                    CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
+                    CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
+                    CONF_EV_GRID_OUTSIDE_NT_ENTITY: (
+                        "input_boolean.ev_grid_outside_nt"
+                    ),
+                    CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
+                    CONF_EV_DEPARTURE_TIME: "07:00:00",
+                    CONF_EV_RETURN_TIME: "17:00:00",
+                    CONF_EV_WALLBOX_MODE_ENTITY: "input_select.wallbox_mode",
+                    CONF_EV_WALLBOX_SOLAR_OPTION: "EKO - Solar",
+                    CONF_EV_WALLBOX_HOME_BATTERY_OPTION: "Battery Free kWh",
+                    CONF_EV_WALLBOX_GRID_OPTION: "GRID",
+                    CONF_EV_WALLBOX_OFF_OPTION: "OFF",
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+    subentry = next(iter(entry.subentries.values()))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry.subentry_id)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={
+            **_electric_vehicle_input(),
+            CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+            CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
+            CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
+            CONF_EV_GRID_OUTSIDE_NT_ENTITY: "input_boolean.ev_grid_outside_nt",
+            CONF_EV_WORKDAYS: ["0", "1", "2", "3", "4"],
+            CONF_EV_DEPARTURE_TIME: "07:00:00",
+            CONF_EV_RETURN_TIME: "17:00:00",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    updated = entry.subentries[subentry.subentry_id].data
+    assert CONF_EV_WALLBOX_MODE_ENTITY not in updated
+    assert CONF_EV_WALLBOX_SOLAR_OPTION not in updated
+
+
+def test_wallbox_mapping_schema_rejects_unknown_option() -> None:
+    schema = _wallbox_mapping_schema(["EKO - Solar", "GRID", "OFF"])
+
+    with pytest.raises(vol.Invalid):
+        schema(
+            {
+                CONF_EV_WALLBOX_SOLAR_OPTION: "missing",
+                CONF_EV_WALLBOX_HOME_BATTERY_OPTION: "OFF",
+                CONF_EV_WALLBOX_GRID_OPTION: "GRID",
+                CONF_EV_WALLBOX_OFF_OPTION: "OFF",
+            }
+        )
 
 
 async def test_generic_and_ev_reconfigure_prefills_counterpart_and_cleans_fields(hass):
