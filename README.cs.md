@@ -89,6 +89,9 @@ Volitelné:
 - EV plán podle odjezdu navíc potřebuje `device_tracker`, `binary_sensor`
   připojeného kabelu, pracovní dny s časy odjezdu/návratu a `input_boolean`,
   který výslovně povoluje GRID mimo nízký tarif.
+- Volitelné senzory celkového výkonu a příspěvku ze soláru, domácí baterie a
+  sítě umožní plánu ukázat, zda se EV právě nabíjí a z jakého převažujícího
+  zdroje, odděleně od poradního doporučení pro wallbox.
 - Solcast předpověď FVE pro dnešek, zítřek a další dny.
 
 Pokud máte spotřebu domu jen jako okamžitý výkon, například

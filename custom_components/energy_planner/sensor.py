@@ -991,7 +991,7 @@ class EnergyPlannerManagedSourceSensor(
             plan = _ev_charging_plan(result, self._source_entity_id)
             if self.entity_description.key == "recommended_wallbox_mode":
                 return self._wallbox_mapping_valid() and isinstance(
-                    plan.get("mode"), str
+                    plan.get("recommended_mode") or plan.get("mode"), str
                 )
             if self.entity_description.key == "charging_mode":
                 return isinstance(plan.get("mode"), str)
@@ -1026,7 +1026,8 @@ class EnergyPlannerManagedSourceSensor(
                 if self._wallbox_mode_options is None:
                     return None
                 return recommended_wallbox_mode(
-                    plan.get("mode"), self._wallbox_mode_options
+                    plan.get("recommended_mode") or plan.get("mode"),
+                    self._wallbox_mode_options,
                 )
             value = _ev_charging_plan(result, self._source_entity_id).get(
                 self.entity_description.ev_plan_value_key
@@ -1113,7 +1114,10 @@ class EnergyPlannerManagedSourceSensor(
     def _wallbox_mode_attributes(self, plan: dict[str, Any]) -> dict[str, Any]:
         attributes: dict[str, Any] = {
             "target_entity_id": self._wallbox_mode_entity_id,
-            "planner_mode": plan.get("mode"),
+            "planner_mode": plan.get("recommended_mode") or plan.get("mode"),
+            "observed_mode": plan.get("observed_mode"),
+            "is_charging": plan.get("is_charging"),
+            "current_charging_power_kw": plan.get("current_charging_power_kw"),
             "reason": plan.get("reason"),
             "next_action_start": plan.get("next_action_start"),
             "next_action_end": plan.get("next_action_end"),

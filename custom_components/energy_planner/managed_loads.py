@@ -10,12 +10,16 @@ from homeassistant.config_entries import ConfigEntry
 from .const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_POWER_ENTITY,
     CONF_EV_CHARGING_STRATEGY,
     CONF_EV_CONNECTED_ENTITY,
     CONF_EV_DEPARTURE_TIME,
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_GRID_POWER_ENTITY,
+    CONF_EV_HOME_BATTERY_POWER_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_SOLAR_POWER_ENTITY,
     CONF_EV_WALLBOX_GRID_OPTION,
     CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
     CONF_EV_WALLBOX_MODE_ENTITY,
@@ -65,6 +69,10 @@ class ManagedLoadConfig:
     ev_presence_entity_id: str | None = None
     ev_connected_entity_id: str | None = None
     ev_grid_outside_nt_entity_id: str | None = None
+    ev_charging_power_entity_id: str | None = None
+    ev_solar_power_entity_id: str | None = None
+    ev_home_battery_power_entity_id: str | None = None
+    ev_grid_power_entity_id: str | None = None
     ev_workdays: frozenset[int] = frozenset(DEFAULT_EV_WORKDAYS)
     ev_departure_time: time = time.fromisoformat(DEFAULT_EV_DEPARTURE_TIME)
     ev_return_time: time = time.fromisoformat(DEFAULT_EV_RETURN_TIME)
@@ -143,6 +151,18 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             ),
             ev_grid_outside_nt_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_EV_GRID_OUTSIDE_NT_ENTITY)
+            ),
+            ev_charging_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_CHARGING_POWER_ENTITY)
+            ),
+            ev_solar_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_SOLAR_POWER_ENTITY)
+            ),
+            ev_home_battery_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_HOME_BATTERY_POWER_ENTITY)
+            ),
+            ev_grid_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_GRID_POWER_ENTITY)
             ),
             ev_workdays=_workdays_or_default(subentry.data.get(CONF_EV_WORKDAYS)),
             ev_departure_time=_time_or_default(

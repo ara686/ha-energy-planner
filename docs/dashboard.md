@@ -505,6 +505,9 @@ content: |
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
+    {% if state_attr(deadline, 'is_charging') %}
+  **Skutečné nabíjení:** {{ state_attr(deadline, 'current_charging_power_kw') | float(0) | round(1) }} kW · {{ state_attr(deadline, 'observed_mode') or 'zdroj neznámý' }}
+    {% endif %}
     {% if states(wallbox) not in ['unknown', 'unavailable'] %}
   **Wallbox nyní:** {{ states(wallbox) }}{% set next_wallbox = state_attr(wallbox, 'next_wallbox_mode') %}{% set next_start = state_attr(wallbox, 'next_action_start') %}{% if next_wallbox and next_start %} · další **{{ next_wallbox }}** od {{ (as_datetime(next_start) | as_local).strftime('%d.%m. %H:%M') }}{% endif %}
     {% endif %}
@@ -586,6 +589,9 @@ content: |
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
+    {% if state_attr(deadline, 'is_charging') %}
+  **Observed charging:** {{ state_attr(deadline, 'current_charging_power_kw') | float(0) | round(1) }} kW · {{ state_attr(deadline, 'observed_mode') or 'unknown source' }}
+    {% endif %}
     {% if states(wallbox) not in ['unknown', 'unavailable'] %}
   **Wallbox now:** {{ states(wallbox) }}{% set next_wallbox = state_attr(wallbox, 'next_wallbox_mode') %}{% set next_start = state_attr(wallbox, 'next_action_start') %}{% if next_wallbox and next_start %} · next **{{ next_wallbox }}** at {{ (as_datetime(next_start) | as_local).strftime('%d %b %H:%M') }}{% endif %}
     {% endif %}

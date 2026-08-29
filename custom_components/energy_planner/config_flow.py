@@ -32,12 +32,16 @@ from .const import (
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_POWER_ENTITY,
     CONF_EV_CHARGING_STRATEGY,
     CONF_EV_CONNECTED_ENTITY,
     CONF_EV_DEPARTURE_TIME,
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_GRID_POWER_ENTITY,
+    CONF_EV_HOME_BATTERY_POWER_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_SOLAR_POWER_ENTITY,
     CONF_EV_WALLBOX_GRID_OPTION,
     CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
     CONF_EV_WALLBOX_MODE_ENTITY,
@@ -225,6 +229,9 @@ EV_GRID_PERMISSION_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
 ]
 EV_WALLBOX_MODE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {"domain": "input_select"},
+]
+EV_POWER_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {"domain": "sensor", "device_class": SensorDeviceClass.POWER},
 ]
 
 
@@ -824,6 +831,18 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
                 vol.Optional(CONF_EV_GRID_OUTSIDE_NT_ENTITY): _entity_selector(
                     EV_GRID_PERMISSION_ENTITY_FILTERS
                 ),
+                vol.Optional(CONF_EV_CHARGING_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_SOLAR_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_HOME_BATTERY_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_GRID_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
                 vol.Optional(CONF_EV_WALLBOX_MODE_ENTITY): _entity_selector(
                     EV_WALLBOX_MODE_ENTITY_FILTERS
                 ),
@@ -937,6 +956,10 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
                 CONF_EV_PRESENCE_ENTITY,
                 CONF_EV_CONNECTED_ENTITY,
                 CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+                CONF_EV_CHARGING_POWER_ENTITY,
+                CONF_EV_SOLAR_POWER_ENTITY,
+                CONF_EV_HOME_BATTERY_POWER_ENTITY,
+                CONF_EV_GRID_POWER_ENTITY,
             ):
                 if entity_id := user_input.get(key):
                     data[key] = str(entity_id)

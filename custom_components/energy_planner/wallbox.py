@@ -34,3 +34,17 @@ def recommended_wallbox_mode(
     if planner_mode in {"grid_low_tariff", "grid_high_tariff"}:
         return options.grid
     return options.off
+
+
+def wallbox_charging_source(
+    option: object,
+    options: WallboxModeOptions,
+) -> str | None:
+    """Map a current external wallbox option back to its energy source."""
+    if option == options.solar:
+        return "solar"
+    if option == options.home_battery:
+        return "home_battery"
+    if option == options.grid:
+        return "grid"
+    return None

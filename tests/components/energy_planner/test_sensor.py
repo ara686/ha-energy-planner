@@ -22,6 +22,7 @@ from custom_components.energy_planner.const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGE_WINDOW,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_POWER_ENTITY,
     CONF_EV_CHARGING_STRATEGY,
     CONF_EV_CONNECTED_ENTITY,
     CONF_EV_DEPARTURE_TIME,
@@ -1143,8 +1144,12 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
             plan={
                 "ev_charging_plans": {
                     "sensor.ev_energy_total": {
-                        "mode": "wait_for_solar",
-                        "reason": "next_action_solar",
+                        "mode": "home_battery",
+                        "recommended_mode": "wait_for_solar",
+                        "observed_mode": "home_battery",
+                        "is_charging": True,
+                        "current_charging_power_kw": 4.6,
+                        "reason": "observed_charging_home_battery",
                         "next_action_mode": "solar",
                         "next_action_start": "2026-08-30T11:40:00+02:00",
                         "next_action_end": "2026-08-30T17:30:00+02:00",
@@ -1156,6 +1161,10 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
     await hass.async_block_till_done()
     wallbox = hass.states.get(wallbox_entity_id)
     assert wallbox.state == "OFF"
+    assert hass.states.get(states["charging_mode"].entity_id).state == "home_battery"
+    assert wallbox.attributes["observed_mode"] == "home_battery"
+    assert wallbox.attributes["is_charging"] is True
+    assert wallbox.attributes["current_charging_power_kw"] == 4.6
     assert wallbox.attributes["next_wallbox_mode"] == "EKO - Solar"
 
     for planner_mode, expected in (
@@ -1530,6 +1539,11 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
     hass.states.async_set("device_tracker.listener_enyaq", "home")
     hass.states.async_set("binary_sensor.listener_enyaq_connected", "on")
     hass.states.async_set("input_boolean.listener_ev_grid_outside_nt", "off")
+    hass.states.async_set(
+        "sensor.listener_wallbox_power",
+        "0",
+        {"device_class": "power", "unit_of_measurement": "W"},
+    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Energy Planner",
@@ -1554,6 +1568,7 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
                     CONF_EV_GRID_OUTSIDE_NT_ENTITY: (
                         "input_boolean.listener_ev_grid_outside_nt"
                     ),
+                    CONF_EV_CHARGING_POWER_ENTITY: "sensor.listener_wallbox_power",
                     CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
                     CONF_EV_DEPARTURE_TIME: "07:00:00",
                     CONF_EV_RETURN_TIME: "17:00:00",
@@ -1605,11 +1620,22 @@ async def test_ev_model_input_changes_request_refresh_and_listener_unloads(
         await hass.async_block_till_done()
     assert refresh_calls == 4
 
+    hass.states.async_set(
+        "sensor.listener_wallbox_power",
+        "4600",
+        {"device_class": "power", "unit_of_measurement": "W"},
+    )
+    for _ in range(3):
+        await asyncio.sleep(0)
+        await hass.async_block_till_done()
+    assert refresh_calls == 5
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     hass.states.async_set("sensor.enyaq_charge_kwh", "11")
     hass.states.async_set("device_tracker.listener_enyaq", "home")
+    hass.states.async_set("sensor.listener_wallbox_power", "0")
     await hass.async_block_till_done()
-    assert refresh_calls == 4
+    assert refresh_calls == 5
 
 
 async def test_options_update_changes_loaded_recalculation_interval(

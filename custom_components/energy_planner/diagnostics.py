@@ -34,6 +34,12 @@ async def async_get_config_entry_diagnostics(
                     "priority": load.priority,
                     "requested_energy_entity_id": load.requested_energy_entity_id,
                     "required_energy_entity_id": load.required_energy_entity_id,
+                    "ev_charging_power_entity_id": load.ev_charging_power_entity_id,
+                    "ev_solar_power_entity_id": load.ev_solar_power_entity_id,
+                    "ev_home_battery_power_entity_id": (
+                        load.ev_home_battery_power_entity_id
+                    ),
+                    "ev_grid_power_entity_id": load.ev_grid_power_entity_id,
                     "maximum_charging_power_kw": load.maximum_charging_power_kw,
                     "charging_efficiency": load.charging_efficiency,
                     "top_temperature_entity_id": load.top_temperature_entity_id,

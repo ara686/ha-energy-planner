@@ -92,6 +92,9 @@ Optional:
 - A deadline-aware EV additionally needs a `device_tracker`, a cable-connected
   `binary_sensor`, workdays with departure/return times and an `input_boolean`
   that explicitly permits GRID charging outside low tariff.
+- Optional live total, solar, home-battery and GRID power sensors let the plan
+  report whether the EV is charging now and from which dominant source, without
+  confusing that observed state with the advisory Wallbox recommendation.
 - Solcast PV forecast entities for today, tomorrow and additional days.
 
 If your home consumption is only available as a power sensor, for example
