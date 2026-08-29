@@ -279,6 +279,7 @@ def build_planner_result(
         entry,
         planner_input=planner_input,
         now=now,
+        allocations=allocations,
         result=result,
         warnings=warnings,
     )
@@ -299,12 +300,14 @@ def _add_ev_charging_plans(
     *,
     planner_input: PlannerInput,
     now: datetime,
+    allocations: list[ManagedDayAllocation] | None = None,
     result: PlannerResult,
     warnings: list[str],
 ) -> None:
     """Add advisory deadline-aware EV decisions without controlling devices."""
     action_window_minutes = _ev_action_window_minutes(planner_input.interval_minutes)
     vehicles: list[EVChargingPlanInput] = []
+    deadline_source_ids: set[str] = set()
     unavailable: dict[str, dict[str, object]] = {}
     for load in managed_load_configs(entry):
         if (
@@ -312,6 +315,7 @@ def _add_ev_charging_plans(
             or load.ev_charging_strategy != EV_CHARGING_STRATEGY_DEADLINE_AWARE
         ):
             continue
+        deadline_source_ids.add(load.source_entity_id)
         allocation_input = _electric_vehicle_allocation_input(hass, load, warnings)
         if not isinstance(allocation_input, ElectricVehicleAllocationInput):
             unavailable[load.source_entity_id] = _unavailable_ev_plan_payload(
@@ -343,8 +347,21 @@ def _add_ev_charging_plans(
             )
         )
 
-    forecast = result.plan.get("soc_forecast")
+    forecast = result.plan.get("soc_forecast_with_managed")
+    restored_surplus_by_slot: dict[datetime, float] = {}
+    for allocation in allocations or []:
+        for (
+            source_id,
+            slot_start,
+        ), energy_kwh in allocation.electric_vehicle_energy_by_source_slot.items():
+            if source_id in deadline_source_ids:
+                restored_surplus_by_slot[slot_start] = (
+                    restored_surplus_by_slot.get(slot_start, 0.0) + energy_kwh
+                )
+    if not isinstance(forecast, dict):
+        forecast = result.plan.get("soc_forecast")
     raw_points = forecast.get("points") if isinstance(forecast, dict) else None
+    raw_points = _restore_deadline_ev_surplus(raw_points, restored_surplus_by_slot)
     slots = _ev_charging_slots(
         raw_points,
         source_interval_minutes=planner_input.interval_minutes,
@@ -367,6 +384,41 @@ def _add_ev_charging_plans(
         **unavailable,
         **{source_id: plan.as_dict() for source_id, plan in plans.items()},
     }
+
+
+def _restore_deadline_ev_surplus(
+    points: object,
+    restored_surplus_by_slot: dict[datetime, float],
+) -> object:
+    """Restore surplus tentatively reserved for deadline-aware EV planning."""
+    if not isinstance(points, list) or not restored_surplus_by_slot:
+        return points
+    restored_by_time = {
+        _timeline_time(start): energy_kwh
+        for start, energy_kwh in restored_surplus_by_slot.items()
+    }
+    restored_points: list[object] = []
+    for point in points:
+        if not isinstance(point, dict):
+            restored_points.append(point)
+            continue
+        timestamp = _datetime_from_value(point.get("timestamp"))
+        energy_kwh = (
+            restored_by_time.get(_timeline_time(timestamp), 0.0)
+            if timestamp is not None
+            else 0.0
+        )
+        unused_surplus = point.get("unused_surplus_kwh")
+        if energy_kwh <= 0 or not isinstance(unused_surplus, int | float):
+            restored_points.append(point)
+            continue
+        restored_points.append(
+            {
+                **point,
+                "unused_surplus_kwh": float(unused_surplus) + energy_kwh,
+            }
+        )
+    return restored_points
 
 
 def _ev_action_window_minutes(source_interval_minutes: int) -> int:

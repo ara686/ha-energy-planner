@@ -511,16 +511,18 @@ content: |
     {% set grid = state_attr(deadline, 'grid_high_tariff_kwh') | float(0) %}
     {% set shortfall = state_attr(deadline, 'shortfall_kwh') | float(0) %}
     {% set departure = as_datetime(state_attr(deadline, 'departure')) | as_local %}
+    {% set departure_day = ['pondělí', 'úterý', 'středu', 'čtvrtek', 'pátek', 'sobotu', 'neděli'][departure.weekday()] %}
+    {% set departure_label = departure_day ~ ' ' ~ departure.strftime('%d.%m. v %H:%M') %}
     {% set timeline = state_attr(deadline, 'timeline') or [] %}
     {% if state_attr(deadline, 'forecast_complete') != true %}
   ⚠️ Předpověď nepokrývá celé období do návratu auta; plán může být neúplný.
     {% endif %}
     {% if required <= 0.01 %}
-  ✅ Požadavek je splněný; před odjezdem v **{{ departure.strftime('%H:%M') }}** není potřeba další nabíjení.
+  ✅ Požadavek je splněný; před odjezdem v **{{ departure_label }}** není potřeba další nabíjení.
     {% elif shortfall > 0.01 %}
-  ⚠️ Do odjezdu v **{{ departure.strftime('%H:%M') }}** je naplánováno **{{ planned | round(1) }} kWh**, ale stále chybí **{{ shortfall | round(1) }} kWh**.
+  ⚠️ Do odjezdu v **{{ departure_label }}** je naplánováno **{{ planned | round(1) }} kWh**, ale stále chybí **{{ shortfall | round(1) }} kWh**.
     {% else %}
-  ✅ Do odjezdu v **{{ departure.strftime('%H:%M') }}** je naplánováno požadovaných **{{ planned | round(1) }} kWh**.
+  ✅ Do odjezdu v **{{ departure_label }}** je naplánováno požadovaných **{{ planned | round(1) }} kWh**.
     {% endif %}
     {% if solar + 0.01 < required %}
   Přímý solární přebytek před odjezdem nestačí, proto plán kombinuje dostupné zdroje.
@@ -585,16 +587,18 @@ content: |
     {% set grid = state_attr(deadline, 'grid_high_tariff_kwh') | float(0) %}
     {% set shortfall = state_attr(deadline, 'shortfall_kwh') | float(0) %}
     {% set departure = as_datetime(state_attr(deadline, 'departure')) | as_local %}
+    {% set departure_day = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][departure.weekday()] %}
+    {% set departure_label = departure_day ~ ' ' ~ departure.strftime('%d %b at %H:%M') %}
     {% set timeline = state_attr(deadline, 'timeline') or [] %}
     {% if state_attr(deadline, 'forecast_complete') != true %}
   ⚠️ The forecast does not cover the complete period through the vehicle's return; this plan may be incomplete.
     {% endif %}
     {% if required <= 0.01 %}
-  ✅ The request is complete; no charging is needed before the **{{ departure.strftime('%H:%M') }}** departure.
+  ✅ The request is complete; no charging is needed before the **{{ departure_label }}** departure.
     {% elif shortfall > 0.01 %}
-  ⚠️ **{{ planned | round(1) }} kWh** is planned before the **{{ departure.strftime('%H:%M') }}** departure, but **{{ shortfall | round(1) }} kWh** is still missing.
+  ⚠️ **{{ planned | round(1) }} kWh** is planned before the **{{ departure_label }}** departure, but **{{ shortfall | round(1) }} kWh** is still missing.
     {% else %}
-  ✅ The requested **{{ planned | round(1) }} kWh** is planned before the **{{ departure.strftime('%H:%M') }}** departure.
+  ✅ The requested **{{ planned | round(1) }} kWh** is planned before the **{{ departure_label }}** departure.
     {% endif %}
     {% if solar + 0.01 < required %}
   Direct solar surplus before departure is insufficient, so the plan combines available sources.
