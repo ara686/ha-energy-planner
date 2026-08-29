@@ -100,6 +100,7 @@ class EVChargingPlan:
     forecast_complete: bool = True
     next_action_start: datetime | None = None
     next_action_end: datetime | None = None
+    next_action_mode: EVChargingMode | None = None
     timeline: tuple[EVChargingWindow, ...] = field(default_factory=tuple)
 
     @property
@@ -137,6 +138,7 @@ class EVChargingPlan:
             "next_action_end": (
                 self.next_action_end.isoformat() if self.next_action_end else None
             ),
+            "next_action_mode": self.next_action_mode,
             "timeline": [window.as_dict() for window in self.timeline],
         }
 
@@ -344,6 +346,7 @@ def calculate_ev_charging_plan(
         forecast_complete=forecast_complete,
         next_action_start=next_window.start if next_window else None,
         next_action_end=next_window.end if next_window else None,
+        next_action_mode=next_window.mode if next_window else None,
         timeline=tuple(windows),
     )
 

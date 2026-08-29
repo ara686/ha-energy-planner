@@ -72,6 +72,7 @@ def test_ev_plan_uses_solar_only_while_vehicle_is_scheduled_home() -> None:
     assert plan.shortfall_kwh == 2
     assert plan.solar_if_home_kwh == 4
     assert plan.solar_if_home_covers_request is True
+    assert plan.next_action_mode == "solar"
 
 
 def test_ev_plan_shifts_only_safe_battery_energy_replaced_by_lost_solar() -> None:

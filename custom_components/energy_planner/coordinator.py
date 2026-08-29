@@ -562,6 +562,7 @@ def _unavailable_ev_plan_payload(
         "forecast_complete": False,
         "next_action_start": None,
         "next_action_end": None,
+        "next_action_mode": None,
         "timeline": [],
     }
 

@@ -80,6 +80,7 @@ typically creates entity IDs like
 | `sensor.energy_planner_managed_<source>_suggested_today` | Standard | `kWh` | Recommended energy for this managed load today. EV and hot-water values use live inputs; generic values use the remaining history-based daily estimate. Unavailable when this source lacks usable inputs or remaining-today solar coverage is incomplete. Typed loads include their compact solar timeline. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Standard | `kWh` | Recommended energy for this load tomorrow. Common attributes include type, priority, state, method, expected demand, reason, target date, forecast completeness and available surplus. Hot-water and EV loads also expose their own compact solar timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Standard | enum | Current deadline-aware EV instruction: `off`, `connect_vehicle`, `wait_for_solar`, `solar`, `home_battery`, `grid_low_tariff`, `grid_high_tariff`, `complete`, `shortfall` or `unavailable`. |
+| `sensor.energy_planner_managed_<source>_recommended_wallbox_mode` | Standard | enum | Created when a deadline-aware EV has a complete Wallbox mapping. Its state is the exact configured `input_select` option recommended now; attributes contain `target_entity_id`, `planner_mode`, `reason`, `next_action_mode`, `next_wallbox_mode` and the next window timestamps. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Standard | timestamp | Next local workday departure used as the charging deadline. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Standard | `kWh` | Charger-input energy assigned before departure. Attributes contain the source split, shortfall, next action, reason, return time, solar-if-home counterfactual and compact timeline. |
 | `sensor.energy_planner_managed_<source>_today` | Standard | `kWh` | Energy used by this managed load today. Uses `device_class: energy` and `state_class: total_increasing`. |
@@ -129,11 +130,14 @@ mode `solar` and `energy_kwh`. Adjacent slots are merged only when they are
 contiguous; gaps remain separate. The timeline belongs to that one configured
 source, even when several loads share the same priority and surplus slots.
 
-The three deadline-aware entities use stable unique IDs. The
+The deadline-aware entities use stable unique IDs. The optional Wallbox mode
+entity becomes unavailable if its target helper disappears or any mapped option
+is removed; the remaining EV recommendations stay available. The
 `planned_until_departure` attributes include `solar_kwh`, `home_battery_kwh`,
 `grid_low_tariff_kwh`, `grid_high_tariff_kwh`, `shortfall_kwh`,
 `solar_if_home_kwh`, `solar_if_home_covers_request`, `forecast_complete`,
-`reason`, `next_action_start`, `next_action_end` and `timeline`. The timeline is
+`reason`, `next_action_mode`, `next_action_start`, `next_action_end` and
+`timeline`. The timeline is
 marked unrecorded so the future plan is not written into regular recorder
 history.
 

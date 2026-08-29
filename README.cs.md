@@ -144,6 +144,7 @@ Nejužitečnější entity:
 | `sensor.energy_planner_managed_<source>_suggested_today` | Energie doporučená dnes pro jeden řízený odběr. EV a TUV používají aktuální vstupy modelu, generické odběry zbývající část historického denního odhadu. Typované alokace zveřejňují úplnost předpovědi a kompaktní podrobnosti konkrétního zdroje. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Doporučená energie pro jeden odběr. Atributy TUV obsahují plánovanou cílovou teplotu a solární timeline; atributy EV požadavek, nedostatek a jeho solární timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Aktuální poradní EV akce, například `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` nebo `complete`. |
+| `sensor.energy_planner_managed_<source>_recommended_wallbox_mode` | Volitelný enum s přesnou nakonfigurovanou možností `input_select` doporučenou právě teď. Atributy obsahují režim planneru a následující režim wallboxu s jeho časovým oknem. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Příští nastavený místní odjezd použitý jako deadline EV. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Elektrický vstup nabíječky naplánovaný do odjezdu. Atributy obsahují rozpad zdrojů, shortfall, důvod, další akci, variantu se solárem při autě doma a kompaktní časovou osu. |
 | `sensor.energy_planner_managed_<source>_today` | Dnešní spotřeba jedné řízené zátěže, například EV nebo TUV. |
@@ -183,9 +184,9 @@ automatizace:
   automatizace na další den; Energy Planner zařízení stále sám nespíná.
 - Hodnotu každého `managed_<source>_suggested_today` jako solární rozpočet pro
   zbývající úplné plánovací sloty dneška.
-- Režim `managed_<source>_charging_mode` EV plánu podle odjezdu jako vstup pro
-  existující automatizaci Wallboxu. Volbu fáze, proudu a ochranu přetížení
-  ponechte bezpečnostní logice Wallboxu.
+- U EV plánu podle odjezdu nastavte volitelný výběr režimu Wallboxu a nechte
+  automatizaci kopírovat `managed_<source>_recommended_wallbox_mode`. Volbu fáze,
+  proudu a ochranu přetížení ponechte bezpečnostní logice Wallboxu.
 - Per-load managed senzory pro prioritizaci spotřebičů, například nejdřív
   dohřát TUV a teprve potom povolit nabíjení EV.
 

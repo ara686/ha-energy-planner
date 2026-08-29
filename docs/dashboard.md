@@ -494,15 +494,20 @@ type: markdown
 title: Plán nabíjení EV
 entity_id:
   - sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_station_total_energy_recommended_wallbox_mode
   - sensor.energy_planner_managed_ev_station_total_energy_suggested_today
   - sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow
 content: |
   {% set deadline = 'sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure' %}
   {% set today = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_today' %}
   {% set tomorrow = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow' %}
+  {% set wallbox = 'sensor.energy_planner_managed_ev_station_total_energy_recommended_wallbox_mode' %}
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
+    {% if states(wallbox) not in ['unknown', 'unavailable'] %}
+  **Wallbox nyní:** {{ states(wallbox) }}{% set next_wallbox = state_attr(wallbox, 'next_wallbox_mode') %}{% set next_start = state_attr(wallbox, 'next_action_start') %}{% if next_wallbox and next_start %} · další **{{ next_wallbox }}** od {{ (as_datetime(next_start) | as_local).strftime('%d.%m. %H:%M') }}{% endif %}
+    {% endif %}
     {% set planned = states(deadline) | float(0) %}
     {% set required = state_attr(deadline, 'required_input_kwh') | float(0) %}
     {% set solar = state_attr(deadline, 'solar_kwh') | float(0) %}
@@ -570,15 +575,20 @@ type: markdown
 title: EV charging plan
 entity_id:
   - sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure
+  - sensor.energy_planner_managed_ev_station_total_energy_recommended_wallbox_mode
   - sensor.energy_planner_managed_ev_station_total_energy_suggested_today
   - sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow
 content: |
   {% set deadline = 'sensor.energy_planner_managed_ev_station_total_energy_planned_until_departure' %}
   {% set today = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_today' %}
   {% set tomorrow = 'sensor.energy_planner_managed_ev_station_total_energy_suggested_tomorrow' %}
+  {% set wallbox = 'sensor.energy_planner_managed_ev_station_total_energy_recommended_wallbox_mode' %}
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
+    {% if states(wallbox) not in ['unknown', 'unavailable'] %}
+  **Wallbox now:** {{ states(wallbox) }}{% set next_wallbox = state_attr(wallbox, 'next_wallbox_mode') %}{% set next_start = state_attr(wallbox, 'next_action_start') %}{% if next_wallbox and next_start %} · next **{{ next_wallbox }}** at {{ (as_datetime(next_start) | as_local).strftime('%d %b %H:%M') }}{% endif %}
+    {% endif %}
     {% set planned = states(deadline) | float(0) %}
     {% set required = state_attr(deadline, 'required_input_kwh') | float(0) %}
     {% set solar = state_attr(deadline, 'solar_kwh') | float(0) %}

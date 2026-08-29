@@ -147,6 +147,7 @@ Most useful entities:
 | `sensor.energy_planner_managed_<source>_suggested_today` | Energy recommended today for one managed load. EV and hot-water loads use live model inputs; generic loads use their remaining history-based daily estimate. Typed allocations expose forecast completeness and compact per-source details. |
 | `sensor.energy_planner_managed_<source>_suggested_tomorrow` | Recommended energy for one managed load. Hot-water attributes include the planned target temperature and its solar timeline; EV attributes include battery/electrical demand, shortfall and its solar timeline. |
 | `sensor.energy_planner_managed_<source>_charging_mode` | Current advisory EV action such as `connect_vehicle`, `solar`, `home_battery`, `grid_low_tariff`, `shortfall` or `complete`. |
+| `sensor.energy_planner_managed_<source>_recommended_wallbox_mode` | Optional enum containing the exact configured `input_select` option recommended now. Attributes expose the planner mode and the next wallbox option with its time window. |
 | `sensor.energy_planner_managed_<source>_next_departure` | Next configured local departure used as the EV deadline. |
 | `sensor.energy_planner_managed_<source>_planned_until_departure` | Charger-input energy planned before departure. Attributes contain the source split, shortfall, reason, next action, solar-if-home result and compact timeline. |
 | `sensor.energy_planner_managed_<source>_today` | Energy used today by one managed load, for example EV charging or water heating. |
@@ -187,9 +188,9 @@ for automations:
   next-day automation; Energy Planner still does not switch the device itself.
 - Use each load's `managed_<source>_suggested_today` as its solar-only budget
   for the remaining complete planner slots today.
-- Map a deadline-aware EV's `managed_<source>_charging_mode` to your existing
-  Wallbox mode automation. Keep phase, current and overload protection in the
-  Wallbox's own safety logic.
+- Configure a deadline-aware EV's optional Wallbox mode selector and let an
+  automation copy `managed_<source>_recommended_wallbox_mode` to it. Keep phase,
+  current and overload protection in the Wallbox's own safety logic.
 - Use per-load managed sensors to prioritize loads, for example heat water
   before allowing EV charging.
 
