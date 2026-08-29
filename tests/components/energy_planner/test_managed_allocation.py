@@ -60,6 +60,11 @@ def test_ev_priority_and_equal_priority_shortage_are_proportional():
     assert loads["first"].recommended_kwh == 2
     assert loads["small"].recommended_kwh == pytest.approx(1)
     assert loads["large"].recommended_kwh == pytest.approx(2)
+    assert result.electric_vehicle_energy_by_source_slot == {
+        ("first", start): 2,
+        ("small", start): pytest.approx(1),
+        ("large", start): pytest.approx(2),
+    }
 
 
 def test_ev_power_limit_and_shortfall_are_reported_in_both_energy_domains():

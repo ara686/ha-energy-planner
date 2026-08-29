@@ -65,6 +65,7 @@ from custom_components.energy_planner.coordinator import (
     build_planner_result,
 )
 from custom_components.energy_planner.history import EnergyHistory
+from custom_components.energy_planner.managed_allocation import ManagedDayAllocation
 from custom_components.energy_planner.models import (
     ForecastSlot,
     PlannerInput,
@@ -1215,35 +1216,7 @@ def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
 
 def test_deadline_aware_ev_payload_uses_live_state_and_grid_permission(hass):
     now = datetime(2026, 8, 17, 3, tzinfo=UTC)
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={},
-        version=5,
-        subentries_data=(
-            {
-                "data": {
-                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
-                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
-                    CONF_PRIORITY: 10,
-                    CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
-                    CONF_MAXIMUM_CHARGING_POWER_KW: 3,
-                    CONF_CHARGING_EFFICIENCY: 1,
-                    CONF_EV_CHARGING_STRATEGY: (EV_CHARGING_STRATEGY_DEADLINE_AWARE),
-                    CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
-                    CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
-                    CONF_EV_GRID_OUTSIDE_NT_ENTITY: (
-                        "input_boolean.ev_grid_outside_nt"
-                    ),
-                    CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
-                    CONF_EV_DEPARTURE_TIME: "07:00:00",
-                    CONF_EV_RETURN_TIME: "17:00:00",
-                },
-                "subentry_type": MANAGED_LOAD_SUBENTRY,
-                "title": "EV",
-                "unique_id": "sensor.ev_energy_total",
-            },
-        ),
-    )
+    entry = _deadline_aware_ev_entry()
     _set_electric_vehicle_inputs(hass, battery_required="6")
     hass.states.async_set("device_tracker.enyaq", "home")
     hass.states.async_set("binary_sensor.enyaq_connected", "off")
@@ -1290,6 +1263,78 @@ def test_deadline_aware_ev_payload_uses_live_state_and_grid_permission(hass):
     assert plan["shortfall_kwh"] == 0
     assert plan["departure"] == "2026-08-17T07:00:00+00:00"
     assert plan["action_window_minutes"] == 60
+
+
+def test_deadline_aware_ev_uses_surplus_remaining_after_other_managed_loads(hass):
+    now = datetime(2026, 8, 17, 3, tzinfo=UTC)
+    entry = _deadline_aware_ev_entry()
+    _set_electric_vehicle_inputs(hass, battery_required="6")
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "on")
+    hass.states.async_set("input_boolean.ev_grid_outside_nt", "off")
+    raw_points = [
+        {
+            "timestamp": (now + timedelta(hours=index)).isoformat(),
+            "battery_kwh": 6,
+            "unused_surplus_kwh": 6 if index == 1 else 0,
+            "solar_coverage": 1,
+            "is_nt": False,
+        }
+        for index in range(14)
+    ]
+    managed_points = [
+        {
+            **point,
+            "unused_surplus_kwh": 1 if index == 1 else 0,
+        }
+        for index, point in enumerate(raw_points)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "safe_discharge_soc": 30,
+            "soc_forecast": {"points": raw_points},
+            "soc_forecast_with_managed": {"points": managed_points},
+        },
+    )
+    allocation = ManagedDayAllocation(
+        state="ok",
+        forecast_complete=True,
+        target_date=now.date(),
+        available_surplus_kwh=6,
+        expected_demand_kwh=0,
+        recommended_kwh=0,
+        unallocated_surplus_kwh=1,
+        loads=[],
+        electric_vehicle_energy_by_source_slot={
+            ("sensor.ev_energy_total", now + timedelta(hours=1)): 1.5
+        },
+    )
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=30,
+        battery_capacity_kwh=20,
+        battery_min_soc=20,
+        slots=[],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        interval_minutes=60,
+    )
+
+    _add_ev_charging_plans(
+        hass,
+        entry,
+        planner_input=planner_input,
+        now=now,
+        allocations=[allocation],
+        result=result,
+        warnings=[],
+    )
+
+    plan = result.plan["ev_charging_plans"]["sensor.ev_energy_total"]
+    assert plan["solar_kwh"] == 2.5
+    assert plan["shortfall_kwh"] == 3.5
 
 
 def test_ev_action_windows_aggregate_complete_forecast_groups() -> None:
@@ -1393,6 +1438,38 @@ def _electric_vehicle_entry(
         options={CONF_INTERVAL_MINUTES: 60},
         version=4,
         subentries_data=tuple(subentries),
+    )
+
+
+def _deadline_aware_ev_entry() -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        version=5,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
+                    CONF_PRIORITY: 10,
+                    CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
+                    CONF_MAXIMUM_CHARGING_POWER_KW: 3,
+                    CONF_CHARGING_EFFICIENCY: 1,
+                    CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_DEADLINE_AWARE,
+                    CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
+                    CONF_EV_CONNECTED_ENTITY: "binary_sensor.enyaq_connected",
+                    CONF_EV_GRID_OUTSIDE_NT_ENTITY: (
+                        "input_boolean.ev_grid_outside_nt"
+                    ),
+                    CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
+                    CONF_EV_DEPARTURE_TIME: "07:00:00",
+                    CONF_EV_RETURN_TIME: "17:00:00",
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "EV",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
     )
 
 
