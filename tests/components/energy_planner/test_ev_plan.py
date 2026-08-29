@@ -237,6 +237,28 @@ def test_ev_plan_live_availability_overrides_schedule() -> None:
     assert disconnected.mode == "connect_vehicle"
 
 
+def test_ev_plan_reports_observed_charging_without_changing_recommendation() -> None:
+    now = datetime(2026, 8, 17, 5, tzinfo=UTC)
+    plan = calculate_ev_charging_plan(
+        _vehicle(
+            current_charging_power_kw=4.6,
+            current_charging_source="home_battery",
+        ),
+        now=now,
+        slots=_slots(now, count=12, surplus_by_hour={1: 3.0}),
+        interval_minutes=60,
+        battery_capacity_kwh=20,
+        safe_discharge_soc=30,
+    )
+
+    assert plan.mode == "home_battery"
+    assert plan.observed_mode == "home_battery"
+    assert plan.is_charging is True
+    assert plan.current_charging_power_kw == 4.6
+    assert plan.recommended_mode == "wait_for_solar"
+    assert plan.reason == "observed_charging_home_battery"
+
+
 def test_ev_plan_weekend_and_dst_find_next_local_workday_departure() -> None:
     timezone = ZoneInfo("Europe/Prague")
     now = datetime(2026, 10, 25, 1, tzinfo=timezone)
