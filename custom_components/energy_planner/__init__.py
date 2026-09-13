@@ -320,6 +320,10 @@ def _register_managed_model_refresh(
             load.ev_presence_entity_id,
             load.ev_connected_entity_id,
             load.ev_grid_outside_nt_entity_id,
+            load.ev_charging_power_entity_id,
+            load.ev_solar_power_entity_id,
+            load.ev_home_battery_power_entity_id,
+            load.ev_grid_power_entity_id,
         )
         if entity_id
     }

@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, time, timedelta
+from math import isfinite
 from typing import Literal
 
 EVChargingMode = Literal[
     "off",
     "connect_vehicle",
     "wait_for_solar",
+    "wait_for_charging",
     "solar",
     "home_battery",
     "grid_low_tariff",
@@ -23,6 +25,7 @@ EV_CHARGING_MODES: tuple[EVChargingMode, ...] = (
     "off",
     "connect_vehicle",
     "wait_for_solar",
+    "wait_for_charging",
     "solar",
     "home_battery",
     "grid_low_tariff",
@@ -31,6 +34,7 @@ EV_CHARGING_MODES: tuple[EVChargingMode, ...] = (
     "shortfall",
     "unavailable",
 )
+EVChargingSource = Literal["solar", "home_battery", "grid"]
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,9 @@ class EVChargingPlanInput:
     currently_home: bool | None = None
     connected: bool | None = None
     allow_high_tariff_grid: bool = False
+    allow_home_battery: bool = True
+    current_charging_power_kw: float | None = None
+    current_charging_source: EVChargingSource | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +97,10 @@ class EVChargingPlan:
     return_at: datetime | None
     required_input_kwh: float
     action_window_minutes: int
+    recommended_mode: EVChargingMode | None = None
+    is_charging: bool = False
+    observed_mode: EVChargingMode | None = None
+    current_charging_power_kw: float | None = None
     solar_kwh: float = 0.0
     home_battery_kwh: float = 0.0
     grid_low_tariff_kwh: float = 0.0
@@ -123,6 +134,14 @@ class EVChargingPlan:
             "return_at": self.return_at.isoformat() if self.return_at else None,
             "required_input_kwh": _round(self.required_input_kwh),
             "action_window_minutes": self.action_window_minutes,
+            "recommended_mode": self.recommended_mode,
+            "is_charging": self.is_charging,
+            "observed_mode": self.observed_mode,
+            "current_charging_power_kw": (
+                _round(self.current_charging_power_kw)
+                if self.current_charging_power_kw is not None
+                else None
+            ),
             "planned_kwh": _round(self.planned_kwh),
             "solar_kwh": _round(self.solar_kwh),
             "home_battery_kwh": _round(self.home_battery_kwh),
@@ -179,6 +198,7 @@ def calculate_ev_charging_plan(
             return_at=return_at,
             required_input_kwh=0.0,
             action_window_minutes=interval_minutes,
+            recommended_mode="complete",
             solar_if_home_covers_request=True,
         )
 
@@ -205,6 +225,7 @@ def calculate_ev_charging_plan(
             return_at=return_at,
             required_input_kwh=required,
             action_window_minutes=interval_minutes,
+            recommended_mode="unavailable",
             shortfall_kwh=required,
             forecast_complete=False,
         )
@@ -256,7 +277,11 @@ def calculate_ev_charging_plan(
         battery_capacity_kwh * max(0.0, min(safe_discharge_soc, 100.0)) / 100
     )
     battery_available_kwh = max(departure_battery - safe_battery_kwh, 0.0)
-    battery_target = min(remaining, lost_surplus_kwh, battery_available_kwh)
+    battery_target = (
+        min(remaining, lost_surplus_kwh, battery_available_kwh)
+        if data.allow_home_battery
+        else 0.0
+    )
     low_tariff_slots = [slot for slot in home_slots if slot.is_low_tariff]
     grid_low_tariff_kwh = _allocate_slots(
         slots=list(reversed(low_tariff_slots)),
@@ -314,12 +339,22 @@ def calculate_ev_charging_plan(
         ),
     )
     windows = _merge_windows(allocations, interval_minutes)
-    mode, reason = _current_mode(
+    recommended_mode, reason = _current_mode(
         data,
         now=now,
         windows=windows,
         shortfall_kwh=remaining,
     )
+    charging_power_kw = _current_charging_power_kw(data)
+    observed_mode = _observed_charging_mode(
+        data,
+        now=now,
+        slots=ordered,
+        charging_power_kw=charging_power_kw,
+    )
+    mode = observed_mode or recommended_mode
+    if observed_mode is not None:
+        reason = f"observed_charging_{observed_mode}"
     next_window = next(
         (
             window
@@ -336,6 +371,10 @@ def calculate_ev_charging_plan(
         return_at=return_at,
         required_input_kwh=required,
         action_window_minutes=interval_minutes,
+        recommended_mode=recommended_mode,
+        is_charging=charging_power_kw is not None,
+        observed_mode=observed_mode,
+        current_charging_power_kw=charging_power_kw,
         solar_kwh=solar_kwh,
         home_battery_kwh=home_battery_kwh,
         grid_low_tariff_kwh=grid_low_tariff_kwh,
@@ -584,7 +623,41 @@ def _current_mode(
         return current_or_next.mode, f"charging_from_{current_or_next.mode}"
     if shortfall_kwh > 1e-9 and not windows:
         return "shortfall", "deadline_shortfall"
-    return "wait_for_solar", f"next_action_{current_or_next.mode}"
+    waiting_mode: EVChargingMode = (
+        "wait_for_solar" if current_or_next.mode == "solar" else "wait_for_charging"
+    )
+    return waiting_mode, f"next_action_{current_or_next.mode}"
+
+
+def _current_charging_power_kw(data: EVChargingPlanInput) -> float | None:
+    """Return a valid live charging power, treating tiny readings as idle."""
+    value = data.current_charging_power_kw
+    if value is None or not isfinite(value) or value <= 0.05:
+        return None
+    return value
+
+
+def _observed_charging_mode(
+    data: EVChargingPlanInput,
+    *,
+    now: datetime,
+    slots: list[EVChargingSlot],
+    charging_power_kw: float | None,
+) -> EVChargingMode | None:
+    """Translate the observed charging source into a planner mode."""
+    if charging_power_kw is None or data.current_charging_source is None:
+        return None
+    if data.current_charging_source != "grid":
+        return data.current_charging_source
+    current_or_next = next(
+        (slot for slot in slots if _timeline_time(slot.start) >= _timeline_time(now)),
+        None,
+    )
+    return (
+        "grid_low_tariff"
+        if current_or_next is not None and current_or_next.is_low_tariff
+        else "grid_high_tariff"
+    )
 
 
 def _next_departure(now: datetime, data: EVChargingPlanInput) -> datetime:
@@ -634,6 +707,7 @@ def _unavailable(
         return_at=None,
         required_input_kwh=max(data.required_input_kwh, 0.0),
         action_window_minutes=max(interval_minutes, 0),
+        recommended_mode="unavailable",
         shortfall_kwh=max(data.required_input_kwh, 0.0),
         forecast_complete=False,
     )

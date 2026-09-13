@@ -40,6 +40,7 @@ class HotWaterAllocationInput:
     priority: int
     heater_power_kw: float
     demand: HotWaterDemand
+    alternative_source: str = "none"
 
 
 @dataclass(frozen=True)
@@ -344,6 +345,10 @@ def allocate_managed_day(
                 interval_minutes=interval_minutes,
             )
         if result.load_type == "hot_water":
+            result.details["alternative_heating_recommended"] = (
+                result.details.get("alternative_source") == "gas"
+                and result.minimum_shortfall_kwh > 1e-9
+            )
             result.details["planned_target_temperature"] = (
                 _planned_hot_water_temperature(result)
             )
@@ -595,7 +600,11 @@ def _initial_result(load: ManagedAllocationInput) -> ManagedLoadAllocation:
             reason="current_temperatures",
             minimum_required_kwh=load.demand.minimum_required_kwh,
             flexible_capacity_kwh=load.demand.flexible_capacity_kwh,
-            details=load.demand.as_dict(),
+            details={
+                **load.demand.as_dict(),
+                "alternative_source": load.alternative_source,
+                "alternative_heating_recommended": None,
+            },
         )
     if isinstance(load, ElectricVehicleAllocationInput):
         demand = load.demand

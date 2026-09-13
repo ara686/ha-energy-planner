@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -414,3 +415,38 @@ def _electric_vehicle(
         maximum_charging_power_kw=power,
         demand=demand,
     )
+
+
+@pytest.mark.parametrize(
+    "source,surplus,complete,recommended,shortfall",
+    [
+        ("gas", 0, True, True, 2),
+        ("gas", 1, True, True, 1),
+        ("gas", 2, True, False, 0),
+        ("gas", 5, True, False, 0),
+        ("none", 0, True, False, 2),
+        ("gas", 0, False, None, None),
+    ],
+)
+def test_hot_water_alternative_is_advisory(
+    source, surplus, complete, recommended, shortfall
+):
+    start = datetime(2026, 9, 14, 10, tzinfo=UTC)
+    load = replace(
+        _hot_water("boiler", required=2, flexible=3, power=10),
+        alternative_source=source,
+    )
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=60,
+        surplus_complete=complete,
+        surplus_slots=[SurplusSlot(start, surplus)],
+        loads=[load],
+    )
+    item = result.loads[0].as_dict()
+    assert item["alternative_source"] == source
+    assert item["alternative_heating_recommended"] is recommended
+    assert item["minimum_shortfall_kwh"] == shortfall
+    assert result.recommended_kwh == (surplus if complete else None)
+    if complete:
+        assert sum(result.hot_water_energy_by_slot.values()) == surplus

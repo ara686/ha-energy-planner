@@ -237,6 +237,28 @@ def test_ev_plan_live_availability_overrides_schedule() -> None:
     assert disconnected.mode == "connect_vehicle"
 
 
+def test_ev_plan_reports_observed_charging_without_changing_recommendation() -> None:
+    now = datetime(2026, 8, 17, 5, tzinfo=UTC)
+    plan = calculate_ev_charging_plan(
+        _vehicle(
+            current_charging_power_kw=4.6,
+            current_charging_source="home_battery",
+        ),
+        now=now,
+        slots=_slots(now, count=12, surplus_by_hour={1: 3.0}),
+        interval_minutes=60,
+        battery_capacity_kwh=20,
+        safe_discharge_soc=30,
+    )
+
+    assert plan.mode == "home_battery"
+    assert plan.observed_mode == "home_battery"
+    assert plan.is_charging is True
+    assert plan.current_charging_power_kw == 4.6
+    assert plan.recommended_mode == "wait_for_solar"
+    assert plan.reason == "observed_charging_home_battery"
+
+
 def test_ev_plan_weekend_and_dst_find_next_local_workday_departure() -> None:
     timezone = ZoneInfo("Europe/Prague")
     now = datetime(2026, 10, 25, 1, tzinfo=timezone)
@@ -293,3 +315,59 @@ def test_ev_plan_complete_or_invalid_request(required: float) -> None:
     )
 
     assert plan.mode == ("complete" if required == 0 else "unavailable")
+
+
+@pytest.mark.parametrize(
+    "solar,nt_hours,high_grid,expected_grid,expected_shortfall",
+    [
+        (0, {2, 3}, False, 6, 0),
+        (2, {2, 3}, False, 4, 0),
+        (0, {3}, False, 3, 3),
+        (0, {3}, True, 3, 0),
+    ],
+)
+def test_ev_without_home_battery(
+    solar, nt_hours, high_grid, expected_grid, expected_shortfall
+):
+    now = datetime(2026, 9, 14, 3, tzinfo=UTC)
+    plan = calculate_ev_charging_plan(
+        _vehicle(allow_home_battery=False, allow_high_tariff_grid=high_grid),
+        now=now,
+        slots=_slots(
+            now, count=14, surplus_by_hour={0: solar, 8: 8}, low_tariff_hours=nt_hours
+        ),
+        interval_minutes=60,
+        battery_capacity_kwh=20,
+        safe_discharge_soc=30,
+    )
+    assert plan.home_battery_kwh == 0
+    assert plan.solar_kwh == solar
+    assert plan.grid_low_tariff_kwh == expected_grid
+    assert plan.shortfall_kwh == expected_shortfall
+    assert plan.grid_high_tariff_kwh == (3 if high_grid else 0)
+    if solar == 0 and not high_grid:
+        assert plan.recommended_mode == "wait_for_charging"
+        assert plan.next_action_mode == "grid_low_tariff"
+        assert plan.reason == "next_action_grid_low_tariff"
+
+
+@pytest.mark.parametrize(
+    "home,connected,expected",
+    [
+        (False, False, "off"),
+        (True, False, "connect_vehicle"),
+        (None, None, "unavailable"),
+    ],
+)
+def test_no_battery_policy_preserves_live_availability(home, connected, expected):
+    now = datetime(2026, 9, 14, 3, tzinfo=UTC)
+    plan = calculate_ev_charging_plan(
+        _vehicle(allow_home_battery=False, currently_home=home, connected=connected),
+        now=now,
+        slots=_slots(now, count=14, low_tariff_hours={2, 3}),
+        interval_minutes=60,
+        battery_capacity_kwh=20,
+        safe_discharge_soc=30,
+    )
+    assert plan.recommended_mode == expected
+    assert plan.home_battery_kwh == 0

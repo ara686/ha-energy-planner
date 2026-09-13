@@ -103,6 +103,10 @@ load's recommendation; it never falls back to history.
 | Vehicle position | `ev_presence_entity` | Deadline-aware | A `device_tracker`; `home` means available and any known non-home zone means away. |
 | Charging cable connected | `ev_connected_entity` | Deadline-aware | A `binary_sensor`; `on` confirms current availability even if the tracker has not caught up. `off` while home produces `connect_vehicle`. |
 | Allow GRID outside low tariff | `ev_grid_outside_nt_entity` | Deadline-aware | An `input_boolean`, normally off. High-tariff GRID is considered only while this helper is on. |
+| Current charging power | `ev_charging_power_entity` | Optional, deadline-aware | Live wallbox or vehicle power sensor. Values convertible to `kW` are supported. Above `0.05 kW` means the vehicle is currently charging. |
+| Current solar charging power | `ev_solar_power_entity` | Optional, deadline-aware | Live solar contribution to EV charging. Used with the other source-power sensors to identify the dominant observed source. |
+| Current home-battery charging power | `ev_home_battery_power_entity` | Optional, deadline-aware | Live home-battery contribution to EV charging. |
+| Current GRID charging power | `ev_grid_power_entity` | Optional, deadline-aware | Live grid contribution to EV charging. GRID is reported as low- or high-tariff from the current forecast slot. |
 | Workdays | `ev_workdays` | Deadline-aware | One or more weekdays. Default Monday through Friday. |
 | Departure time | `ev_departure_time` | Deadline-aware | Local departure deadline; default `07:00`. |
 | Return time | `ev_return_time` | Deadline-aware | Local return and end of the expected absence; default `17:00`. |
@@ -113,6 +117,14 @@ value against its current options. Known option names such as `EKO - Solar`,
 `Battery Free kWh`, `GRID` and `OFF` are suggested when present but are not
 hard-coded requirements. Removing the selector or changing strategy removes the
 mapping on reconfigure.
+
+When live power inputs are configured, the plan keeps observed charging separate
+from its advice. `mode` reports the dominant source that is physically charging
+now, while `recommended_mode` remains the action the planner recommends. This
+prevents an external automation from feeding its own command back into the
+planner indefinitely. If the total-power entity is omitted, the three source
+powers are summed. If source powers are omitted, the mapped Wallbox selector is
+used only as a fallback source label.
 
 The request is converted to charger-input energy:
 

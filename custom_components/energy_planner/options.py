@@ -7,12 +7,14 @@ from .const import (
     CONF_CHARGE_WINDOW,
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
+    CONF_EV_HOME_BATTERY_DISABLED_SOURCES,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_GRID_CHARGE_EFFICIENCY,
     CONF_GRID_CHARGE_MAX_KW,
     CONF_GRID_CHARGING_ENABLED,
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
+    CONF_HOT_WATER_GAS_SOURCES,
     CONF_INTERVAL_MINUTES,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_NT_WINDOW_1_END,
@@ -54,6 +56,8 @@ class OptionsValidationError(ValueError):
 
 def default_options() -> dict[str, Any]:
     return {
+        CONF_EV_HOME_BATTERY_DISABLED_SOURCES: [],
+        CONF_HOT_WATER_GAS_SOURCES: [],
         CONF_UPDATE_INTERVAL_MINUTES: DEFAULT_UPDATE_INTERVAL_MINUTES,
         CONF_HISTORY_LEARNING_DAYS: DEFAULT_HISTORY_LEARNING_DAYS,
         CONF_INTERVAL_MINUTES: DEFAULT_INTERVAL_MINUTES,
@@ -121,6 +125,10 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
         raise OptionsValidationError("sun_start_required_minutes")
 
     return {
+        CONF_EV_HOME_BATTERY_DISABLED_SOURCES: _source_list(
+            values, CONF_EV_HOME_BATTERY_DISABLED_SOURCES
+        ),
+        CONF_HOT_WATER_GAS_SOURCES: _source_list(values, CONF_HOT_WATER_GAS_SOURCES),
         CONF_UPDATE_INTERVAL_MINUTES: update_interval_minutes,
         CONF_HISTORY_LEARNING_DAYS: history_learning_days,
         CONF_INTERVAL_MINUTES: interval_minutes,
@@ -136,6 +144,15 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
         CONF_SUN_START_REQUIRED_MINUTES: sun_start_required_minutes,
         CONF_FORECAST_HORIZON_HOURS: horizon_hours,
     }
+
+
+def _source_list(values: dict[str, Any], key: str) -> list[str]:
+    sources = values.get(key, [])
+    if not isinstance(sources, list) or any(
+        not isinstance(source, str) or not source for source in sources
+    ):
+        raise OptionsValidationError()
+    return list(dict.fromkeys(sources))
 
 
 def parse_windows(value: Any) -> list[dict[str, str]]:

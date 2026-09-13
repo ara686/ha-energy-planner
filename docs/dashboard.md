@@ -423,6 +423,8 @@ content: |
 
   {% if not available or not complete %}
   ⚠️ **Spolehlivý plán zatím není k dispozici.** Zkontrolujte předpověď a vstupní teploty.
+  {% elif shortfall > 0.01 and state_attr(entity, 'alternative_heating_recommended') == true %}
+  🔥 Solární přebytek nestačí na minimální teplotu. Potřebný dohřev zajistí **plyn** podle stávající regulace. Chybí ekvivalent **{{ shortfall | round(1) }} kWh elektrického ohřevu**, nikoliv údaj o spotřebě plynu. Naplánováno z FVE: **{{ energy | round(1) }} kWh**.
   {% elif shortfall > 0.01 %}
   ⚠️ Solární přebytek nestačí ani na minimální teplotu. Chybí přibližně **{{ shortfall | round(1) }} kWh**.
   {% elif energy <= 0.01 and capacity <= 0.01 %}
@@ -464,6 +466,8 @@ content: |
 
   {% if not available or not complete %}
   ⚠️ **A reliable plan is not available yet.** Check the forecast and temperature inputs.
+  {% elif shortfall > 0.01 and state_attr(entity, 'alternative_heating_recommended') == true %}
+  🔥 Solar surplus cannot reach the minimum temperature. **Gas** backup is needed, with timing left to the existing controller. The deficit is equivalent to **{{ shortfall | round(1) }} kWh of electric heating**, not gas consumption. Scheduled solar energy: **{{ energy | round(1) }} kWh**.
   {% elif shortfall > 0.01 %}
   ⚠️ The solar surplus cannot reach the minimum temperature. About **{{ shortfall | round(1) }} kWh** is missing.
   {% elif energy <= 0.01 and capacity <= 0.01 %}
@@ -505,6 +509,9 @@ content: |
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
+    {% if state_attr(deadline, 'is_charging') %}
+  **Skutečné nabíjení:** {{ state_attr(deadline, 'current_charging_power_kw') | float(0) | round(1) }} kW · {{ state_attr(deadline, 'observed_mode') or 'zdroj neznámý' }}
+    {% endif %}
     {% if states(wallbox) not in ['unknown', 'unavailable'] %}
   **Wallbox nyní:** {{ states(wallbox) }}{% set next_wallbox = state_attr(wallbox, 'next_wallbox_mode') %}{% set next_start = state_attr(wallbox, 'next_action_start') %}{% if next_wallbox and next_start %} · další **{{ next_wallbox }}** od {{ (as_datetime(next_start) | as_local).strftime('%d.%m. %H:%M') }}{% endif %}
     {% endif %}
@@ -530,7 +537,10 @@ content: |
   ✅ Do odjezdu v **{{ departure_label }}** je naplánováno požadovaných **{{ planned | round(1) }} kWh**.
     {% endif %}
     {% if solar + 0.01 < required %}
-  Přímý solární přebytek před odjezdem nestačí, proto plán kombinuje dostupné zdroje.
+  Přímý solární přebytek před odjezdem nestačí. V NT je naplánováno **{{ nt | round(1) }} kWh**.
+    {% if state_attr(deadline, 'recommended_mode') == 'wait_for_charging' %}
+  Čeká se na další nabíjecí okno, nikoliv na slunce; zdroj a čas jsou v plánu níže.
+    {% endif %}
     {% endif %}
     {% if battery > 0.01 %}
   Z domácí baterie se využije **{{ battery | round(1) }} kWh**, protože planner očekává přebytek v době, kdy bude auto pryč, a baterie zůstane nad bezpečným SoC.
@@ -586,6 +596,9 @@ content: |
   {% set deadline_plan = states(deadline) not in ['unknown', 'unavailable'] and state_attr(deadline, 'departure') != none %}
 
   {% if deadline_plan %}
+    {% if state_attr(deadline, 'is_charging') %}
+  **Observed charging:** {{ state_attr(deadline, 'current_charging_power_kw') | float(0) | round(1) }} kW · {{ state_attr(deadline, 'observed_mode') or 'unknown source' }}
+    {% endif %}
     {% if states(wallbox) not in ['unknown', 'unavailable'] %}
   **Wallbox now:** {{ states(wallbox) }}{% set next_wallbox = state_attr(wallbox, 'next_wallbox_mode') %}{% set next_start = state_attr(wallbox, 'next_action_start') %}{% if next_wallbox and next_start %} · next **{{ next_wallbox }}** at {{ (as_datetime(next_start) | as_local).strftime('%d %b %H:%M') }}{% endif %}
     {% endif %}
@@ -611,7 +624,10 @@ content: |
   ✅ The requested **{{ planned | round(1) }} kWh** is planned before the **{{ departure_label }}** departure.
     {% endif %}
     {% if solar + 0.01 < required %}
-  Direct solar surplus before departure is insufficient, so the plan combines available sources.
+  Direct solar surplus before departure is insufficient. **{{ nt | round(1) }} kWh** is scheduled in low tariff.
+    {% if state_attr(deadline, 'recommended_mode') == 'wait_for_charging' %}
+  Waiting for the next charging window; its source and time are listed below.
+    {% endif %}
     {% endif %}
     {% if battery > 0.01 %}
   **{{ battery | round(1) }} kWh** comes from the home battery because the planner expects otherwise-unused surplus while the car is away and keeps the battery above safe SoC.

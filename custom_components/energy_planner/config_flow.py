@@ -32,12 +32,17 @@ from .const import (
     CONF_CHARGE_WINDOW_END,
     CONF_CHARGE_WINDOW_START,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_POWER_ENTITY,
     CONF_EV_CHARGING_STRATEGY,
     CONF_EV_CONNECTED_ENTITY,
     CONF_EV_DEPARTURE_TIME,
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_GRID_POWER_ENTITY,
+    CONF_EV_HOME_BATTERY_DISABLED_SOURCES,
+    CONF_EV_HOME_BATTERY_POWER_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_SOLAR_POWER_ENTITY,
     CONF_EV_WALLBOX_GRID_OPTION,
     CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
     CONF_EV_WALLBOX_MODE_ENTITY,
@@ -52,6 +57,7 @@ from .const import (
     CONF_HISTORY_CORRECTION_PERCENT,
     CONF_HISTORY_LEARNING_DAYS,
     CONF_HOME_ENERGY_ENTITY,
+    CONF_HOT_WATER_GAS_SOURCES,
     CONF_INTERVAL_MINUTES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
@@ -100,6 +106,7 @@ from .const import (
     MANAGED_LOAD_TYPE_GENERIC,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
+from .managed_loads import managed_load_configs
 from .options import (
     OptionsValidationError,
     merged_options,
@@ -225,6 +232,9 @@ EV_GRID_PERMISSION_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
 ]
 EV_WALLBOX_MODE_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
     {"domain": "input_select"},
+]
+EV_POWER_ENTITY_FILTERS: list[selector.EntityFilterSelectorConfig] = [
+    {"domain": "sensor", "device_class": SensorDeviceClass.POWER},
 ]
 
 
@@ -551,10 +561,21 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            saved_options = self.config_entry.options
             try:
                 return self.async_create_entry(
                     title="",
-                    data=normalize_options(user_input),
+                    data=normalize_options(
+                        {
+                            CONF_EV_HOME_BATTERY_DISABLED_SOURCES: saved_options.get(
+                                CONF_EV_HOME_BATTERY_DISABLED_SOURCES, []
+                            ),
+                            CONF_HOT_WATER_GAS_SOURCES: saved_options.get(
+                                CONF_HOT_WATER_GAS_SOURCES, []
+                            ),
+                            **user_input,
+                        }
+                    ),
                 )
             except OptionsValidationError as err:
                 errors["base"] = err.error_key
@@ -687,6 +708,32 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                 ),
             }
         )
+
+        loads = managed_load_configs(self.config_entry)
+        for key, load_type in (
+            (CONF_EV_HOME_BATTERY_DISABLED_SOURCES, MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE),
+            (CONF_HOT_WATER_GAS_SOURCES, MANAGED_LOAD_TYPE_HOT_WATER),
+        ):
+            choices = [
+                {
+                    "value": load.source_entity_id,
+                    "label": _source_display_name(self.hass, load.source_entity_id),
+                }
+                for load in loads
+                if load.load_type == load_type
+            ]
+            if choices:
+                schema = schema.extend(
+                    {
+                        vol.Optional(
+                            key, default=options[key]
+                        ): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=choices, multiple=True
+                            )
+                        )
+                    }
+                )
 
         return self.async_show_form(
             step_id="init",
@@ -824,6 +871,18 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
                 vol.Optional(CONF_EV_GRID_OUTSIDE_NT_ENTITY): _entity_selector(
                     EV_GRID_PERMISSION_ENTITY_FILTERS
                 ),
+                vol.Optional(CONF_EV_CHARGING_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_SOLAR_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_HOME_BATTERY_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
+                vol.Optional(CONF_EV_GRID_POWER_ENTITY): _entity_selector(
+                    EV_POWER_ENTITY_FILTERS
+                ),
                 vol.Optional(CONF_EV_WALLBOX_MODE_ENTITY): _entity_selector(
                     EV_WALLBOX_MODE_ENTITY_FILTERS
                 ),
@@ -937,6 +996,10 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
                 CONF_EV_PRESENCE_ENTITY,
                 CONF_EV_CONNECTED_ENTITY,
                 CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+                CONF_EV_CHARGING_POWER_ENTITY,
+                CONF_EV_SOLAR_POWER_ENTITY,
+                CONF_EV_HOME_BATTERY_POWER_ENTITY,
+                CONF_EV_GRID_POWER_ENTITY,
             ):
                 if entity_id := user_input.get(key):
                     data[key] = str(entity_id)

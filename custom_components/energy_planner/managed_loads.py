@@ -10,12 +10,17 @@ from homeassistant.config_entries import ConfigEntry
 from .const import (
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_POWER_ENTITY,
     CONF_EV_CHARGING_STRATEGY,
     CONF_EV_CONNECTED_ENTITY,
     CONF_EV_DEPARTURE_TIME,
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_GRID_POWER_ENTITY,
+    CONF_EV_HOME_BATTERY_DISABLED_SOURCES,
+    CONF_EV_HOME_BATTERY_POWER_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_SOLAR_POWER_ENTITY,
     CONF_EV_WALLBOX_GRID_OPTION,
     CONF_EV_WALLBOX_HOME_BATTERY_OPTION,
     CONF_EV_WALLBOX_MODE_ENTITY,
@@ -23,6 +28,7 @@ from .const import (
     CONF_EV_WALLBOX_SOLAR_OPTION,
     CONF_EV_WORKDAYS,
     CONF_HEATER_POWER_KW,
+    CONF_HOT_WATER_GAS_SOURCES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
@@ -61,10 +67,16 @@ class ManagedLoadConfig:
     required_energy_entity_id: str | None = None
     maximum_charging_power_kw: float | None = None
     charging_efficiency: float = DEFAULT_EV_CHARGING_EFFICIENCY
+    ev_allow_home_battery: bool = True
+    hot_water_alternative_source: str = "none"
     ev_charging_strategy: str = DEFAULT_EV_CHARGING_STRATEGY
     ev_presence_entity_id: str | None = None
     ev_connected_entity_id: str | None = None
     ev_grid_outside_nt_entity_id: str | None = None
+    ev_charging_power_entity_id: str | None = None
+    ev_solar_power_entity_id: str | None = None
+    ev_home_battery_power_entity_id: str | None = None
+    ev_grid_power_entity_id: str | None = None
     ev_workdays: frozenset[int] = frozenset(DEFAULT_EV_WORKDAYS)
     ev_departure_time: time = time.fromisoformat(DEFAULT_EV_DEPARTURE_TIME)
     ev_return_time: time = time.fromisoformat(DEFAULT_EV_RETURN_TIME)
@@ -111,6 +123,11 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
     loads = [
         ManagedLoadConfig(
             source_entity_id=source_entity_id,
+            ev_allow_home_battery=source_entity_id
+            not in entry.options.get(CONF_EV_HOME_BATTERY_DISABLED_SOURCES, []),
+            hot_water_alternative_source="gas"
+            if source_entity_id in entry.options.get(CONF_HOT_WATER_GAS_SOURCES, [])
+            else "none",
             load_type=str(
                 subentry.data.get(CONF_MANAGED_LOAD_TYPE, DEFAULT_MANAGED_LOAD_TYPE)
             ),
@@ -143,6 +160,18 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             ),
             ev_grid_outside_nt_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_EV_GRID_OUTSIDE_NT_ENTITY)
+            ),
+            ev_charging_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_CHARGING_POWER_ENTITY)
+            ),
+            ev_solar_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_SOLAR_POWER_ENTITY)
+            ),
+            ev_home_battery_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_HOME_BATTERY_POWER_ENTITY)
+            ),
+            ev_grid_power_entity_id=_optional_entity_id(
+                subentry.data.get(CONF_EV_GRID_POWER_ENTITY)
             ),
             ev_workdays=_workdays_or_default(subentry.data.get(CONF_EV_WORKDAYS)),
             ev_departure_time=_time_or_default(

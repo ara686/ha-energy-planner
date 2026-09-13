@@ -89,6 +89,9 @@ Volitelné:
 - EV plán podle odjezdu navíc potřebuje `device_tracker`, `binary_sensor`
   připojeného kabelu, pracovní dny s časy odjezdu/návratu a `input_boolean`,
   který výslovně povoluje GRID mimo nízký tarif.
+- Volitelné senzory celkového výkonu a příspěvku ze soláru, domácí baterie a
+  sítě umožní plánu ukázat, zda se EV právě nabíjí a z jakého převažujícího
+  zdroje, odděleně od poradního doporučení pro wallbox.
 - Solcast předpověď FVE pro dnešek, zítřek a další dny.
 
 Pokud máte spotřebu domu jen jako okamžitý výkon, například
@@ -265,3 +268,28 @@ Nesmaže vaše původní zdrojové entity, helpery, dashboardy ani automatizace.
 - [Příklady automatizací](docs/automations.md)
 - [Jak funguje historie](docs/history.md)
 - [Detaily planneru](docs/planner.md)
+
+### Alternativní zdroje při nedostatku slunce
+
+V nastavení integrace **Konfigurovat / Možnosti** vyberte jednotlivá auta v poli
+**Auta, která nesmí využívat domácí baterii** (`ev_home_battery_disabled_sources`)
+a zásobníky v poli **Zásobníky vody s plynovým dohřevem**
+(`hot_water_gas_sources`). Oba seznamy jsou standardně prázdné a zachovávají dosavadní chování.
+Pro nabíjení EV pouze přebytky a v NT také nastavte u auta `deadline_aware`,
+odjezd, přítomnost a připojení kabelu; povolení sítě mimo NT ponechte vypnuté.
+Domácí baterie zůstává dostupná pro dům; volba zakazuje její přidělení pro nabíjení EV.
+
+EV plán nejprve přidělí skutečné přebytky a zbytek naplánuje do NT před odjezdem.
+`wait_for_charging` znamená čekání na budoucí nesolární nabíjecí okno;
+`next_action_mode`, `next_action_start` a `next_action_end` určují zdroj a čas.
+`wait_for_solar` platí pouze pro budoucí solární okno. Nedostatečná kapacita
+nabíjecích oken zůstává nedostatkem. Skutečně pozorované nabíjení se zobrazuje
+odděleně od doporučení, i když používá nepovolený zdroj.
+
+U vody s plynovým dohřevem znamenají `alternative_source: gas` a
+`alternative_heating_recommended: true`, že solární plán nedosáhne minimální
+teploty. Plyn nedoplňuje volitelný ohřev na maximum.
+`minimum_shortfall_kwh` zůstává **elektrickým ekvivalentem nedostatku**, nikoliv
+spotřebou plynu. Plyn se nepřičítá k elektrickému odběru ani předpovědi teploty;
+okamžik dohřevu řeší stávající regulace. Při neúplné předpovědi je doporučení
+`null`, nikoliv potvrzený požadavek na plyn. Integrace zařízení neovládá.

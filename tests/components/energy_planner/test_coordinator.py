@@ -12,12 +12,16 @@ from custom_components.energy_planner.const import (
     CONF_BATTERY_SOC_ENTITY,
     CONF_BOTTOM_TEMPERATURE_ENTITY,
     CONF_CHARGING_EFFICIENCY,
+    CONF_EV_CHARGING_POWER_ENTITY,
     CONF_EV_CHARGING_STRATEGY,
     CONF_EV_CONNECTED_ENTITY,
     CONF_EV_DEPARTURE_TIME,
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
+    CONF_EV_GRID_POWER_ENTITY,
+    CONF_EV_HOME_BATTERY_POWER_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
+    CONF_EV_SOLAR_POWER_ENTITY,
     CONF_EV_WORKDAYS,
     CONF_FORECAST_HORIZON_HOURS,
     CONF_HEATER_POWER_KW,
@@ -1265,6 +1269,66 @@ def test_deadline_aware_ev_payload_uses_live_state_and_grid_permission(hass):
     assert plan["action_window_minutes"] == 60
 
 
+def test_deadline_aware_ev_payload_reports_live_power_and_dominant_source(hass):
+    now = datetime(2026, 8, 17, 3, tzinfo=UTC)
+    entry = _deadline_aware_ev_entry(live_power=True)
+    _set_electric_vehicle_inputs(hass, battery_required="6")
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "on")
+    hass.states.async_set("input_boolean.ev_grid_outside_nt", "off")
+    hass.states.async_set("sensor.wallbox_power", "4600", {"unit_of_measurement": "W"})
+    hass.states.async_set(
+        "sensor.wallbox_solar_power", "0", {"unit_of_measurement": "W"}
+    )
+    hass.states.async_set(
+        "sensor.wallbox_battery_power", "4575", {"unit_of_measurement": "W"}
+    )
+    hass.states.async_set(
+        "sensor.wallbox_grid_power", "25", {"unit_of_measurement": "W"}
+    )
+    points = [
+        {
+            "timestamp": (now + timedelta(hours=index)).isoformat(),
+            "battery_kwh": 6,
+            "unused_surplus_kwh": 3 if index == 1 else 0,
+            "solar_coverage": 1,
+            "is_nt": False,
+        }
+        for index in range(14)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={"safe_discharge_soc": 30, "soc_forecast": {"points": points}},
+    )
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=30,
+        battery_capacity_kwh=20,
+        battery_min_soc=20,
+        slots=[],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        interval_minutes=60,
+    )
+
+    _add_ev_charging_plans(
+        hass,
+        entry,
+        planner_input=planner_input,
+        now=now,
+        result=result,
+        warnings=[],
+    )
+
+    plan = result.plan["ev_charging_plans"]["sensor.ev_energy_total"]
+    assert plan["mode"] == "home_battery"
+    assert plan["observed_mode"] == "home_battery"
+    assert plan["recommended_mode"] == "wait_for_solar"
+    assert plan["is_charging"] is True
+    assert plan["current_charging_power_kw"] == 4.6
+
+
 def test_deadline_aware_ev_uses_surplus_remaining_after_other_managed_loads(hass):
     now = datetime(2026, 8, 17, 3, tzinfo=UTC)
     entry = _deadline_aware_ev_entry()
@@ -1441,7 +1505,17 @@ def _electric_vehicle_entry(
     )
 
 
-def _deadline_aware_ev_entry() -> MockConfigEntry:
+def _deadline_aware_ev_entry(*, live_power: bool = False) -> MockConfigEntry:
+    live_power_data = (
+        {
+            CONF_EV_CHARGING_POWER_ENTITY: "sensor.wallbox_power",
+            CONF_EV_SOLAR_POWER_ENTITY: "sensor.wallbox_solar_power",
+            CONF_EV_HOME_BATTERY_POWER_ENTITY: "sensor.wallbox_battery_power",
+            CONF_EV_GRID_POWER_ENTITY: "sensor.wallbox_grid_power",
+        }
+        if live_power
+        else {}
+    )
     return MockConfigEntry(
         domain=DOMAIN,
         data={},
@@ -1464,6 +1538,7 @@ def _deadline_aware_ev_entry() -> MockConfigEntry:
                     CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
                     CONF_EV_DEPARTURE_TIME: "07:00:00",
                     CONF_EV_RETURN_TIME: "17:00:00",
+                    **live_power_data,
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
                 "title": "EV",
@@ -1589,3 +1664,80 @@ def _set_hot_water_temperatures(
     attributes = {"device_class": "temperature", "unit_of_measurement": unit}
     hass.states.async_set("sensor.boiler_top_temperature", top, attributes)
     hass.states.async_set("sensor.boiler_bottom_temperature", bottom, attributes)
+
+
+async def test_gas_preference_reaches_allocation_without_electrical_demand(hass):
+    entry = _hot_water_entry()
+    entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "hot_water_gas_sources": ["sensor.boiler_energy_total"],
+        },
+    )
+    _set_hot_water_temperatures(hass, top="40", bottom="40")
+    now = datetime(2026, 9, 14, 12)
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [
+                {"date": "2026-09-15", "complete": True, "unused_surplus_kwh": 0}
+            ],
+            "soc_forecast": {"points": []},
+        },
+    )
+    allocations = _add_surplus_allocation(
+        hass, entry, history=EnergyHistory(), now=now, result=result, warnings=[]
+    )
+    water = allocations[-1].as_dict()["loads"]["sensor.boiler_energy_total"]
+    assert water["alternative_source"] == "gas"
+    assert water["alternative_heating_recommended"] is True
+    assert water["recommended_kwh"] == 0
+    assert water["planned_target_temperature"] == 40
+    assert water["minimum_shortfall_kwh"] == 1.163
+
+
+async def test_ev_options_disable_battery_in_coordinator(hass):
+    entry = _deadline_aware_ev_entry()
+    entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        entry, options={"ev_home_battery_disabled_sources": ["sensor.ev_energy_total"]}
+    )
+    _set_electric_vehicle_inputs(hass, battery_required="6")
+    hass.states.async_set("device_tracker.enyaq", "home")
+    hass.states.async_set("binary_sensor.enyaq_connected", "on")
+    now = datetime(2026, 9, 14, 3, tzinfo=UTC)
+    points = [
+        {
+            "timestamp": (now + timedelta(hours=i)).isoformat(),
+            "battery_kwh": 10,
+            "unused_surplus_kwh": 8 if i == 8 else 0,
+            "solar_coverage": 1,
+            "is_nt": i in {2, 3},
+        }
+        for i in range(14)
+    ]
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={"safe_discharge_soc": 30, "soc_forecast": {"points": points}},
+    )
+    data = PlannerInput(
+        now=now,
+        battery_soc=50,
+        battery_capacity_kwh=20,
+        battery_min_soc=20,
+        slots=[],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        interval_minutes=60,
+    )
+    _add_ev_charging_plans(
+        hass, entry, planner_input=data, now=now, result=result, warnings=[]
+    )
+    plan = result.plan["ev_charging_plans"]["sensor.ev_energy_total"]
+    assert plan["home_battery_kwh"] == 0
+    assert plan["grid_low_tariff_kwh"] > 0
+    assert plan["recommended_mode"] == "wait_for_charging"

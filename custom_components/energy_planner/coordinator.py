@@ -93,7 +93,8 @@ from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, calculate_soc_forecast, generate_forecast_slots
 from .sources import parse_float, parse_solcast_attributes
-from .units import energy_value_to_kwh, is_supported_energy_unit
+from .units import energy_value_to_kwh, is_supported_energy_unit, power_value_to_kw
+from .wallbox import WallboxModeOptions, wallbox_charging_source
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_CONSUMPTION_HISTORY_SENSOR_POINTS = 24 * 7
@@ -332,6 +333,7 @@ def _add_ev_charging_plans(
         if connected_value is True:
             presence_value = True
         allow_grid_state = hass.states.get(load.ev_grid_outside_nt_entity_id or "")
+        charging_power_kw, charging_source = _ev_live_charging_context(hass, load)
         vehicles.append(
             EVChargingPlanInput(
                 source_id=load.source_entity_id,
@@ -343,7 +345,10 @@ def _add_ev_charging_plans(
                 return_time=load.ev_return_time,
                 currently_home=presence_value,
                 connected=connected_value,
+                allow_home_battery=load.ev_allow_home_battery,
                 allow_high_tariff_grid=_binary_state_value(allow_grid_state) is True,
+                current_charging_power_kw=charging_power_kw,
+                current_charging_source=charging_source,
             )
         )
 
@@ -384,6 +389,58 @@ def _add_ev_charging_plans(
         **unavailable,
         **{source_id: plan.as_dict() for source_id, plan in plans.items()},
     }
+
+
+def _ev_live_charging_context(
+    hass: HomeAssistant,
+    load,
+) -> tuple[float | None, str | None]:
+    """Return current EV power and dominant observed energy source."""
+    source_powers = {
+        "solar": _power_entity_kw(hass, load.ev_solar_power_entity_id),
+        "home_battery": _power_entity_kw(hass, load.ev_home_battery_power_entity_id),
+        "grid": _power_entity_kw(hass, load.ev_grid_power_entity_id),
+    }
+    valid_source_powers = {
+        source: max(power_kw, 0.0)
+        for source, power_kw in source_powers.items()
+        if power_kw is not None and math.isfinite(power_kw)
+    }
+    charging_power_kw = _power_entity_kw(hass, load.ev_charging_power_entity_id)
+    if charging_power_kw is None and valid_source_powers:
+        charging_power_kw = sum(valid_source_powers.values())
+
+    source = None
+    if valid_source_powers:
+        candidate, candidate_power = max(
+            valid_source_powers.items(), key=lambda item: item[1]
+        )
+        if candidate_power > 0.05:
+            source = candidate
+    if source is None and load.has_wallbox_mode_mapping:
+        state = hass.states.get(load.ev_wallbox_mode_entity_id or "")
+        source = wallbox_charging_source(
+            state.state if state is not None else None,
+            WallboxModeOptions(
+                solar=load.ev_wallbox_solar_option,
+                home_battery=load.ev_wallbox_home_battery_option,
+                grid=load.ev_wallbox_grid_option,
+                off=load.ev_wallbox_off_option,
+            ),
+        )
+    return charging_power_kw, source
+
+
+def _power_entity_kw(hass: HomeAssistant, entity_id: str | None) -> float | None:
+    """Read one optional power entity in kW."""
+    state = hass.states.get(entity_id or "")
+    if state is None:
+        return None
+    value = power_value_to_kw(
+        state.state,
+        state.attributes.get(ATTR_UNIT_OF_MEASUREMENT),
+    )
+    return value if value is not None and math.isfinite(value) else None
 
 
 def _restore_deadline_ev_surplus(
@@ -927,6 +984,7 @@ def _hot_water_allocation_input(
         priority=load.priority,
         heater_power_kw=load.heater_power_kw,
         demand=demand,
+        alternative_source=load.hot_water_alternative_source,
     )
 
 
