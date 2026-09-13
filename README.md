@@ -277,3 +277,29 @@ automations.
 - [Automation examples](docs/automations.md)
 - [How the history model works](docs/history.md)
 - [Planner details](docs/planner.md)
+
+### Alternative energy sources when solar is insufficient
+
+In the integration's **Configure / Options** form, select each EV under
+**EVs that must not use the home battery** (`ev_home_battery_disabled_sources`)
+and each tank with gas backup under **Hot-water tanks with gas backup**
+(`hot_water_gas_sources`). Both lists default to empty, preserving existing behavior.
+For EV charging from solar and low tariff only, also select `deadline_aware`
+with departure, presence and cable inputs in the EV configuration, and leave
+permission for grid outside NT disabled. The home battery remains available to
+supply the house; this option prevents allocating it to EV charging.
+
+The EV plan assigns actual solar surplus first, then missing energy to NT windows
+before departure. `wait_for_charging` means a future non-solar charging window;
+`next_action_mode`, `next_action_start` and `next_action_end` identify it.
+`wait_for_solar` applies only to a future solar window. Insufficient charging
+capacity is still reported as a shortfall. Observed charging remains separate
+from the recommendation, even when it uses a disallowed source.
+
+For gas-backed water heating, `alternative_source: gas` and
+`alternative_heating_recommended: true` indicate that planned solar cannot reach
+the minimum temperature. Gas does not top up the optional maximum target.
+`minimum_shortfall_kwh` remains an **electrical-equivalent deficit**, not gas
+consumption. Gas is not added to electrical demand or forecast tank temperature;
+the existing controller decides when to heat. With incomplete forecasts the
+recommendation is `null`, not a confirmed gas requirement. No devices are controlled.

@@ -16,6 +16,7 @@ from .const import (
     CONF_EV_DEPARTURE_TIME,
     CONF_EV_GRID_OUTSIDE_NT_ENTITY,
     CONF_EV_GRID_POWER_ENTITY,
+    CONF_EV_HOME_BATTERY_DISABLED_SOURCES,
     CONF_EV_HOME_BATTERY_POWER_ENTITY,
     CONF_EV_PRESENCE_ENTITY,
     CONF_EV_RETURN_TIME,
@@ -27,6 +28,7 @@ from .const import (
     CONF_EV_WALLBOX_SOLAR_OPTION,
     CONF_EV_WORKDAYS,
     CONF_HEATER_POWER_KW,
+    CONF_HOT_WATER_GAS_SOURCES,
     CONF_MANAGED_ENERGY_ENTITIES,
     CONF_MANAGED_ENERGY_ENTITY,
     CONF_MANAGED_LOAD_TYPE,
@@ -65,6 +67,8 @@ class ManagedLoadConfig:
     required_energy_entity_id: str | None = None
     maximum_charging_power_kw: float | None = None
     charging_efficiency: float = DEFAULT_EV_CHARGING_EFFICIENCY
+    ev_allow_home_battery: bool = True
+    hot_water_alternative_source: str = "none"
     ev_charging_strategy: str = DEFAULT_EV_CHARGING_STRATEGY
     ev_presence_entity_id: str | None = None
     ev_connected_entity_id: str | None = None
@@ -119,6 +123,11 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
     loads = [
         ManagedLoadConfig(
             source_entity_id=source_entity_id,
+            ev_allow_home_battery=source_entity_id
+            not in entry.options.get(CONF_EV_HOME_BATTERY_DISABLED_SOURCES, []),
+            hot_water_alternative_source="gas"
+            if source_entity_id in entry.options.get(CONF_HOT_WATER_GAS_SOURCES, [])
+            else "none",
             load_type=str(
                 subentry.data.get(CONF_MANAGED_LOAD_TYPE, DEFAULT_MANAGED_LOAD_TYPE)
             ),

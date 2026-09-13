@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.config_entries import ConfigEntryState
@@ -982,7 +983,10 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     assert hass.states.get(ev_history_entity_id) is None
 
 
-async def test_missing_hot_water_temperature_only_unavailable_suggested_sensor(hass):
+@pytest.mark.parametrize("gas_backup", [False, True])
+async def test_missing_hot_water_temperature_only_unavailable_suggested_sensor(
+    hass, gas_backup
+):
     set_source_states(hass)
     temperature_attributes = {
         "device_class": "temperature",
@@ -993,7 +997,12 @@ async def test_missing_hot_water_temperature_only_unavailable_suggested_sensor(h
     entry = MockConfigEntry(
         domain=DOMAIN,
         data=config_data(),
-        options=options_data(),
+        options={
+            **options_data(),
+            "hot_water_gas_sources": ["sensor.water_heater_energy_total"]
+            if gas_backup
+            else [],
+        },
         version=3,
         subentries_data=(
             {
@@ -1038,6 +1047,49 @@ async def test_missing_hot_water_temperature_only_unavailable_suggested_sensor(h
     assert allocation["reason"] == "invalid_temperature_source"
     assert today is not None
     assert today.state != STATE_UNAVAILABLE
+    assert suggested.attributes.get("alternative_heating_recommended") is not True
+
+    # Valid temperatures after an options reload expose the advisory gas fields.
+    hass.states.async_set("sensor.boiler_bottom", "30", temperature_attributes)
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            CONF_UPDATE_INTERVAL_MINUTES: 15,
+            "hot_water_gas_sources": ["sensor.water_heater_energy_total"],
+        },
+    )
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    load = entry.runtime_data.data.plan["surplus_allocation"]["loads"][
+        "sensor.water_heater_energy_total"
+    ]
+    assert load["alternative_source"] == "gas"
+    # Publish a complete forecast to verify recorder-facing sensor attributes.
+    entry.runtime_data.async_set_updated_data(
+        PlannerResult(
+            state="ok",
+            updated=dt_util.utcnow(),
+            plan={
+                "surplus_allocation": {
+                    "forecast_complete": True,
+                    "loads": {
+                        "sensor.water_heater_energy_total": {
+                            **load,
+                            "state": "ok",
+                            "recommended_kwh": 0,
+                            "minimum_shortfall_kwh": load["minimum_required_kwh"],
+                            "alternative_heating_recommended": True,
+                        }
+                    },
+                }
+            },
+        )
+    )
+    await hass.async_block_till_done()
+    suggested = hass.states.get(suggested.entity_id)
+    assert suggested.attributes["alternative_source"] == "gas"
+    assert suggested.attributes["alternative_heating_recommended"] is True
 
 
 async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
@@ -1173,6 +1225,7 @@ async def test_deadline_aware_ev_creates_stable_advisory_sensors(hass):
         ("grid_low_tariff", "GRID"),
         ("grid_high_tariff", "GRID"),
         ("complete", "OFF"),
+        ("wait_for_charging", "OFF"),
     ):
         entry.runtime_data.async_set_updated_data(
             PlannerResult(

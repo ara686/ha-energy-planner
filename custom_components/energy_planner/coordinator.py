@@ -345,6 +345,7 @@ def _add_ev_charging_plans(
                 return_time=load.ev_return_time,
                 currently_home=presence_value,
                 connected=connected_value,
+                allow_home_battery=load.ev_allow_home_battery,
                 allow_high_tariff_grid=_binary_state_value(allow_grid_state) is True,
                 current_charging_power_kw=charging_power_kw,
                 current_charging_source=charging_source,
@@ -983,6 +984,7 @@ def _hot_water_allocation_input(
         priority=load.priority,
         heater_power_kw=load.heater_power_kw,
         demand=demand,
+        alternative_source=load.hot_water_alternative_source,
     )
 
 

@@ -23,6 +23,7 @@ def test_wallbox_mode_mapping_uses_safe_off_for_non_charging_modes() -> None:
         "off",
         "connect_vehicle",
         "wait_for_solar",
+        "wait_for_charging",
         "complete",
         "shortfall",
         "unavailable",

@@ -223,6 +223,8 @@
         "title": "Energy Planner options",
         "description": "Configure planner behavior, time windows and SoC forecast settings.",
         "data": {
+          "ev_home_battery_disabled_sources": "EVs that must not use the home battery",
+          "hot_water_gas_sources": "Hot-water tanks with gas backup",
           "update_interval_minutes": "Recalculation interval in minutes",
           "history_learning_days": "Consumption history days",
           "interval_minutes": "Planning interval in minutes",
@@ -368,7 +370,7 @@
       },
       "managed_source_suggested_tomorrow": {"name": "Managed {source} suggested tomorrow"},
       "managed_source_suggested_today": {"name": "Managed {source} suggested today"},
-      "managed_source_charging_mode": {"name": "Managed {source} charging mode"},
+      "managed_source_charging_mode": {"state": {"wait_for_charging": "Waiting for charging"}, "name": "Managed {source} charging mode"},
       "managed_source_next_departure": {"name": "Managed {source} next departure"},
       "managed_source_planned_until_departure": {"name": "Managed {source} planned until departure"},
       "managed_source_recommended_wallbox_mode": {"name": "Managed {source} recommended wallbox mode"},

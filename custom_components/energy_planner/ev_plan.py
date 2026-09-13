@@ -12,6 +12,7 @@ EVChargingMode = Literal[
     "off",
     "connect_vehicle",
     "wait_for_solar",
+    "wait_for_charging",
     "solar",
     "home_battery",
     "grid_low_tariff",
@@ -24,6 +25,7 @@ EV_CHARGING_MODES: tuple[EVChargingMode, ...] = (
     "off",
     "connect_vehicle",
     "wait_for_solar",
+    "wait_for_charging",
     "solar",
     "home_battery",
     "grid_low_tariff",
@@ -60,6 +62,7 @@ class EVChargingPlanInput:
     currently_home: bool | None = None
     connected: bool | None = None
     allow_high_tariff_grid: bool = False
+    allow_home_battery: bool = True
     current_charging_power_kw: float | None = None
     current_charging_source: EVChargingSource | None = None
 
@@ -274,7 +277,11 @@ def calculate_ev_charging_plan(
         battery_capacity_kwh * max(0.0, min(safe_discharge_soc, 100.0)) / 100
     )
     battery_available_kwh = max(departure_battery - safe_battery_kwh, 0.0)
-    battery_target = min(remaining, lost_surplus_kwh, battery_available_kwh)
+    battery_target = (
+        min(remaining, lost_surplus_kwh, battery_available_kwh)
+        if data.allow_home_battery
+        else 0.0
+    )
     low_tariff_slots = [slot for slot in home_slots if slot.is_low_tariff]
     grid_low_tariff_kwh = _allocate_slots(
         slots=list(reversed(low_tariff_slots)),
@@ -616,7 +623,10 @@ def _current_mode(
         return current_or_next.mode, f"charging_from_{current_or_next.mode}"
     if shortfall_kwh > 1e-9 and not windows:
         return "shortfall", "deadline_shortfall"
-    return "wait_for_solar", f"next_action_{current_or_next.mode}"
+    waiting_mode: EVChargingMode = (
+        "wait_for_solar" if current_or_next.mode == "solar" else "wait_for_charging"
+    )
+    return waiting_mode, f"next_action_{current_or_next.mode}"
 
 
 def _current_charging_power_kw(data: EVChargingPlanInput) -> float | None:

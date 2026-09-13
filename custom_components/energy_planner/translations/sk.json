@@ -223,6 +223,8 @@
         "title": "Možnosti Energy Planneru",
         "description": "Nastavenie správania plánovača, časových okien a predikcie SoC.",
         "data": {
+          "ev_home_battery_disabled_sources": "Autá, ktoré nesmú využívať domácu batériu",
+          "hot_water_gas_sources": "Zásobníky vody s plynovým dohrevom",
           "update_interval_minutes": "Interval prepočtu v minútach",
           "history_learning_days": "Počet dní histórie spotreby",
           "interval_minutes": "Interval plánovania v minútach",
@@ -368,7 +370,7 @@
       },
       "managed_source_suggested_tomorrow": {"name": "Riadená spotreba {source} odporúčanie na zajtra"},
       "managed_source_suggested_today": {"name": "Riadená spotreba {source} odporúčanie na dnes"},
-      "managed_source_charging_mode": {"name": "Riadená spotreba {source} režim nabíjania"},
+      "managed_source_charging_mode": {"state": {"wait_for_charging": "Čakanie na nabíjanie"}, "name": "Riadená spotreba {source} režim nabíjania"},
       "managed_source_next_departure": {"name": "Riadená spotreba {source} nasledujúci odchod"},
       "managed_source_planned_until_departure": {"name": "Riadená spotreba {source} plán do odchodu"},
       "managed_source_recommended_wallbox_mode": {"name": "Riadená spotreba {source} odporúčaný režim wallboxu"},

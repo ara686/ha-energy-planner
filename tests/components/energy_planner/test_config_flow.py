@@ -1674,3 +1674,92 @@ async def test_options_flow_rejects_invalid_values(hass, config_entry):
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"]["base"] == CONF_INTERVAL_MINUTES
+
+
+async def test_source_preferences_options_and_diagnostics(hass):
+    from custom_components.energy_planner.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+    from custom_components.energy_planner.managed_loads import managed_load_configs
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config_data(),
+        options={},
+        version=5,
+        subentries_data=tuple(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: source,
+                    CONF_MANAGED_LOAD_TYPE: kind,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": kind,
+                "unique_id": source,
+            }
+            for source, kind in [
+                ("sensor.car", "electric_vehicle"),
+                ("sensor.tank", "hot_water"),
+            ]
+        ),
+    )
+    entry.add_to_hass(hass)
+    car, tank = managed_load_configs(entry)
+    assert car.ev_allow_home_battery is True
+    assert tank.hot_water_alternative_source == "none"
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    fields = {str(key): value for key, value in result["data_schema"].schema.items()}
+    assert (
+        fields["ev_home_battery_disabled_sources"].config["options"][0]["value"]
+        == "sensor.car"
+    )
+    assert (
+        fields["hot_water_gas_sources"].config["options"][0]["value"] == "sensor.tank"
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            **options_flow_input(),
+            "ev_home_battery_disabled_sources": ["sensor.car"],
+            "hot_water_gas_sources": ["sensor.tank"],
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    car, tank = managed_load_configs(entry)
+    assert car.ev_allow_home_battery is False
+    assert tank.hot_water_alternative_source == "gas"
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+    assert diagnostics["entry"]["managed_loads"][0]["ev_allow_home_battery"] is False
+    assert (
+        diagnostics["entry"]["managed_loads"][1]["hot_water_alternative_source"]
+        == "gas"
+    )
+    # Changing unrelated options preserves the preferences.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input=options_flow_input()
+    )
+    assert managed_load_configs(entry)[0].ev_allow_home_battery is False
+    # An explicit empty selection restores the legacy behavior.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            **options_flow_input(),
+            "ev_home_battery_disabled_sources": [],
+            "hot_water_gas_sources": [],
+        },
+    )
+    assert managed_load_configs(entry)[0].ev_allow_home_battery is True
+    assert managed_load_configs(entry)[1].hot_water_alternative_source == "none"
+
+
+@pytest.mark.parametrize("invalid", [None, "sensor.car", [None], [42], [""]])
+def test_invalid_source_preferences_are_rejected(invalid):
+    from custom_components.energy_planner.options import (
+        OptionsValidationError,
+        normalize_options,
+    )
+
+    with pytest.raises(OptionsValidationError):
+        normalize_options({**options_flow_input(), "hot_water_gas_sources": invalid})
