@@ -29,7 +29,7 @@ def generate_forecast_slots(
         return []
 
     interval = timedelta(minutes=interval_minutes)
-    horizon_end = now + timedelta(hours=horizon_hours)
+    horizon_end = _add_elapsed_time(now, timedelta(hours=horizon_hours))
     solar_periods = _solar_periods(solar_forecast, interval_minutes)
 
     slots: list[ForecastSlot] = []
@@ -119,10 +119,12 @@ def calculate_soc_forecast(
             else _clamp(data.battery_min_soc, 0.0, 100.0)
         ),
     )
-    horizon_end = data.now + timedelta(hours=max(data.forecast_horizon_hours, 24))
+    horizon_end = _add_elapsed_time(
+        data.now, timedelta(hours=max(data.forecast_horizon_hours, 24))
+    )
     point_24h = _point_at_or_project_end(
         simulation.points,
-        data.now + timedelta(hours=24),
+        _add_elapsed_time(data.now, timedelta(hours=24)),
         data.interval_minutes,
     )
     horizon_point = _point_at_or_project_end(
@@ -171,7 +173,9 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
     floor_kwh = _soc_to_kwh(floor_soc, data.battery_capacity_kwh)
 
     lock_start = _find_lock_start(data)
-    horizon_end = data.now + timedelta(hours=max(data.forecast_horizon_hours, 24))
+    horizon_end = _add_elapsed_time(
+        data.now, timedelta(hours=max(data.forecast_horizon_hours, 24))
+    )
     sun_start = _find_sun_start(data, slots, start=lock_start, end=horizon_end)
     sun_start = sun_start or horizon_end
     planner_start = data.now
@@ -250,12 +254,12 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
     )
     forecast_24h = _point_at_or_project_end(
         forecast_simulation.points,
-        data.now + timedelta(hours=24),
+        _add_elapsed_time(data.now, timedelta(hours=24)),
         data.interval_minutes,
     )
     planned_forecast_24h = _point_at_or_project_end(
         planned_simulation.points,
-        data.now + timedelta(hours=24),
+        _add_elapsed_time(data.now, timedelta(hours=24)),
         data.interval_minutes,
     )
     forecast_horizon = _point_at_or_project_end(
@@ -288,6 +292,8 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
         state=state,
         updated=data.now,
         plan={
+            "current_soc": current_soc,
+            "current_charge_window": _is_in_window(data.now, data.charge_window),
             "grid_charging_enabled": data.grid_charging_enabled,
             "lock_soc": _round(lock_soc),
             "charge_to_soc": _round(charge_to_soc),
@@ -383,7 +389,9 @@ def _validate_input(data: PlannerInput) -> list[str]:
 
 
 def _normalized_slots(data: PlannerInput) -> list[ForecastSlot]:
-    horizon_end = data.now + timedelta(hours=max(data.forecast_horizon_hours, 24))
+    horizon_end = _add_elapsed_time(
+        data.now, timedelta(hours=max(data.forecast_horizon_hours, 24))
+    )
     return sorted(
         (
             ForecastSlot(
@@ -801,7 +809,13 @@ def _vt_deficit_kwh(
         if start <= slot.start < end and not _is_in_windows(
             slot.start, data.nt_windows
         ):
-            deficit = max(0.0, deficit + slot.consumption_kwh - slot.solar_kwh)
+            deficit = max(
+                0.0,
+                deficit
+                + slot.consumption_kwh
+                + slot.managed_consumption_kwh
+                - slot.solar_kwh,
+            )
             peak = max(peak, deficit)
     return peak
 
@@ -820,7 +834,10 @@ def _find_sun_start(
     for slot in slots:
         if slot.start < start or slot.start >= end:
             continue
-        if slot.solar_kwh >= slot.consumption_kwh and slot.solar_kwh > 0:
+        if (
+            slot.solar_kwh >= slot.consumption_kwh + slot.managed_consumption_kwh
+            and slot.solar_kwh > 0
+        ):
             streak += 1
             streak_start = streak_start or slot.start
             if streak >= required_slots:
@@ -932,14 +949,10 @@ def _point_at_or_project_end(
     timestamp: datetime,
     interval_minutes: int,
 ) -> SocForecastPoint | None:
-    point = _point_at_or_after(points, timestamp)
-    if point:
-        return point
-    if not points:
-        return None
-    last = points[-1]
-    if last.timestamp + timedelta(minutes=interval_minutes) >= timestamp:
-        return replace(last, timestamp=timestamp)
+    for point in points:
+        end = _add_elapsed_time(point.timestamp, timedelta(minutes=interval_minutes))
+        if _timeline_time(end) >= _timeline_time(timestamp):
+            return replace(point, timestamp=end)
     return None
 
 

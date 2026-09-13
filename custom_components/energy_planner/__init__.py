@@ -105,6 +105,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        from homeassistant.helpers import issue_registry as ir
+
+        ir.async_delete_issue(hass, DOMAIN, f"joint_plan_{entry.entry_id}")
         entry.runtime_data = None
     return unload_ok
 
@@ -415,10 +418,15 @@ def _next_ev_plan_boundary(result: Any, *, now: datetime) -> datetime | None:
         return None
     ev_plans = plan.get("ev_charging_plans")
     if not isinstance(ev_plans, dict):
-        return None
+        ev_plans = {}
 
     now_utc = dt_util.as_utc(now)
     boundaries: list[datetime] = []
+    valid_until = plan.get("joint_summary", {}).get("valid_until")
+    if isinstance(valid_until, str):
+        boundary = dt_util.parse_datetime(valid_until)
+        if boundary is not None and dt_util.as_utc(boundary) > now_utc:
+            boundaries.append(dt_util.as_utc(boundary))
     for ev_plan in ev_plans.values():
         if not isinstance(ev_plan, dict):
             continue

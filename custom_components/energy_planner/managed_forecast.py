@@ -80,6 +80,7 @@ def build_managed_demand_schedule(
         if denominator <= 0:
             fallback_source_ids.append(source_id)
             denominator = float(len(day_hours))
+            profile = {}
 
         scheduled = 0.0
         for slot in target_slots:

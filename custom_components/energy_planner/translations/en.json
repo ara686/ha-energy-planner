@@ -45,7 +45,9 @@
   "config_subentries": {
     "managed_load": {
       "entry_type": "Managed load",
-      "initiate_flow": {"user": "Add managed load"},
+      "initiate_flow": {
+        "user": "Add managed load"
+      },
       "step": {
         "user": {
           "title": "Add managed load",
@@ -176,7 +178,9 @@
           }
         }
       },
-      "abort": {"reconfigure_successful": "Managed load updated successfully."},
+      "abort": {
+        "reconfigure_successful": "Managed load updated successfully."
+      },
       "error": {
         "invalid_numeric_entity": "Selected entity must currently have a numeric state.",
         "energy_sensor_required": "The energy meter must be a cumulative energy sensor with a supported energy unit.",
@@ -212,8 +216,19 @@
     },
     "ev_workday": {
       "options": {
-        "0": "Monday", "1": "Tuesday", "2": "Wednesday", "3": "Thursday",
-        "4": "Friday", "5": "Saturday", "6": "Sunday"
+        "0": "Monday",
+        "1": "Tuesday",
+        "2": "Wednesday",
+        "3": "Thursday",
+        "4": "Friday",
+        "5": "Saturday",
+        "6": "Sunday"
+      }
+    },
+    "joint_planning_mode": {
+      "options": {
+        "shadow": "Shadow comparison",
+        "advisory": "Publish joint recommendations"
       }
     }
   },
@@ -243,7 +258,25 @@
           "charge_window_start": "Planned grid-charging window start",
           "charge_window_end": "Planned grid-charging window end",
           "sun_start_required_minutes": "Minimum solar start duration in minutes",
-          "forecast_horizon_hours": "Forecast horizon in hours"
+          "forecast_horizon_hours": "Forecast horizon in hours",
+          "joint_planning_mode": "Joint planner mode",
+          "joint_ev_phases": "EV charging phases",
+          "joint_voltage": "Assumed phase voltage (V)",
+          "joint_minimum_ev_current": "Minimum EV current per phase (A)",
+          "joint_discharge_efficiency": "Battery DC-to-AC efficiency",
+          "joint_water_minimum": "Water comfort minimum (°C)",
+          "joint_water_normal": "Water normal target (°C)",
+          "joint_water_maximum": "Water surplus target limit (°C)",
+          "joint_water_deadline": "Water comfort deadline",
+          "joint_grid_import_limit_entity": "Shared grid import limit (power entity)",
+          "joint_battery_charge_limit_entity": "Battery charging limit (AC power entity)",
+          "joint_battery_discharge_limit_entity": "Battery discharging limit (AC power entity)",
+          "joint_export_limit_entity": "Current export limit (power entity)",
+          "joint_phase_limit_entity": "Per-phase load limit (power entity)",
+          "joint_water_loss_kw": "Estimated tank heat loss (kW)",
+          "joint_water_daily_draw_kwh": "Estimated daily hot-water draw (thermal kWh)",
+          "joint_solar_ev_phases": "Solar EV charging phases",
+          "joint_maximum_ev_current": "Maximum EV current per phase (A)"
         },
         "data_description": {
           "grid_charging_enabled": "Advisory planning only. Energy Planner never controls the battery or inverter.",
@@ -306,11 +339,21 @@
       "unused_surplus_total_kwh": {
         "name": "Unused surplus total"
       },
-      "unused_surplus_tomorrow_kwh": {"name": "Unused surplus tomorrow"},
-      "managed_recommended_today_kwh": {"name": "Recommended managed energy today"},
-      "managed_expected_demand_tomorrow_kwh": {"name": "Expected managed demand tomorrow"},
-      "managed_recommended_tomorrow_kwh": {"name": "Recommended managed energy tomorrow"},
-      "unallocated_surplus_tomorrow_kwh": {"name": "Unallocated surplus tomorrow"},
+      "unused_surplus_tomorrow_kwh": {
+        "name": "Unused surplus tomorrow"
+      },
+      "managed_recommended_today_kwh": {
+        "name": "Recommended managed energy today"
+      },
+      "managed_expected_demand_tomorrow_kwh": {
+        "name": "Expected managed demand tomorrow"
+      },
+      "managed_recommended_tomorrow_kwh": {
+        "name": "Recommended managed energy tomorrow"
+      },
+      "unallocated_surplus_tomorrow_kwh": {
+        "name": "Unallocated surplus tomorrow"
+      },
       "first_full_time": {
         "name": "First full time"
       },
@@ -368,12 +411,27 @@
       "managed_source_history": {
         "name": "Managed {source} history"
       },
-      "managed_source_suggested_tomorrow": {"name": "Managed {source} suggested tomorrow"},
-      "managed_source_suggested_today": {"name": "Managed {source} suggested today"},
-      "managed_source_charging_mode": {"state": {"wait_for_charging": "Waiting for charging"}, "name": "Managed {source} charging mode"},
-      "managed_source_next_departure": {"name": "Managed {source} next departure"},
-      "managed_source_planned_until_departure": {"name": "Managed {source} planned until departure"},
-      "managed_source_recommended_wallbox_mode": {"name": "Managed {source} recommended wallbox mode"},
+      "managed_source_suggested_tomorrow": {
+        "name": "Managed {source} suggested tomorrow"
+      },
+      "managed_source_suggested_today": {
+        "name": "Managed {source} suggested today"
+      },
+      "managed_source_charging_mode": {
+        "state": {
+          "wait_for_charging": "Waiting for charging"
+        },
+        "name": "Managed {source} charging mode"
+      },
+      "managed_source_next_departure": {
+        "name": "Managed {source} next departure"
+      },
+      "managed_source_planned_until_departure": {
+        "name": "Managed {source} planned until departure"
+      },
+      "managed_source_recommended_wallbox_mode": {
+        "name": "Managed {source} recommended wallbox mode"
+      },
       "update_interval_minutes": {
         "name": "Recalculation interval"
       },
@@ -412,6 +470,12 @@
       },
       "forecast_horizon_hours": {
         "name": "Forecast horizon"
+      },
+      "joint_target_soc": {
+        "name": "Joint target SoC"
+      },
+      "joint_grid_import": {
+        "name": "Joint forecast grid import"
       }
     }
   },
@@ -423,6 +487,12 @@
     "export_debug": {
       "name": "Export debug",
       "description": "Export the last planner debug payload."
+    }
+  },
+  "issues": {
+    "joint_plan_incomplete": {
+      "title": "Joint plan has unverified inputs",
+      "description": "Review the configured limits and downloaded planner diagnostics before relying on these recommendations. Details: {reason}"
     }
   }
 }

@@ -26,6 +26,7 @@ class HourlyEnergyBucket:
     managed_kwh: float = 0.0
     managed_sources: dict[str, float] = field(default_factory=dict)
     observed_sources: set[str] = field(default_factory=set)
+    required_sources: set[str] = field(default_factory=set)
 
     @property
     def base_kwh(self) -> float:
@@ -33,7 +34,11 @@ class HourlyEnergyBucket:
 
     @property
     def base_usable(self) -> bool:
-        return self.home_kwh > 0 and self.home_kwh + 1e-9 >= self.managed_kwh
+        return (
+            (self.home_kwh > 0 or bool(self.required_sources))
+            and self.home_kwh + 1e-9 >= self.managed_kwh
+            and self.required_sources <= self.observed_sources
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -45,6 +50,7 @@ class HourlyEnergyBucket:
                 for source, value in sorted(self.managed_sources.items())
             },
             "observed_sources": sorted(self.observed_sources),
+            "required_sources": sorted(self.required_sources),
         }
 
     @classmethod
@@ -55,6 +61,7 @@ class HourlyEnergyBucket:
             home_kwh=float(data.get("home_kwh", 0.0)),
             managed_kwh=float(data.get("managed_kwh", sum(managed_sources.values()))),
             managed_sources=managed_sources,
+            required_sources=set(data.get("required_sources", [])),
             observed_sources={
                 str(source) for source in data.get("observed_sources", [])
             },
@@ -206,6 +213,11 @@ class EnergyHistory:
                 managed_sources=managed_sources_by_hour.get(key, {}),
                 observed_sources=observed_sources_by_hour.get(key, set()),
             )
+        for bucket in history.buckets.values():
+            bucket.required_sources = {
+                home_source_id,
+                *(managed_samples_by_source or {}),
+            }
         return history
 
     @classmethod
@@ -233,6 +245,8 @@ class EnergyHistory:
                     managed_source_id=source_id,
                     observed_source_ids={source_id},
                 )
+        for bucket in history.buckets.values():
+            bucket.required_sources = {home_source_id, *managed_changes_by_source}
         history.dirty = False
         return history
 
@@ -399,9 +413,10 @@ class EnergyHistory:
     ) -> None:
         """Fill sources missing from primary history with stored fallback data."""
         for source_id in source_ids:
-            if self.has_observations_for_source(source_id):
-                continue
             for key, fallback_bucket in fallback.buckets.items():
+                existing = self.buckets.get(key)
+                if existing and source_id in existing.observed_sources:
+                    continue
                 value = fallback_bucket.managed_sources.get(source_id, 0.0)
                 observed = source_id in fallback_bucket.observed_sources
                 if value <= 0 and not observed:

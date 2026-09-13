@@ -42,6 +42,8 @@ from .const import (
     DEFAULT_SUN_START_REQUIRED_MINUTES,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
 )
+from .joint_options import DEFAULTS as JOINT_DEFAULTS
+from .joint_options import normalize_joint_options
 
 WINDOW_RE = re.compile(r"^(?P<start>\d{2}:\d{2})-(?P<end>\d{2}:\d{2})$")
 
@@ -56,6 +58,7 @@ class OptionsValidationError(ValueError):
 
 def default_options() -> dict[str, Any]:
     return {
+        **JOINT_DEFAULTS,
         CONF_EV_HOME_BATTERY_DISABLED_SOURCES: [],
         CONF_HOT_WATER_GAS_SOURCES: [],
         CONF_UPDATE_INTERVAL_MINUTES: DEFAULT_UPDATE_INTERVAL_MINUTES,
@@ -125,6 +128,7 @@ def normalize_options(values: dict[str, Any]) -> dict[str, Any]:
         raise OptionsValidationError("sun_start_required_minutes")
 
     return {
+        **normalize_joint_options(values),
         CONF_EV_HOME_BATTERY_DISABLED_SOURCES: _source_list(
             values, CONF_EV_HOME_BATTERY_DISABLED_SOURCES
         ),

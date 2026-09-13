@@ -38,15 +38,19 @@ def _number(value: Any) -> float | None:
 def _charge_now(result: PlannerResult) -> bool | None:
     if result.plan.get("grid_charging_enabled") is False:
         return False
-    current_soc = _number(result.plan.get("soc_at_planner_start"))
-    charge_to_soc = _number(result.plan.get("charge_to_soc"))
+    if isinstance(result.plan.get("charge_now"), bool):
+        return result.plan["charge_now"]
+    current_soc = _number(result.plan.get("current_soc"))
+    if result.plan.get("current_charge_window") is False:
+        return False
+    charge_to_soc = _number(result.plan.get("target_soc"))
     if current_soc is None or charge_to_soc is None:
         return None
     return current_soc < charge_to_soc
 
 
 def _discharge_allowed(result: PlannerResult) -> bool | None:
-    current_soc = _number(result.plan.get("soc_at_planner_start"))
+    current_soc = _number(result.plan.get("current_soc"))
     safe_discharge_soc = _number(result.plan.get("safe_discharge_soc"))
     if current_soc is None or safe_discharge_soc is None:
         return None

@@ -106,6 +106,9 @@ from .const import (
     MANAGED_LOAD_TYPE_GENERIC,
     MANAGED_LOAD_TYPE_HOT_WATER,
 )
+from .joint_options import DEFAULTS as JOINT_DEFAULTS
+from .joint_options import ENTITY_KEYS as JOINT_ENTITY_KEYS
+from .joint_options import OPTIONAL_NUMBERS as JOINT_OPTIONAL_NUMBERS
 from .managed_loads import managed_load_configs
 from .options import (
     OptionsValidationError,
@@ -573,6 +576,11 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                             CONF_HOT_WATER_GAS_SOURCES: saved_options.get(
                                 CONF_HOT_WATER_GAS_SOURCES, []
                             ),
+                            **{
+                                k: v
+                                for k, v in saved_options.items()
+                                if k.startswith("joint_")
+                            },
                             **user_input,
                         }
                     ),
@@ -709,6 +717,37 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
             }
         )
 
+        extra = {}
+        for key, default in JOINT_DEFAULTS.items():
+            if key == "joint_planning_mode":
+                field = selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=["shadow", "advisory"],
+                        translation_key="joint_planning_mode",
+                    )
+                )
+            elif key == "joint_water_deadline":
+                field = selector.TimeSelector()
+            else:
+                field = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        mode=selector.NumberSelectorMode.BOX, min=0, step=0.01
+                    )
+                )
+            extra[vol.Optional(key, default=options.get(key, default))] = field
+        for key in JOINT_ENTITY_KEYS:
+            extra[
+                vol.Optional(key, description={"suggested_value": options.get(key)})
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "number", "input_number"]
+                )
+            )
+        for key in JOINT_OPTIONAL_NUMBERS:
+            extra[
+                vol.Optional(key, description={"suggested_value": options.get(key)})
+            ] = _number_selector(minimum=0, step=0.01)
+        schema = schema.extend(extra)
         loads = managed_load_configs(self.config_entry)
         for key, load_type in (
             (CONF_EV_HOME_BATTERY_DISABLED_SOURCES, MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE),

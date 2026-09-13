@@ -293,3 +293,63 @@ teploty. Plyn nedoplňuje volitelný ohřev na maximum.
 spotřebou plynu. Plyn se nepřičítá k elektrickému odběru ani předpovědi teploty;
 okamžik dohřevu řeší stávající regulace. Při neúplné předpovědi je doporučení
 `null`, nikoliv potvrzený požadavek na plyn. Integrace zařízení neovládá.
+
+## Společný energetický plán: sledovací porovnání
+
+Společný plánovač nejprve rezervuje energii domácí baterie pro překlenutí VT.
+Potom přiděluje energii vodě a autu. Využívá **všechna NT okna**, zachovává
+sezonní minimum SoC a při nedostatečném výkonu NT upřednostní baterii domu před
+požadavkem auta; chybějící energii auta vyčíslí. Používá očekávaný profil spotřeby
+bez procentních přirážek původního výpočtu. Nastavená rezerva SoC zůstává.
+
+Výchozí `joint_planning_mode: shadow` ponechává stávající doporučující entity
+na původním výpočtu. Nové diagnostické senzory **Společný cílový SoC** a
+**Společná předpověď odběru ze sítě** spolu s `joint_plan` a `joint_comparison`
+ve stažené diagnostice ukazují nový plán. Oba výpočty čtou jeden snímek stavů HA
+a historie. Diagnostika uvádí rozdíl v práci s přirážkou spotřeby; skutečný provoz
+pod jiným řízením není realizací těchto plánů. Výpočet běží mimo hlavní smyčku HA
+a na časových hranicích se obnovuje.
+
+V Options Flow lze výslovně zvolit `advisory` a zveřejnit společná doporučení
+přes původní ID entit. Současně se přepnou předpovědi baterie a doporučení
+spotřebičů. Integrace zařízení neovládá. `charge_now` označuje nabíjení v právě
+platném intervalu, `charge_to_soc` jeho bezprostřední cíl a `target_soc` potřebný
+SoC na konci nejbližšího NT okna. Celý plán jednotlivých oken a platnost
+aktuálního doporučení jsou v diagnostice. Ochrany a ruční zásahy zůstávají
+ve stávajícím řízení zařízení.
+
+Nastavení společného plánovače zahrnuje:
+
+- Samostatný počet fází solárního a ostatního nabíjení auta (výchozí 1 a 3),
+  předpokládané napětí fáze 230 V a rozsah proudu 6–16 A. Hodnoty musí odpovídat
+  režimům externího řízení wallboxu. Plán omezuje výkon a slučuje smíšené zdroje
+  do jednoho příkazu na interval; přepínání a omezení častého spínání řeší automatika.
+- Volitelné **entity výkonu ve W nebo kW** pro společný limit odběru, nabíjení
+  a vybíjení baterie na AC straně, export a zatížení fáze. Použijte skutečné
+  limity instalace. AC vstupní proud v A ani DC proud BMS nejsou výkonové entity
+  a vyžadují správný převod. Limit exportu se pouze čte. Účinnosti se započítávají
+  právě jednou na rozhraní AC/DC.
+- Průměrné teploty vody: minimum 40 °C do 17:00, běžný cíl 45 °C a maximum 65 °C.
+  Průměr se počítá ze dvou nastavených čidel. Volitelný dohřev nesmí zvýšit nákup
+  elektřiny ani spotřebovat rezervu domu. Při vybrané plynové záloze se plyn
+  doporučí jen na zbývající komfortní deficit. Uvedené množství znamená
+  **tepelnou energii**, nikoli naměřenou spotřebu plynu; nepatří do elektrické
+  bilance. Teplotní předpověď předpokládá provedení doporučených akcí.
+- Volitelný odhad ztrát zásobníku v kW a denního odběru vody v tepelných kWh.
+  Chybějící hodnoty jsou označené jako neověřené. Aktuální deficit se přenáší
+  časem, neopakuje se každý den znovu. Teplotní pravidla a elektrická nastavení
+  auta zatím platí společně pro všechny příslušné nakonfigurované spotřebiče.
+
+Neznámé technické limity a chybějící tepelné parametry jsou v diagnostice.
+Rozdělení zatížení mezi fáze je zatím rovnoměrný odhad; **předpověď není ověřením
+fyzické kapacity každé fáze**. Neplatná nastavená entita limitu znepřístupní
+společná doporučení v režimu `advisory`. Chybějící měření řízené spotřeby se
+nepovažuje za naměřenou nulu; mezery se doplňují po jednotlivých hodinách
+z dostupných uložených pozorování. Před spoléháním na automatické řízení je nutné
+tato omezení vyřešit nebo pokrýt externím řízením.
+
+Oprava helperu požadavku Enyaqu zachovává ID entity: platná procenta dávají
+`max(0, (target - current) * capacity / 100)` se zaokrouhlením výsledku;
+neplatná procenta znamenají nedostupný helper. Účinnost nabíjení patří do
+plánovače, nikoli do tohoto požadavku energie baterie. Viz
+[dostupnost šablon HA](https://www.home-assistant.io/integrations/template/#common-device-configuration-options).

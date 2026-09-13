@@ -343,7 +343,9 @@ def test_cumulative_history_samples_build_nodered_hourly_profile():
     assert history.base_consumption_for_hour("2026-07-01T11:00:00") == 1.5
     assert history.base_consumption_for_hour("2026-07-02T11:00:00") == 3.0
     assert profile[11] == 2.36
-    assert profile[12] == 10.5
+    # The nonzero home hour lacks a managed observation; only the complete
+    # zero-consumption hour can contribute to this profile.
+    assert profile[12] == 0.0
 
 
 def test_multiple_managed_energy_sources_are_summed_by_hour():
