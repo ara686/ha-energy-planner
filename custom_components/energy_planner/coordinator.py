@@ -3,14 +3,14 @@ from __future__ import annotations
 import logging
 import math
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfTemperature
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
@@ -104,6 +104,18 @@ _SOLCAST_DAILY_ENTITY_RE = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class _SourceSnapshot:
+    states: dict[str, State]
+
+
+@dataclass(frozen=True)
+class _EntrySnapshot:
+    data: dict[str, Any]
+    options: dict[str, Any]
+    subentries: dict[str, Any]
+
+
 class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
     """Coordinator for Energy Planner."""
 
@@ -188,14 +200,46 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             fallback_history=self.history,
             warnings=source_warnings,
         )
-        result = build_planner_result(
-            self.hass,
-            self.entry,
-            history=planner_history.history,
-            now=now,
-            source_warnings=source_warnings,
-            history_source=planner_history.source,
+        from copy import deepcopy
+        from functools import partial
+
+        snapshot = _SourceSnapshot(
+            states={state.entity_id: state for state in self.hass.states.async_all()}
         )
+        result = await self.hass.async_add_executor_job(
+            partial(
+                build_planner_result,
+                snapshot,
+                _EntrySnapshot(
+                    dict(self.entry.data),
+                    deepcopy(dict(self.entry.options)),
+                    dict(self.entry.subentries),
+                ),
+                history=deepcopy(planner_history.history),
+                now=now,
+                source_warnings=source_warnings,
+                history_source=planner_history.source,
+            )
+        )
+        from homeassistant.helpers import issue_registry as ir
+
+        issue_id = f"joint_plan_{self.entry.entry_id}"
+        joint_warnings = result.debug.get("joint_plan", {}).get("warnings", [])
+        if (
+            self.entry.options.get("joint_planning_mode") == "advisory"
+            and joint_warnings
+        ):
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="joint_plan_incomplete",
+                translation_placeholders={"reason": ", ".join(joint_warnings[:3])},
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
         await self._async_save_history_if_changed()
         if result.warnings:
             _LOGGER.warning(
@@ -283,6 +327,17 @@ def build_planner_result(
         allocations=allocations,
         result=result,
         warnings=warnings,
+    )
+    from .joint_adapter import add_joint_plan
+
+    add_joint_plan(
+        hass,
+        entry,
+        history=history,
+        now=now,
+        planner_input=planner_input,
+        allocations=allocations,
+        result=result,
     )
     result.forecast["history_status"] = history_status
     result.forecast["consumption_history"] = consumption_history

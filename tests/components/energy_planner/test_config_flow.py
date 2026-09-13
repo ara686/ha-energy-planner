@@ -475,7 +475,11 @@ async def test_reconfigure_preserves_submitted_values_after_validation_error(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"][CONF_HOME_ENERGY_ENTITY] == "energy_sensor_required"
-    assert _suggested_values(result["data_schema"]) == user_input
+    assert {
+        k: v
+        for k, v in _suggested_values(result["data_schema"]).items()
+        if not k.startswith("joint_")
+    } == user_input
 
 
 async def test_reconfigure_preserves_history_when_energy_sources_change(
@@ -1623,7 +1627,11 @@ async def test_options_flow_preserves_disabled_choices_after_error(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"]["base"] == CONF_INTERVAL_MINUTES
-    assert _suggested_values(result["data_schema"]) == user_input
+    assert {
+        k: v
+        for k, v in _suggested_values(result["data_schema"]).items()
+        if not k.startswith("joint_")
+    } == user_input
 
 
 async def test_options_flow_schema_accepts_ui_number_values(hass, config_entry):

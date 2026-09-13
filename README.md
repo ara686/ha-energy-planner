@@ -303,3 +303,65 @@ the minimum temperature. Gas does not top up the optional maximum target.
 consumption. Gas is not added to electrical demand or forecast tank temperature;
 the existing controller decides when to heat. With incomplete forecasts the
 recommendation is `null`, not a confirmed gas requirement. No devices are controlled.
+
+## Joint energy plan: shadow comparison
+
+The joint planner reserves the house battery's energy for high-tariff periods
+before allocating energy to hot water and EV charging. It considers **all NT
+windows**, retains the seasonal minimum SoC, and reports an EV shortfall when
+available NT power cannot meet both the house reserve and the departure request.
+It uses the expected consumption profile without the compatibility planner's
+percentage margins; the configured SoC reserve remains in place.
+
+The default `joint_planning_mode: shadow` keeps the existing recommendation
+entities on the compatibility calculation. New diagnostic sensors **Joint target
+SoC** and **Joint forecast grid import**, plus `joint_plan` and `joint_comparison`
+in downloaded diagnostics, expose the candidate plan. Both calculations read one
+snapshot of HA states and history. Diagnostics identify the consumption-policy
+difference; actual operation under another controller is not a replay of either
+candidate. Computation runs in an executor; boundaries trigger a new calculation.
+
+The Options Flow can explicitly select `advisory` to publish joint recommendations
+through the existing entity IDs. This switches battery forecasts and managed-load
+recommendations together. It does not operate devices. `charge_now` refers to the
+current scheduled interval, `charge_to_soc` to its immediate target, and
+`target_soc` to the next NT window's required exit target. The full per-window
+schedule and recommendation validity are in diagnostics. Keep existing device
+protections and manual overrides in the external controller.
+
+Joint-planner options include:
+
+- Separate solar and other EV phase counts (defaults 1 and 3), nominal phase
+  voltage (230 V), and current range (6–16 A). Match these to the external
+  wallbox modes. The planner limits power and merges mixed-source charging into
+  one command per interval; the controller handles switching and anti-cycling.
+- Optional **power entities in W or kW** for shared grid import, battery charge
+  and discharge on the AC side, export, and per-phase load limits. Use the
+  installation's actual limits. An AC input-current setting in A or a BMS DC
+  current limit cannot be entered as a power entity without a correct conversion.
+  The export limit is read, never changed. Battery charging and discharging
+  efficiencies are applied once, at the AC/DC boundary.
+- Water targets of 40 °C minimum by 17:00, 45 °C normal, and 65 °C maximum,
+  using the average of both configured tank sensors. Optional heating cannot
+  increase grid purchases or consume the house reserve. With gas backup selected,
+  gas is recommended only for the remaining comfort deficit. Its quantity is
+  **thermal energy**, not metered gas consumption, and is excluded from the
+  electrical ledger. The temperature forecast assumes recommended actions occur.
+- Optional tank heat loss in kW and daily water draw in thermal kWh. These are
+  estimates; absent values are explicitly marked unverified. The current deficit
+  is carried through the horizon, not copied into every future day. Water policy
+  and EV electrical settings currently apply to all respective configured loads.
+
+Unknown technical limits and missing thermal data are visible in diagnostics.
+Phase loading currently uses an equal-distribution estimate; **the forecast is
+not verification of each phase's physical capacity**. Invalid configured limit
+entities make joint recommendations unavailable in advisory mode. Missing managed
+meter readings are not treated as measured zero consumption; partial gaps are
+filled per hour from available stored observations. These limitations must be
+resolved or covered by the external controller before relying on automatic control.
+
+The Enyaq request-helper correction preserves its entity ID: valid percentages
+produce `max(0, (target - current) * capacity / 100)`, rounded after multiplication;
+invalid percentages make the helper unavailable. Charger efficiency belongs to
+the planner, not to this battery-energy request. See
+[HA template availability](https://www.home-assistant.io/integrations/template/#common-device-configuration-options).

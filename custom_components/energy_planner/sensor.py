@@ -376,6 +376,22 @@ def _managed_allocation_attributes(result: PlannerResult) -> dict[str, Any]:
 
 SENSOR_DESCRIPTIONS: tuple[EnergyPlannerSensorDescription, ...] = (
     EnergyPlannerSensorDescription(
+        key="joint_target_soc",
+        translation_key="joint_target_soc",
+        native_unit_of_measurement=PERCENTAGE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda result: result.plan.get("joint_summary", {}).get("target_soc"),
+    ),
+    EnergyPlannerSensorDescription(
+        key="joint_grid_import",
+        translation_key="joint_grid_import",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda result: result.plan.get("joint_summary", {}).get(
+            "grid_import_kwh"
+        ),
+    ),
+    EnergyPlannerSensorDescription(
         key="state",
         translation_key="state",
         icon="mdi:calculator-variant",

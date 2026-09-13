@@ -60,6 +60,8 @@ async def async_get_config_entry_diagnostics(
         "last_state": getattr(result, "state", None),
         "last_warnings": getattr(result, "warnings", []),
         "last_plan": getattr(result, "plan", {}),
+        "joint_plan": getattr(result, "debug", {}).get("joint_plan"),
+        "joint_comparison": getattr(result, "debug", {}).get("joint_comparison"),
         "history": getattr(result, "forecast", {}).get("history_status", "unknown")
         if result
         else "unknown",

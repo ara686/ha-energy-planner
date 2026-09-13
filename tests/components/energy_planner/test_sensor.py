@@ -395,8 +395,8 @@ async def test_plan_binary_sensors_expose_charge_and_discharge_decisions(
             state="ok",
             updated=dt_util.utcnow(),
             plan={
-                "soc_at_planner_start": 40,
-                "charge_to_soc": 60,
+                "current_soc": 40,
+                "target_soc": 60,
                 "safe_discharge_soc": 30,
             },
         )
@@ -416,8 +416,8 @@ async def test_plan_binary_sensors_expose_charge_and_discharge_decisions(
             state="ok",
             updated=dt_util.utcnow(),
             plan={
-                "soc_at_planner_start": 70,
-                "charge_to_soc": 60,
+                "current_soc": 70,
+                "target_soc": 60,
                 "safe_discharge_soc": 80,
             },
         )
@@ -433,8 +433,8 @@ async def test_plan_binary_sensors_expose_charge_and_discharge_decisions(
             updated=dt_util.utcnow(),
             plan={
                 "grid_charging_enabled": False,
-                "soc_at_planner_start": 40,
-                "charge_to_soc": 60,
+                "current_soc": 40,
+                "target_soc": 60,
                 "safe_discharge_soc": 30,
             },
         )
@@ -448,8 +448,8 @@ async def test_plan_binary_sensors_expose_charge_and_discharge_decisions(
             state="insufficient_data",
             updated=dt_util.utcnow(),
             plan={
-                "soc_at_planner_start": 70,
-                "charge_to_soc": 60,
+                "current_soc": 70,
+                "target_soc": 60,
                 "safe_discharge_soc": 80,
             },
         )
@@ -463,7 +463,7 @@ async def test_plan_binary_sensors_expose_charge_and_discharge_decisions(
         PlannerResult(
             state="ok",
             updated=dt_util.utcnow(),
-            plan={"soc_at_planner_start": 70},
+            plan={"current_soc": 70},
         )
     )
     await hass.async_block_till_done()

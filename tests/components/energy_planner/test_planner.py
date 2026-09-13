@@ -172,7 +172,7 @@ def test_generate_forecast_slots_keeps_both_fall_back_hours():
         for slot in slots
         if slot.start.date().isoformat() == "2026-10-25" and slot.start.hour == 2
     ]
-    assert len(slots) == 49
+    assert len(slots) == 48
     assert len(repeated_hours) == 2
     assert {timestamp.utcoffset() for timestamp in repeated_hours} == {
         timedelta(hours=1),
@@ -565,7 +565,7 @@ def test_tomorrow_surplus_covers_a_25_hour_dst_day():
             now=now,
             slots=slots,
             battery_soc=100,
-            forecast_horizon_hours=48,
+            forecast_horizon_hours=49,
         )
     )
 

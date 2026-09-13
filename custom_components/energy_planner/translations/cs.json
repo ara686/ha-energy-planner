@@ -45,7 +45,9 @@
   "config_subentries": {
     "managed_load": {
       "entry_type": "Řízený odběr",
-      "initiate_flow": {"user": "Přidat řízený odběr"},
+      "initiate_flow": {
+        "user": "Přidat řízený odběr"
+      },
       "step": {
         "user": {
           "title": "Přidat řízený odběr",
@@ -176,7 +178,9 @@
           }
         }
       },
-      "abort": {"reconfigure_successful": "Řízený odběr byl úspěšně aktualizován."},
+      "abort": {
+        "reconfigure_successful": "Řízený odběr byl úspěšně aktualizován."
+      },
       "error": {
         "invalid_numeric_entity": "Vybraná entita musí mít číselný stav.",
         "energy_sensor_required": "Elektroměr musí být kumulativní energetický senzor s podporovanou jednotkou energie.",
@@ -212,8 +216,19 @@
     },
     "ev_workday": {
       "options": {
-        "0": "Pondělí", "1": "Úterý", "2": "Středa", "3": "Čtvrtek",
-        "4": "Pátek", "5": "Sobota", "6": "Neděle"
+        "0": "Pondělí",
+        "1": "Úterý",
+        "2": "Středa",
+        "3": "Čtvrtek",
+        "4": "Pátek",
+        "5": "Sobota",
+        "6": "Neděle"
+      }
+    },
+    "joint_planning_mode": {
+      "options": {
+        "shadow": "Sledovací porovnání",
+        "advisory": "Zveřejnit společná doporučení"
       }
     }
   },
@@ -243,7 +258,25 @@
           "charge_window_start": "Začátek plánovaného nabíjení ze sítě",
           "charge_window_end": "Konec plánovaného nabíjení ze sítě",
           "sun_start_required_minutes": "Minimální délka solárního startu v minutách",
-          "forecast_horizon_hours": "Horizont predikce v hodinách"
+          "forecast_horizon_hours": "Horizont predikce v hodinách",
+          "joint_planning_mode": "Režim společného plánovače",
+          "joint_ev_phases": "Počet fází nabíjení auta",
+          "joint_voltage": "Předpokládané napětí fáze (V)",
+          "joint_minimum_ev_current": "Minimální proud auta na fázi (A)",
+          "joint_discharge_efficiency": "Účinnost vybíjení baterie DC–AC",
+          "joint_water_minimum": "Komfortní minimum vody (°C)",
+          "joint_water_normal": "Běžná cílová teplota vody (°C)",
+          "joint_water_maximum": "Maximální teplota vody při přebytcích (°C)",
+          "joint_water_deadline": "Termín komfortní teploty vody",
+          "joint_grid_import_limit_entity": "Společný limit odběru ze sítě (entita výkonu)",
+          "joint_battery_charge_limit_entity": "Limit nabíjení baterie (entita výkonu na AC straně)",
+          "joint_battery_discharge_limit_entity": "Limit vybíjení baterie (entita výkonu na AC straně)",
+          "joint_export_limit_entity": "Aktuální limit přetoků (entita výkonu)",
+          "joint_phase_limit_entity": "Limit zátěže na fázi (entita výkonu)",
+          "joint_water_loss_kw": "Odhad tepelných ztrát zásobníku (kW)",
+          "joint_water_daily_draw_kwh": "Odhad denního odběru teplé vody (tepelné kWh)",
+          "joint_solar_ev_phases": "Počet fází solárního nabíjení auta",
+          "joint_maximum_ev_current": "Maximální proud auta na fázi (A)"
         },
         "data_description": {
           "grid_charging_enabled": "Jde jen o doporučení planneru. Energy Planner baterii ani měnič neovládá.",
@@ -306,11 +339,21 @@
       "unused_surplus_total_kwh": {
         "name": "Nevyužitý přebytek celkem"
       },
-      "unused_surplus_tomorrow_kwh": {"name": "Nevyužitý přebytek zítra"},
-      "managed_recommended_today_kwh": {"name": "Doporučená řízená energie dnes"},
-      "managed_expected_demand_tomorrow_kwh": {"name": "Očekávaná řízená spotřeba zítra"},
-      "managed_recommended_tomorrow_kwh": {"name": "Doporučená řízená energie zítra"},
-      "unallocated_surplus_tomorrow_kwh": {"name": "Nerozdělený přebytek zítra"},
+      "unused_surplus_tomorrow_kwh": {
+        "name": "Nevyužitý přebytek zítra"
+      },
+      "managed_recommended_today_kwh": {
+        "name": "Doporučená řízená energie dnes"
+      },
+      "managed_expected_demand_tomorrow_kwh": {
+        "name": "Očekávaná řízená spotřeba zítra"
+      },
+      "managed_recommended_tomorrow_kwh": {
+        "name": "Doporučená řízená energie zítra"
+      },
+      "unallocated_surplus_tomorrow_kwh": {
+        "name": "Nerozdělený přebytek zítra"
+      },
       "first_full_time": {
         "name": "První čas plné baterie"
       },
@@ -368,12 +411,27 @@
       "managed_source_history": {
         "name": "Řízená spotřeba {source} historie"
       },
-      "managed_source_suggested_tomorrow": {"name": "Řízená spotřeba {source} doporučení na zítřek"},
-      "managed_source_suggested_today": {"name": "Řízená spotřeba {source} doporučení na dnešek"},
-      "managed_source_charging_mode": {"state": {"wait_for_charging": "Čekání na nabíjení"}, "name": "Řízená spotřeba {source} režim nabíjení"},
-      "managed_source_next_departure": {"name": "Řízená spotřeba {source} příští odjezd"},
-      "managed_source_planned_until_departure": {"name": "Řízená spotřeba {source} plán do odjezdu"},
-      "managed_source_recommended_wallbox_mode": {"name": "Řízená spotřeba {source} doporučený režim wallboxu"},
+      "managed_source_suggested_tomorrow": {
+        "name": "Řízená spotřeba {source} doporučení na zítřek"
+      },
+      "managed_source_suggested_today": {
+        "name": "Řízená spotřeba {source} doporučení na dnešek"
+      },
+      "managed_source_charging_mode": {
+        "state": {
+          "wait_for_charging": "Čekání na nabíjení"
+        },
+        "name": "Řízená spotřeba {source} režim nabíjení"
+      },
+      "managed_source_next_departure": {
+        "name": "Řízená spotřeba {source} příští odjezd"
+      },
+      "managed_source_planned_until_departure": {
+        "name": "Řízená spotřeba {source} plán do odjezdu"
+      },
+      "managed_source_recommended_wallbox_mode": {
+        "name": "Řízená spotřeba {source} doporučený režim wallboxu"
+      },
       "update_interval_minutes": {
         "name": "Interval přepočtu"
       },
@@ -412,6 +470,12 @@
       },
       "forecast_horizon_hours": {
         "name": "Horizont predikce"
+      },
+      "joint_target_soc": {
+        "name": "Společný cílový SoC"
+      },
+      "joint_grid_import": {
+        "name": "Společná předpověď odběru ze sítě"
       }
     }
   },
@@ -423,6 +487,12 @@
     "export_debug": {
       "name": "Export ladění",
       "description": "Exportuje poslední ladicí data plánovače."
+    }
+  },
+  "issues": {
+    "joint_plan_incomplete": {
+      "title": "Společný plán má neověřené vstupy",
+      "description": "Před využitím doporučení zkontrolujte nastavené limity a staženou diagnostiku plánovače. Podrobnosti: {reason}"
     }
   }
 }
