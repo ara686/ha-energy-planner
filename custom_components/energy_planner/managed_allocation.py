@@ -149,6 +149,7 @@ class ManagedLoadAllocation:
             payload["timeline"] = [window.as_dict() for window in self.timeline]
         else:
             payload.update(self.details)
+            payload["timeline"] = [window.as_dict() for window in self.timeline]
         return payload
 
 
@@ -164,6 +165,9 @@ class ManagedDayAllocation:
     recommended_kwh: float | None
     unallocated_surplus_kwh: float | None
     loads: list[ManagedLoadAllocation]
+    generic_energy_by_source_slot: dict[tuple[str, datetime], float] = field(
+        default_factory=dict
+    )
     hot_water_energy_by_slot: dict[datetime, float] = field(default_factory=dict)
     hot_water_scheduled_by_source: dict[str, float] = field(default_factory=dict)
     electric_vehicle_energy_by_slot: dict[datetime, float] = field(default_factory=dict)
@@ -247,6 +251,7 @@ def allocate_managed_day(
         load for load in loads if isinstance(load, ElectricVehicleAllocationInput)
     ]
     generic_loads = [load for load in loads if isinstance(load, GenericAllocationInput)]
+    generic_source_ids = {load.source_id for load in generic_loads}
     _allocate_phase(
         items=[
             _PhaseItem(
@@ -296,6 +301,7 @@ def allocate_managed_day(
                 source_id=load.source_id,
                 priority=load.priority,
                 desired_kwh=load.estimate.expected_demand_kwh,
+                schedule_kind="generic",
             )
             for load in generic_loads
         ],
@@ -338,7 +344,7 @@ def allocate_managed_day(
             result.minimum_required_kwh - result.minimum_allocated_kwh,
             0.0,
         )
-        if result.load_type in {"hot_water", "electric_vehicle"}:
+        if result.load_type in {"generic", "hot_water", "electric_vehicle"}:
             result.timeline = _merge_source_timeline(
                 source_id=result.source_id,
                 schedule_by_source_slot=schedule_by_source_slot,
@@ -381,6 +387,11 @@ def allocate_managed_day(
         recommended_kwh=recommended,
         unallocated_surplus_kwh=unallocated,
         loads=list(results.values()),
+        generic_energy_by_source_slot={
+            (source_id, start): value
+            for (source_id, start), value in schedule_by_source_slot.items()
+            if source_id in generic_source_ids and value > 0
+        },
         hot_water_energy_by_slot={
             start: value for start, value in hot_schedule.items() if value > 0
         },
@@ -408,7 +419,7 @@ class _PhaseItem:
     priority: int
     desired_kwh: float
     maximum_power_kw: float | None = None
-    schedule_kind: Literal["hot_water", "electric_vehicle"] | None = None
+    schedule_kind: Literal["generic", "hot_water", "electric_vehicle"] | None = None
     allocated_kwh: float = 0.0
 
     @property
