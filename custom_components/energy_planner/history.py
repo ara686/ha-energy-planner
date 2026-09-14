@@ -227,14 +227,19 @@ class EnergyHistory:
         home_source_id: str,
         home_changes: dict[str, float],
         managed_changes_by_source: dict[str, dict[str, float]],
+        assume_missing_managed_zero: bool = False,
     ) -> EnergyHistory:
         """Build history from recorder hourly energy change statistics."""
         history = cls()
+        managed_source_ids = set(managed_changes_by_source)
         for key, value in home_changes.items():
             history.add_hourly_sample(
                 datetime.fromisoformat(key),
                 home_kwh=value,
-                observed_source_ids={home_source_id},
+                observed_source_ids={
+                    home_source_id,
+                    *(managed_source_ids if assume_missing_managed_zero else ()),
+                },
             )
         for source_id, changes in managed_changes_by_source.items():
             for key, value in changes.items():
@@ -246,7 +251,7 @@ class EnergyHistory:
                     observed_source_ids={source_id},
                 )
         for bucket in history.buckets.values():
-            bucket.required_sources = {home_source_id, *managed_changes_by_source}
+            bucket.required_sources = {home_source_id, *managed_source_ids}
         history.dirty = False
         return history
 
