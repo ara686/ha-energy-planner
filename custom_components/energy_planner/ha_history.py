@@ -124,6 +124,10 @@ async def async_get_recorder_energy_statistics(
             )
             for entity_id in managed_entity_ids
         },
+        # Long-term statistics omit hourly rows for an unchanged cumulative
+        # sensor. Absence therefore represents zero consumption, not missing
+        # coverage, for every managed source explicitly requested above.
+        assume_missing_managed_zero=True,
     )
     return history if history.buckets else None
 

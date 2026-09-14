@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from custom_components.energy_planner.ha_history import (
     async_get_recorder_energy_history,
@@ -159,3 +161,59 @@ async def test_recorder_statistics_are_preferred_as_hourly_changes(
     bucket = next(iter(history.buckets.values()))
     assert bucket.home_kwh == 1.5
     assert bucket.managed_kwh == 0.5
+
+
+async def test_recorder_statistics_treat_omitted_managed_rows_as_zero(
+    hass,
+    monkeypatch,
+):
+    now = datetime(2026, 7, 3, 12, 0, tzinfo=UTC)
+    first_hour = now - timedelta(hours=2)
+    second_hour = now - timedelta(hours=1)
+
+    def statistics_during_period(*args):
+        return {
+            "sensor.home_energy_total": [
+                {"start": first_hour.timestamp(), "change": 0.8},
+                {"start": second_hour.timestamp(), "change": 0.6},
+            ],
+            # Home Assistant does not emit a row for the unchanged first hour.
+            "sensor.ev_energy_total": [
+                {"start": second_hour.timestamp(), "change": 0.2}
+            ],
+            # A configured but inactive cumulative sensor can have no rows.
+            "sensor.pool_energy_total": [],
+        }
+
+    class RecorderInstance:
+        async def async_add_executor_job(self, target, *args):
+            return target(*args)
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        statistics_during_period,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda _hass: RecorderInstance(),
+    )
+
+    history = await async_get_recorder_energy_statistics(
+        hass,
+        home_entity_id="sensor.home_energy_total",
+        managed_entity_ids=[
+            "sensor.ev_energy_total",
+            "sensor.pool_energy_total",
+        ],
+        now=now,
+        learning_days=3,
+    )
+
+    assert history is not None
+    first_bucket, second_bucket = (
+        history.buckets[key] for key in sorted(history.buckets)
+    )
+    assert first_bucket.base_usable
+    assert first_bucket.base_kwh == 0.8
+    assert second_bucket.base_usable
+    assert second_bucket.base_kwh == pytest.approx(0.4)
