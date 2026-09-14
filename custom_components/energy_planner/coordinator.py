@@ -88,7 +88,6 @@ from .managed_allocation import (
     UnavailableAllocationInput,
     allocate_managed_day,
 )
-from .managed_forecast import build_managed_demand_schedule
 from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
 from .planner import calculate_plan, calculate_soc_forecast, generate_forecast_slots
@@ -314,7 +313,6 @@ def build_planner_result(
     )
     _add_managed_soc_forecast(
         planner_input=planner_input,
-        history=history,
         now=now,
         allocations=allocations,
         result=result,
@@ -1127,44 +1125,24 @@ def _electric_vehicle_allocation_input(
 def _add_managed_soc_forecast(
     *,
     planner_input: PlannerInput,
-    history: EnergyHistory,
     now,
     allocations: list[ManagedDayAllocation],
     result: PlannerResult,
 ) -> None:
-    """Add the planned SoC forecast including expected managed demand."""
+    """Add the planned SoC forecast including allocated managed demand."""
     energy_by_slot: dict[datetime, float] = {}
     scheduled_by_source: dict[str, float] = {}
-    fallback_source_ids: set[str] = set()
     total_expected = 0.0
     tomorrow = now.date() + timedelta(days=1)
     for allocation in allocations:
-        expected_by_source = {
-            load.source_id: load.expected_demand_kwh
-            for load in allocation.loads
-            if load.load_type == "generic"
-        }
-        hourly_profiles = {
-            source_id: history.managed_source_hourly_profile(
-                source_id,
-                now=now,
-                learning_days=DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
-                minimum_coverage_ratio=DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
+        for (
+            source_id,
+            slot_start,
+        ), value in allocation.generic_energy_by_source_slot.items():
+            energy_by_slot[slot_start] = energy_by_slot.get(slot_start, 0.0) + value
+            scheduled_by_source[source_id] = (
+                scheduled_by_source.get(source_id, 0.0) + value
             )
-            for source_id in expected_by_source
-        }
-        generic_schedule = build_managed_demand_schedule(
-            slots=planner_input.slots,
-            target_date=allocation.target_date,
-            reference=now,
-            interval_minutes=planner_input.interval_minutes,
-            expected_by_source=expected_by_source,
-            hourly_profiles=hourly_profiles,
-            normalize_to_available_slots=allocation.target_date == now.date(),
-        )
-        _merge_slot_energy(energy_by_slot, generic_schedule.energy_by_slot)
-        _merge_source_energy(scheduled_by_source, generic_schedule.scheduled_by_source)
-        fallback_source_ids.update(generic_schedule.fallback_source_ids)
         _merge_slot_energy(energy_by_slot, allocation.hot_water_energy_by_slot)
         _merge_source_energy(
             scheduled_by_source, allocation.hot_water_scheduled_by_source
@@ -1178,7 +1156,11 @@ def _add_managed_soc_forecast(
             allocation.electric_vehicle_scheduled_by_source,
         )
         total_expected += (
-            generic_schedule.expected_kwh
+            sum(
+                load.expected_demand_kwh
+                for load in allocation.loads
+                if load.load_type == "generic"
+            )
             + sum(allocation.hot_water_scheduled_by_source.values())
             + sum(allocation.electric_vehicle_scheduled_by_source.values())
         )
@@ -1208,7 +1190,7 @@ def _add_managed_soc_forecast(
             source_id: round(value, 6)
             for source_id, value in sorted(scheduled_by_source.items())
         },
-        "fallback_source_ids": sorted(fallback_source_ids),
+        "fallback_source_ids": [],
         "managed_allocation_by_day": [
             allocation.as_dict() for allocation in allocations
         ],

@@ -117,6 +117,39 @@ def test_allocation_runs_hot_water_minimum_generic_then_hot_water_flexible():
     assert sum(result.hot_water_energy_by_slot.values()) == 5
 
 
+def test_generic_allocation_keeps_exact_solar_slots_and_timeline():
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=60,
+        surplus_complete=True,
+        surplus_slots=[
+            SurplusSlot(start, 1),
+            SurplusSlot(start + timedelta(hours=2), 2),
+        ],
+        loads=[_generic("pool", expected=4)],
+    )
+
+    assert result.generic_energy_by_source_slot == {
+        ("pool", start): 1,
+        ("pool", start + timedelta(hours=2)): 2,
+    }
+    assert result.loads[0].as_dict()["timeline"] == [
+        {
+            "start": "2026-08-19T10:00:00",
+            "end": "2026-08-19T11:00:00",
+            "mode": "solar",
+            "energy_kwh": 1,
+        },
+        {
+            "start": "2026-08-19T12:00:00",
+            "end": "2026-08-19T13:00:00",
+            "mode": "solar",
+            "energy_kwh": 2,
+        },
+    ]
+
+
 def test_hot_water_power_limits_each_slot_across_minimum_and_flexible_phases():
     start = datetime(2026, 8, 19, 10)
     result = allocate_managed_day(

@@ -6,15 +6,10 @@ from dataclasses import replace
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from .const import (
-    DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
-    DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
-)
 from .ev_plan import EVChargingPlanInput
 from .joint_options import normalize_joint_options
 from .joint_plan import JointLimits, JointWater, calculate_joint_plan, instant
 from .managed_allocation import ElectricVehicleAllocationInput, HotWaterAllocationInput
-from .managed_forecast import build_managed_demand_schedule
 from .managed_loads import managed_load_configs
 from .models import PlannerInput, PlannerResult
 from .planner import generate_forecast_slots
@@ -64,27 +59,11 @@ def add_joint_plan(
     data = replace(planner_input, slots=slots)
     generic: dict[datetime, dict[str, float]] = {}
     for allocation in allocations:
-        for load in allocation.loads:
-            if load.load_type != "generic":
-                continue
-            schedule = build_managed_demand_schedule(
-                slots=slots,
-                target_date=allocation.target_date,
-                reference=now,
-                interval_minutes=interval,
-                expected_by_source={load.source_id: load.expected_demand_kwh},
-                hourly_profiles={
-                    load.source_id: history.managed_source_hourly_profile(
-                        load.source_id,
-                        now=now,
-                        learning_days=DEFAULT_MANAGED_HISTORY_LEARNING_DAYS,
-                        minimum_coverage_ratio=DEFAULT_DAILY_HISTORY_MIN_COVERAGE_RATIO,
-                    )
-                },
-                normalize_to_available_slots=allocation.target_date == now.date(),
-            )
-            for timestamp, energy in schedule.energy_by_slot.items():
-                generic.setdefault(timestamp, {})[load.source_id] = energy
+        for (
+            source_id,
+            timestamp,
+        ), energy in allocation.generic_energy_by_source_slot.items():
+            generic.setdefault(timestamp, {})[source_id] = energy
     if not profile:
         warnings.append("unverified_house_consumption_profile")
     vehicles = []
