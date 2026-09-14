@@ -498,7 +498,7 @@ def test_surplus_allocation_uses_daily_history_and_requested_override(hass):
     assert warnings == []
 
 
-def test_build_planner_result_adds_soc_forecast_with_managed_estimates(hass):
+def test_managed_soc_forecast_does_not_schedule_unallocated_generic_demand(hass):
     now = datetime(2026, 7, 21, 12, 0)
     source_id = "sensor.boiler_energy_total"
     history = EnergyHistory()
@@ -548,24 +548,20 @@ def test_build_planner_result_adds_soc_forecast_with_managed_estimates(hass):
     managed_forecast = result.plan["soc_forecast_with_managed"]
     assert len(result.plan["managed_allocation_by_day"]) == 2
     assert result.plan["managed_expected_demand_tomorrow_kwh"] == 3
-    assert result.plan["soc_at_forecast_horizon_with_managed"] == (
-        result.plan["soc_at_forecast_horizon"] - 6
+    assert (
+        result.plan["soc_at_forecast_horizon_with_managed"]
+        == result.plan["soc_at_forecast_horizon"]
     )
     assert managed_forecast["managed_expected_kwh"] == 6
-    assert managed_forecast["managed_scheduled_kwh"] == 6
-    assert managed_forecast["managed_scheduled_by_source"] == {source_id: 6}
+    assert managed_forecast["managed_scheduled_kwh"] == 0
+    assert managed_forecast["managed_scheduled_by_source"] == {}
     assert managed_forecast["fallback_source_ids"] == []
     managed_points = [
         point
         for point in managed_forecast["points"]
         if point.get("managed_consumption_kwh", 0) > 0
     ]
-    assert len(managed_points) == 2
-    assert [point["timestamp"] for point in managed_points] == [
-        "2026-07-21T12:00:00",
-        "2026-07-22T12:00:00",
-    ]
-    assert [point["managed_consumption_kwh"] for point in managed_points] == [3, 3]
+    assert managed_points == []
 
 
 def test_hot_water_allocation_repeats_demand_for_complete_future_days(hass):
@@ -753,7 +749,6 @@ def test_hot_water_soc_forecast_uses_only_allocated_surplus_slots(hass):
 
     _add_managed_soc_forecast(
         planner_input=planner_input,
-        history=history,
         now=now,
         allocations=allocations,
         result=result,
@@ -768,6 +763,69 @@ def test_hot_water_soc_forecast_uses_only_allocated_surplus_slots(hass):
         1,
     ]
     assert result.plan["soc_at_forecast_horizon_with_managed"] == 80
+
+
+def test_generic_soc_forecast_uses_only_allocated_solar_slots(hass):
+    now = datetime(2026, 8, 18, 12)
+    slot_starts = [datetime(2026, 8, 19, 10), datetime(2026, 8, 19, 11)]
+    entry = _generic_entry()
+    hass.states.async_set(
+        "input_number.generic_requested_energy",
+        "2",
+        {"unit_of_measurement": "kWh"},
+    )
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "unused_surplus_by_day": [{"date": "2026-08-19", "complete": True}],
+            "soc_forecast": {
+                "points": [
+                    {"timestamp": start, "unused_surplus_kwh": 1}
+                    for start in slot_starts
+                ]
+            },
+        },
+    )
+    allocations = _add_surplus_allocation(
+        hass,
+        entry,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=[],
+    )
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=100,
+        battery_capacity_kwh=10,
+        battery_min_soc=0,
+        slots=[ForecastSlot(start, 0, 0) for start in slot_starts],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        grid_charging_enabled=False,
+        interval_minutes=60,
+        forecast_horizon_hours=24,
+    )
+
+    _add_managed_soc_forecast(
+        planner_input=planner_input,
+        now=now,
+        allocations=allocations,
+        result=result,
+    )
+
+    forecast = result.plan["soc_forecast_with_managed"]
+    assert forecast["managed_scheduled_kwh"] == 2
+    assert forecast["managed_scheduled_by_source"] == {"sensor.generic_energy_total": 2}
+    assert [point["managed_consumption_kwh"] for point in forecast["points"]] == [
+        1,
+        1,
+    ]
+    tomorrow_load = allocations[1].as_dict()["loads"]["sensor.generic_energy_total"]
+    assert [window["start"] for window in tomorrow_load["timeline"]] == [
+        "2026-08-19T10:00:00"
+    ]
 
 
 def test_ev_allocation_uses_remaining_today_then_carries_across_days(hass):
@@ -1203,7 +1261,6 @@ def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
 
     _add_managed_soc_forecast(
         planner_input=planner_input,
-        history=history,
         now=now,
         allocations=allocations,
         result=result,
