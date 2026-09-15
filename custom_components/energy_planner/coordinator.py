@@ -306,6 +306,7 @@ def build_planner_result(
     allocations = _add_managed_allocations(
         hass,
         entry,
+        planner_input=planner_input,
         history=history,
         now=now,
         result=result,
@@ -681,6 +682,7 @@ def _add_managed_allocations(
     hass: HomeAssistant,
     entry: ConfigEntry,
     *,
+    planner_input: PlannerInput | None = None,
     history: EnergyHistory,
     now,
     result: PlannerResult,
@@ -744,21 +746,49 @@ def _add_managed_allocations(
     points = forecast.get("points", []) if isinstance(forecast, dict) else []
     allocations: list[ManagedDayAllocation] = []
     carried_ev_inputs = electric_vehicle_inputs
+    managed_energy_by_slot: dict[datetime, float] = {}
 
     if today_inputs:
-        today_slots, today_complete = _remaining_today_surplus_slots(
-            points,
-            now=now,
-            interval_minutes=interval_minutes,
-        )
+        if planner_input is None:
+            today_slots, today_complete = _remaining_today_surplus_slots(
+                points,
+                now=now,
+                interval_minutes=interval_minutes,
+            )
+            raw_direct_kwh = sum(slot.available_kwh for slot in today_slots)
+            reserve_limited_kwh = 0.0
+        else:
+            raw_slots, today_complete = _remaining_today_direct_solar_slots(
+                planner_input,
+                now=now,
+                interval_minutes=interval_minutes,
+            )
+            raw_direct_kwh = sum(slot.available_kwh for slot in raw_slots)
+            today_slots, reserve_limited_kwh = _reserve_safe_direct_solar_slots(
+                planner_input=planner_input,
+                result=result,
+                candidate_slots=raw_slots,
+                existing_managed_energy_by_slot=managed_energy_by_slot,
+                maximum_energy_kwh=_maximum_managed_demand_kwh(today_inputs),
+                maximum_power_kw=_maximum_managed_power_kw(today_inputs),
+            )
+        passive_today = result.plan.get("unused_surplus_kwh")
         today_allocation = allocate_managed_day(
             target_date=today,
             interval_minutes=interval_minutes,
             surplus_complete=today_complete,
             surplus_slots=today_slots,
             loads=today_inputs,
+            passive_surplus_kwh=(
+                float(passive_today)
+                if planner_input is not None and isinstance(passive_today, int | float)
+                else None
+            ),
+            direct_solar_kwh=raw_direct_kwh if planner_input is not None else None,
+            reserve_limited_kwh=reserve_limited_kwh,
         )
         allocations.append(today_allocation)
+        _merge_allocation_energy(managed_energy_by_slot, today_allocation)
         carried_ev_inputs = _carry_electric_vehicle_inputs(
             electric_vehicle_inputs,
             today_allocation,
@@ -785,13 +815,26 @@ def _add_managed_allocations(
     for target_date in future_dates:
         summary = daily_summaries.get(target_date.isoformat(), {})
         complete = bool(summary.get("complete"))
-        surplus_slots = _surplus_slots_for_date(
-            points,
-            target_date=target_date,
-            reference=now,
-        )
+        if planner_input is None:
+            surplus_slots = _surplus_slots_for_date(
+                points,
+                target_date=target_date,
+                reference=now,
+            )
+            raw_direct_kwh = sum(slot.available_kwh for slot in surplus_slots)
+            reserve_limited_kwh = 0.0
+        else:
+            raw_slots = _direct_solar_slots_for_date(
+                planner_input,
+                target_date=target_date,
+                reference=now,
+            )
+            raw_direct_kwh = sum(slot.available_kwh for slot in raw_slots)
+            surplus_slots = raw_slots
+            reserve_limited_kwh = 0.0
         if (
-            complete
+            planner_input is None
+            and complete
             and not surplus_slots
             and isinstance(summary.get("unused_surplus_kwh"), int | float)
         ):
@@ -807,14 +850,35 @@ def _add_managed_allocations(
         ]
         if target_date == tomorrow:
             day_inputs.extend(generic_inputs)
+        if planner_input is not None and complete:
+            surplus_slots, reserve_limited_kwh = _reserve_safe_direct_solar_slots(
+                planner_input=planner_input,
+                result=result,
+                candidate_slots=surplus_slots,
+                existing_managed_energy_by_slot=managed_energy_by_slot,
+                maximum_energy_kwh=_maximum_managed_demand_kwh(day_inputs),
+                maximum_power_kw=_maximum_managed_power_kw(day_inputs),
+            )
+        elif planner_input is not None:
+            surplus_slots = []
+        passive_surplus = summary.get("unused_surplus_kwh")
         day_allocation = allocate_managed_day(
             target_date=target_date,
             interval_minutes=interval_minutes,
             surplus_complete=complete,
             surplus_slots=surplus_slots,
             loads=day_inputs,
+            passive_surplus_kwh=(
+                float(passive_surplus)
+                if planner_input is not None
+                and isinstance(passive_surplus, int | float)
+                else None
+            ),
+            direct_solar_kwh=raw_direct_kwh if planner_input is not None else None,
+            reserve_limited_kwh=reserve_limited_kwh,
         )
         allocations.append(day_allocation)
+        _merge_allocation_energy(managed_energy_by_slot, day_allocation)
         carried_ev_inputs = _carry_electric_vehicle_inputs(
             carried_ev_inputs,
             day_allocation,
@@ -948,6 +1012,7 @@ def _managed_allocation_inputs(
                 source_id=load.source_entity_id,
                 priority=load.priority,
                 estimate=estimate,
+                nominal_power_kw=load.nominal_power_kw,
             )
         )
     return load_inputs
@@ -1300,6 +1365,182 @@ def _remaining_today_surplus_slots(
             return [], False
         slots.append(SurplusSlot(slot_start, point[0]))
     return slots, True
+
+
+def _remaining_today_direct_solar_slots(
+    planner_input: PlannerInput,
+    *,
+    now: datetime,
+    interval_minutes: int,
+) -> tuple[list[SurplusSlot], bool]:
+    """Return fully covered direct-solar slots through local midnight."""
+    if interval_minutes <= 0:
+        return [], False
+    start = _ceil_to_interval(now, interval_minutes)
+    end = datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=now.tzinfo)
+    slots_by_start = {_timeline_time(slot.start): slot for slot in planner_input.slots}
+    direct_slots: list[SurplusSlot] = []
+    cursor = start
+    while _timeline_time(cursor) < _timeline_time(end):
+        slot = slots_by_start.get(_timeline_time(cursor))
+        if slot is None or slot.solar_coverage < 0.999:
+            return [], False
+        available = max(slot.solar_kwh - slot.consumption_kwh, 0.0)
+        if available > 0:
+            direct_slots.append(SurplusSlot(cursor, available))
+        cursor = _add_elapsed_time(cursor, timedelta(minutes=interval_minutes))
+    return direct_slots, True
+
+
+def _direct_solar_slots_for_date(
+    planner_input: PlannerInput,
+    *,
+    target_date: date,
+    reference: datetime,
+) -> list[SurplusSlot]:
+    """Return direct solar remaining after base home demand for one local day."""
+    return [
+        SurplusSlot(slot.start, slot.solar_kwh - slot.consumption_kwh)
+        for slot in planner_input.slots
+        if slot.start.date() == target_date
+        and _timeline_time(slot.start) >= _timeline_time(reference)
+        and slot.solar_coverage >= 0.999
+        and slot.solar_kwh > slot.consumption_kwh
+    ]
+
+
+def _maximum_managed_demand_kwh(loads: list[ManagedAllocationInput]) -> float:
+    """Return the most energy all usable managed loads could accept."""
+    total = 0.0
+    for load in loads:
+        if isinstance(load, GenericAllocationInput):
+            total += load.estimate.expected_demand_kwh
+        elif isinstance(load, HotWaterAllocationInput):
+            total += (
+                load.demand.minimum_required_kwh + load.demand.flexible_capacity_kwh
+            )
+        elif isinstance(load, ElectricVehicleAllocationInput):
+            total += load.demand.electrical_remaining_kwh
+    return max(total, 0.0)
+
+
+def _maximum_managed_power_kw(
+    loads: list[ManagedAllocationInput],
+) -> float | None:
+    """Return the verified aggregate input-power cap, when one exists."""
+    total = 0.0
+    for load in loads:
+        if isinstance(load, GenericAllocationInput):
+            if load.nominal_power_kw is None:
+                return None
+            total += load.nominal_power_kw
+        elif isinstance(load, HotWaterAllocationInput):
+            total += load.heater_power_kw
+        elif isinstance(load, ElectricVehicleAllocationInput):
+            total += load.maximum_charging_power_kw
+    return max(total, 0.0)
+
+
+def _reserve_safe_direct_solar_slots(
+    *,
+    planner_input: PlannerInput,
+    result: PlannerResult,
+    candidate_slots: list[SurplusSlot],
+    existing_managed_energy_by_slot: dict[datetime, float],
+    maximum_energy_kwh: float,
+    maximum_power_kw: float | None,
+) -> tuple[list[SurplusSlot], float]:
+    """Keep the earliest direct-solar energy that does not add grid demand."""
+    if maximum_energy_kwh <= 0 or not candidate_slots:
+        return [], 0.0
+    target_soc = result.plan.get("target_soc")
+    lock_soc = result.plan.get("lock_soc")
+    target = float(target_soc) if isinstance(target_soc, int | float) else None
+    lock = (
+        float(lock_soc)
+        if isinstance(lock_soc, int | float)
+        else planner_input.battery_min_soc
+    )
+    baseline = calculate_soc_forecast(
+        planner_input,
+        grid_charge_target_soc=target,
+        nt_lock_soc=lock,
+    )
+    assumed = dict(existing_managed_energy_by_slot)
+    accepted: list[SurplusSlot] = []
+    remaining = maximum_energy_kwh
+    tolerance = 1e-6
+
+    def valid(slot_start: datetime, value: float) -> bool:
+        trial_schedule = dict(assumed)
+        trial_schedule[slot_start] = trial_schedule.get(slot_start, 0.0) + value
+        candidate = calculate_soc_forecast(
+            planner_input,
+            managed_consumption_by_slot=trial_schedule,
+            grid_charge_target_soc=target,
+            nt_lock_soc=lock,
+        )
+        return len(candidate.points) == len(baseline.points) and all(
+            point.grid_import_kwh <= base.grid_import_kwh + tolerance
+            and point.grid_charge_kwh <= base.grid_charge_kwh + tolerance
+            for point, base in zip(candidate.points, baseline.points, strict=True)
+        )
+
+    for slot in sorted(candidate_slots, key=lambda item: _timeline_time(item.start)):
+        if remaining <= tolerance:
+            break
+        upper = min(max(slot.available_kwh, 0.0), remaining)
+        if maximum_power_kw is not None:
+            upper = min(
+                upper,
+                maximum_power_kw * planner_input.interval_minutes / 60,
+            )
+        if upper <= tolerance:
+            continue
+        if valid(slot.start, upper):
+            safe = upper
+        else:
+            low = 0.0
+            high = upper
+            for _ in range(18):
+                middle = (low + high) / 2
+                if valid(slot.start, middle):
+                    low = middle
+                else:
+                    high = middle
+            safe = low
+        if safe <= tolerance:
+            continue
+        accepted.append(SurplusSlot(slot.start, safe))
+        assumed[slot.start] = assumed.get(slot.start, 0.0) + safe
+        remaining -= safe
+
+    per_slot_limit = (
+        maximum_power_kw * planner_input.interval_minutes / 60
+        if maximum_power_kw is not None
+        else None
+    )
+    candidate_energy = min(
+        sum(
+            min(max(slot.available_kwh, 0.0), per_slot_limit)
+            if per_slot_limit is not None
+            else max(slot.available_kwh, 0.0)
+            for slot in candidate_slots
+        ),
+        maximum_energy_kwh,
+    )
+    accepted_energy = sum(slot.available_kwh for slot in accepted)
+    return accepted, max(candidate_energy - accepted_energy, 0.0)
+
+
+def _merge_allocation_energy(
+    target: dict[datetime, float], allocation: ManagedDayAllocation
+) -> None:
+    """Add one managed-day allocation to a cross-day slot schedule."""
+    for (_, slot_start), value in allocation.generic_energy_by_source_slot.items():
+        target[slot_start] = target.get(slot_start, 0.0) + value
+    _merge_slot_energy(target, allocation.hot_water_energy_by_slot)
+    _merge_slot_energy(target, allocation.electric_vehicle_energy_by_slot)
 
 
 def _ceil_to_interval(timestamp: datetime, interval_minutes: int) -> datetime:

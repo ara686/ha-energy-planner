@@ -26,9 +26,10 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
   nabíjet nemá.
 - Ukáže, jestli je podle plánu ještě povolené vybíjení baterie.
 - Odhadne nevyužitý přebytek z FVE pro bojler, bazén, ohřev vody nebo EV.
-- Doporučí rozdělení úplně pokrytého budoucího přebytku mezi typované řízené
-  odběry. Obecné odběry používají historii nebo entitu s požadavkem, zásobník
-  TUV aktuální teploty a fyzikální parametry a elektromobil aktuální požadavek
+- Doporučí rozdělení přímé výroby FVE nad základní spotřebou domu mezi typované
+  řízené odběry ještě před nabitím baterie, aniž zvýší plánovaný odběr ze sítě.
+  Obecné odběry používají historii nebo entitu s požadavkem, zásobník TUV
+  aktuální teploty a fyzikální parametry a elektromobil aktuální požadavek
   energie do baterie a limit nabíjecího příkonu.
 - Volitelně sestaví EV plán podle času odjezdu, dostupnosti auta, přebytku FVE,
   bezpečné energie domácí baterie a slotů GRIDu v nízkém i vysokém tarifu.
@@ -81,8 +82,9 @@ Volitelné:
 - Řízené odběry přidané po společném nastavení jako samostatné položky. Dostupné
   typy jsou `generic`, `hot_water` a `electric_vehicle`; každý stále vyžaduje
   vlastní kumulativní elektroměr, aby šlo jeho spotřebu odečíst z profilu domu.
-- Číselná entita požadované energie pro `generic`, nebo dvě teplotní čidla a
-  parametry zásobníku pro `hot_water`. Typ `electric_vehicle` potřebuje entitu
+- Číselná entita požadované energie a volitelný jmenovitý příkon v `kW` pro
+  `generic`, nebo dvě teplotní čidla a parametry zásobníku pro `hot_water`. Typ
+  `electric_vehicle` potřebuje entitu
   zbývající energie na straně baterie auta a pevný maximální výkon nabíječky v
   `kW`; typickým vstupem požadavku je template senzor
   `sensor.enyaq_charge_kwh`.
@@ -132,7 +134,7 @@ Nejužitečnější entity:
 |--------|--------|
 | `sensor.energy_planner_soc_forecast` | Plánované SoC na konci nastaveného horizontu. Zahrnuje cílové nabití ze sítě a během NT zachovává `lock_soc`, takže body v atributech odpovídají očekávanému řízenému průběhu baterie v grafu. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostická pasivní predikce bez plánovaného nabíjení ze sítě a bez zámku planneru v NT. Ukazuje průběh pouze s nastaveným fyzickým minimem SoC baterie. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Plánované SoC na konci nastaveného horizontu pouze se skutečně přidělenými solárními sloty generických odběrů, TUV a EV. Nepřidělená generická spotřeba se do večerních ani nočních hodin nepromítá. Používá stejné cílové nabití ze sítě a `lock_soc` v NT jako základní predikce. Atributy obsahují kompaktní body pro graf, alokace po dnech a podrobnosti rozložení řízené spotřeby. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Plánované SoC s řízenými odběry spuštěnými hned, jak předpověď FVE pokryje základní spotřebu domu i přidělenou energii. Mohou běžet už během nabíjení baterie, proto může být tato křivka nižší než základní a po pozdějším dobití se mohou znovu spojit. Alokace nezvýší plánovaný odběr ze sítě, neporuší minimum ani rezervu `lock_soc` a nevytváří večerní či noční intervaly bez FVE. |
 | `sensor.energy_planner_soc_forecast_24h` | Plánované SoC přesně za 24 hodin od posledního výpočtu. |
 | `binary_sensor.energy_planner_charge_now` | Zapnuto, když povolené plánování nabíjení ze sítě říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |
@@ -154,6 +156,15 @@ Nejužitečnější entity:
 | `sensor.energy_planner_managed_<source>_tracked_total` | Sledovaný součet Energy Planneru pro jednu řízenou zátěž. |
 
 Kompletní seznam entit je v [přehledu entit](docs/entities.md).
+
+Atributy alokace zachovávají kompatibilní hodnoty pasivního přetoku
+`available_surplus_kwh` a `unallocated_surplus_kwh`. Oddělené hodnoty
+`available_direct_solar_kwh`, `scheduled_managed_kwh`,
+`unallocated_direct_solar_kwh` a `reserve_limited_kwh` ukazují energetický
+prostor FVE nad základní spotřebou domu, skutečně naplánovanou energii, její
+zbytek a energii zadrženou kvůli ochraně pozdějšího plánu baterie a sítě.
+Generický odběr bez `nominal_power_kw` zůstává podporovaný, ale diagnostika
+upozorní, že nelze ověřit jeho výkon v jednotlivých slotech.
 
 ## Dashboardy
 
@@ -181,8 +192,8 @@ automatizace:
 
 - `binary_sensor.energy_planner_charge_now` pro povolení nabíjení ze sítě.
 - `binary_sensor.energy_planner_discharge_allowed` pro povolení vybíjení.
-- `sensor.energy_planner_unused_surplus_today` pro spuštění pružných spotřebičů,
-  když je dost předpokládaného přebytku z FVE.
+- Solární `timeline` každého odběru pro spuštění v době dostupné přímé výroby
+  FVE; `unused_surplus_today` zůstává diagnostikou pasivního přetoku.
 - Hodnotu každého `managed_<source>_suggested_tomorrow` jako vstup vlastní
   automatizace na další den; Energy Planner zařízení stále sám nespíná.
 - Hodnotu každého `managed_<source>_suggested_today` jako solární rozpočet pro

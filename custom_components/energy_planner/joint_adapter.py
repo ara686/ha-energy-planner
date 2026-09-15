@@ -153,6 +153,7 @@ def add_joint_plan(
         minimum_ev_current=options["joint_minimum_ev_current"],
     )
     try:
+        joint_baseline = calculate_joint_plan(data, limits=limits)
         joint = calculate_joint_plan(
             data, limits=limits, generic=generic, vehicles=vehicles, water=tanks
         )
@@ -228,34 +229,31 @@ def add_joint_plan(
     result.plan["free_capacity_kwh"] = (
         result.plan["free_capacity_soc"] * data.battery_capacity_kwh / 100
     )
-    public_points = [
-        {
-            **p,
-            "managed_consumption_kwh": sum(p["managed_by_source"].values()),
-            "grid_charge_kwh": p["grid_charge_ac_kwh"] * data.grid_charge_efficiency,
-            "solar_coverage": 1.0
-            if "incomplete_solar_forecast" not in joint.warnings
-            else 0.0,
-            "is_charge_window": p["is_nt"] and data.grid_charging_enabled,
-        }
-        for p in joint.points
+    baseline_points = _public_joint_points(joint_baseline, data)
+    managed_points = _public_joint_points(joint, data)
+    base_forecast = {
+        "source": "joint_plan",
+        "points": baseline_points,
+        "horizon_hours": data.forecast_horizon_hours,
+    }
+    result.plan["soc_forecast"] = base_forecast
+    result.plan["soc_forecast_planned"] = dict(base_forecast)
+    result.plan["soc_forecast_with_managed"] = {
+        "source": "joint_plan",
+        "points": managed_points,
+        "horizon_hours": data.forecast_horizon_hours,
+    }
+    result.plan["soc_at_forecast_horizon"] = joint_baseline.summary["soc_at_horizon"]
+    result.plan["soc_at_forecast_horizon_planned"] = joint_baseline.summary[
+        "soc_at_horizon"
     ]
-    for key in ("soc_forecast", "soc_forecast_planned", "soc_forecast_with_managed"):
-        result.plan[key] = {
-            "source": "joint_plan",
-            "points": public_points,
-            "horizon_hours": data.forecast_horizon_hours,
-        }
-    for key in (
-        "soc_at_forecast_horizon",
-        "soc_at_forecast_horizon_planned",
-        "soc_at_forecast_horizon_with_managed",
-    ):
-        result.plan[key] = joint.summary["soc_at_horizon"]
+    result.plan["soc_at_forecast_horizon_with_managed"] = joint.summary[
+        "soc_at_horizon"
+    ]
     at_24 = next(
         (
             p
-            for p in public_points
+            for p in baseline_points
             if instant(datetime.fromisoformat(p["timestamp"]))
             >= instant(now) + timedelta(hours=24)
         ),
@@ -263,19 +261,55 @@ def add_joint_plan(
     )
     result.plan["soc_forecast_24h"] = at_24
     result.plan["soc_forecast_planned_24h"] = at_24
-    result.forecast["points"] = public_points
-    _publish_managed_results(result, joint, managed_load_configs(entry), now)
+    result.forecast["points"] = managed_points
+    _publish_managed_results(
+        result,
+        joint,
+        joint_baseline,
+        managed_load_configs(entry),
+        allocations,
+        now,
+    )
 
 
-def _publish_managed_results(result, joint, configured_loads, now):
+def _public_joint_points(joint, data: PlannerInput) -> list[dict[str, Any]]:
+    """Convert joint-ledger points to the public forecast contract."""
+    complete = "incomplete_solar_forecast" not in joint.warnings
+    return [
+        {
+            **point,
+            "managed_consumption_kwh": sum(point["managed_by_source"].values()),
+            "grid_charge_kwh": point["grid_charge_ac_kwh"]
+            * data.grid_charge_efficiency,
+            "solar_coverage": 1.0 if complete else 0.0,
+            "is_charge_window": point["is_nt"] and data.grid_charging_enabled,
+        }
+        for point in joint.points
+    ]
+
+
+def _publish_managed_results(
+    result, joint, joint_baseline, configured_loads, allocations, now
+):
     """Expose only allocations from the final ledger in advisory mode."""
     days = sorted({datetime.fromisoformat(p["start"]).date() for p in joint.points})
+    compatibility_by_day = {
+        allocation.target_date: allocation for allocation in allocations
+    }
     payloads = []
     daily_surplus = []
     for day in days:
         points = [
             p for p in joint.points if datetime.fromisoformat(p["start"]).date() == day
         ]
+        baseline_points = [
+            p
+            for p in joint_baseline.points
+            if datetime.fromisoformat(p["start"]).date() == day
+        ]
+        compatibility = compatibility_by_day.get(day)
+        compatibility_payload = compatibility.as_dict() if compatibility else {}
+        compatibility_loads = compatibility_payload.get("loads", {})
         sources = {}
         for load in configured_loads:
             source = load.source_entity_id
@@ -285,7 +319,10 @@ def _publish_managed_results(result, joint, configured_loads, now):
             info = ev or tank or {}
             timeline = [
                 a
-                for a in info.get("timeline", [])
+                for a in (
+                    info.get("timeline", [])
+                    or compatibility_loads.get(source, {}).get("timeline", [])
+                )
                 if datetime.fromisoformat(a["start"]).date() == day
             ]
             sources[source] = {
@@ -303,6 +340,13 @@ def _publish_managed_results(result, joint, configured_loads, now):
                 "reason": info.get("reason", "joint_plan"),
                 "timeline": timeline,
             }
+            if not load.is_hot_water and not load.is_electric_vehicle:
+                sources[source].update(
+                    {
+                        "nominal_power_kw": load.nominal_power_kw,
+                        "power_verified": load.nominal_power_kw is not None,
+                    }
+                )
             if ev:
                 sources[source].update(
                     {
@@ -341,19 +385,35 @@ def _publish_managed_results(result, joint, configured_loads, now):
                         ],
                     }
                 )
+        available_surplus = sum(p["unused_surplus_kwh"] for p in baseline_points)
         surplus = sum(p["unused_surplus_kwh"] for p in points)
+        available_direct_solar = sum(
+            max(p["solar_kwh"] - p["home_kwh"], 0.0) for p in baseline_points
+        )
         total = sum(p["consumption_kwh"] - p["home_kwh"] for p in points)
+        allocation_warnings = [
+            *joint.warnings,
+            *(compatibility.warnings if compatibility else []),
+        ]
         payloads.append(
             {
                 "state": "ok",
                 "forecast_complete": "incomplete_solar_forecast" not in joint.warnings,
                 "target_date": day.isoformat(),
-                "available_surplus_kwh": surplus,
+                "available_surplus_kwh": available_surplus,
+                "available_direct_solar_kwh": available_direct_solar,
                 "expected_demand_kwh": total,
                 "recommended_kwh": total,
+                "scheduled_managed_kwh": total,
                 "unallocated_surplus_kwh": surplus,
+                "unallocated_direct_solar_kwh": max(
+                    available_direct_solar - total, 0.0
+                ),
+                "reserve_limited_kwh": (
+                    compatibility.reserve_limited_kwh if compatibility else 0.0
+                ),
                 "loads": sources,
-                "warnings": joint.warnings,
+                "warnings": allocation_warnings,
             }
         )
         daily_surplus.append({"date": day.isoformat(), "unused_surplus_kwh": surplus})

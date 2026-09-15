@@ -363,6 +363,7 @@ def calculate_joint_plan(
                 break
             s = slots[i]
             existing = loads[i].get(source, 0.0)
+            direct_solar = max(0.0, s.solar - points[i]["consumption_kwh"])
             cap = min(power * s.hours - existing, remaining)
             if limits.phase_limit_kw is not None:
                 # Phase distribution is an estimate, not a verified circuit model.
@@ -375,7 +376,7 @@ def calculate_joint_plan(
                     ),
                 )
             if solar_only:
-                cap = min(cap, points[i]["unused_surplus_kwh"])
+                cap = min(cap, direct_solar)
             elif not allow_grid:
                 slack = max(
                     0.0,
@@ -460,10 +461,7 @@ def calculate_joint_plan(
                 minimum_energy = minimum_power * s.hours
                 supports_minimum = (
                     minimum_power <= power
-                    and (
-                        not solar_only
-                        or points[i]["unused_surplus_kwh"] + EPS >= minimum_energy
-                    )
+                    and (not solar_only or direct_solar + EPS >= minimum_energy)
                     and trial(minimum_energy)[0]
                 )
                 valid, candidate = trial(cap)
@@ -484,6 +482,7 @@ def calculate_joint_plan(
             )
             actual_power = max(minimum_power, min(power, cap / s.hours))
             stop = elapsed(s.start, timedelta(hours=cap / actual_power))
+            solar_energy = cap if solar_only else min(cap, direct_solar)
             mode = (
                 "grid_low_tariff"
                 if grid_added > EPS and in_nt(s.start, data)
@@ -500,10 +499,10 @@ def calculate_joint_plan(
                     "mode": mode,
                     "energy_kwh": cap,
                     "grid_kwh": grid_added,
-                    "solar_kwh": min(cap, points[i]["unused_surplus_kwh"]),
+                    "solar_kwh": solar_energy,
                     "home_battery_kwh": max(
                         0.0,
-                        cap - grid_added - min(cap, points[i]["unused_surplus_kwh"]),
+                        cap - grid_added - solar_energy,
                     ),
                     "power_kw": actual_power,
                 }
@@ -566,7 +565,13 @@ def calculate_joint_plan(
                 for i, slot in enumerate(slots)
                 if instant(slot.end) <= instant(deadline)
             ]
-            missing = allocate(tank.source_id, indices, deficit, tank.heater_kw)
+            missing = allocate(
+                tank.source_id,
+                indices,
+                deficit,
+                tank.heater_kw,
+                solar_only=True,
+            )
             gas = missing * tank.efficiency if tank.gas_backup else 0.0
             gas_so_far += gas
             deadlines.append(
@@ -721,7 +726,7 @@ def calculate_joint_plan(
                 list(range(len(slots))),
                 desired,
                 tank.heater_kw,
-                solar_only=target == tank.maximum,
+                solar_only=True,
             )
             assigned += desired - missing
         water_results[tank.source_id]["planned_electrical_kwh"] = assigned

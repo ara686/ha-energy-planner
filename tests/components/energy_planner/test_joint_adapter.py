@@ -1,12 +1,29 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.energy_planner.const import (
+    CONF_BATTERY_CAPACITY_ENTITY,
+    CONF_BATTERY_MIN_SOC_ENTITY,
+    CONF_BATTERY_SOC_ENTITY,
+    CONF_FORECAST_HORIZON_HOURS,
+    CONF_HOME_ENERGY_ENTITY,
+    CONF_MANAGED_ENERGY_ENTITY,
+    CONF_MANAGED_LOAD_TYPE,
+    CONF_NOMINAL_POWER_KW,
+    CONF_PRIORITY,
+    CONF_REQUESTED_ENERGY_ENTITY,
+    CONF_SOLCAST_TODAY_ENTITY,
+    DOMAIN,
+    MANAGED_LOAD_SUBENTRY,
+    MANAGED_LOAD_TYPE_GENERIC,
+)
 from custom_components.energy_planner.coordinator import build_planner_result
 from custom_components.energy_planner.joint_options import normalize_joint_options
 
-from .conftest import options_flow_input, set_source_states
+from .conftest import options_data, options_flow_input, set_source_states
 
 
 def test_joint_shadow_uses_snapshot_without_replacing_public_targets(
@@ -41,7 +58,87 @@ def test_joint_advisory_switches_forecasts_together(hass, config_entry):
         assert result.plan[name]["source"] == "joint_plan"
     assert (
         result.plan["soc_forecast"]["points"][-1]["soc_percent"]
-        == result.plan["soc_at_forecast_horizon_with_managed"]
+        == result.plan["soc_at_forecast_horizon"]
+    )
+
+
+def test_joint_advisory_keeps_base_and_managed_soc_curves_distinct(hass):
+    now = datetime(2026, 9, 14, tzinfo=UTC)
+    set_source_states(hass)
+    hass.states.async_set(
+        "input_number.pool_requested_energy",
+        "2",
+        {"unit_of_measurement": "kWh"},
+    )
+    hass.states.async_set(
+        "sensor.solcast_today",
+        "0",
+        {
+            "detailedForecast": [
+                {
+                    "period_start": (
+                        now.replace(hour=0) + timedelta(hours=index)
+                    ).isoformat(),
+                    "pv_estimate": 3 if 32 <= index < 40 else 0,
+                    "period_minutes": 60,
+                }
+                for index in range(48)
+            ],
+            "generated_at_monotonic": hass.loop.time(),
+        },
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Energy Planner",
+        data={
+            CONF_BATTERY_SOC_ENTITY: "sensor.battery_soc",
+            CONF_BATTERY_CAPACITY_ENTITY: "sensor.battery_capacity",
+            CONF_BATTERY_MIN_SOC_ENTITY: "sensor.battery_min_soc",
+            CONF_HOME_ENERGY_ENTITY: "sensor.home_energy_total",
+            CONF_SOLCAST_TODAY_ENTITY: "sensor.solcast_today",
+        },
+        options={
+            **options_data(**{CONF_FORECAST_HORIZON_HOURS: 48}),
+            "joint_planning_mode": "advisory",
+        },
+        unique_id=DOMAIN,
+        version=5,
+        subentries_data=(
+            {
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+                    CONF_PRIORITY: 100,
+                    CONF_REQUESTED_ENERGY_ENTITY: "input_number.pool_requested_energy",
+                    CONF_NOMINAL_POWER_KW: 1,
+                },
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Pool",
+                "unique_id": "sensor.ev_energy_total",
+            },
+        ),
+    )
+
+    result = build_planner_result(hass, entry, now=now)
+
+    base = result.plan["soc_forecast_planned"]["points"]
+    managed = result.plan["soc_forecast_with_managed"]["points"]
+    active = [
+        (plain, controlled)
+        for plain, controlled in zip(base, managed, strict=True)
+        if controlled["managed_consumption_kwh"] > 0
+    ]
+    assert active
+    assert all(
+        controlled["soc_percent"] < plain["soc_percent"] for plain, controlled in active
+    )
+    assert all(
+        controlled["solar_kwh"] >= controlled["consumption_kwh"]
+        for _plain, controlled in active
+    )
+    assert all(
+        controlled["grid_import_kwh"] <= plain["grid_import_kwh"] + 1e-6
+        for plain, controlled in zip(base, managed, strict=True)
     )
 
 

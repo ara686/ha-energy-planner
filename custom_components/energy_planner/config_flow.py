@@ -66,6 +66,7 @@ from .const import (
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
+    CONF_NOMINAL_POWER_KW,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
@@ -950,6 +951,11 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
         fields[vol.Optional(CONF_REQUESTED_ENERGY_ENTITY)] = _entity_selector(
             REQUESTED_ENERGY_ENTITY_FILTERS
         )
+        fields[vol.Optional(CONF_NOMINAL_POWER_KW)] = _number_selector(
+            minimum=0.001,
+            step=0.1,
+            unit_of_measurement="kW",
+        )
     return vol.Schema(fields)
 
 
@@ -1047,8 +1053,11 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
                 data.update(
                     {key: str(user_input[key]) for key in EV_WALLBOX_OPTION_KEYS}
                 )
-    elif requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
-        data[CONF_REQUESTED_ENERGY_ENTITY] = str(requested_entity_id)
+    else:
+        if requested_entity_id := user_input.get(CONF_REQUESTED_ENERGY_ENTITY):
+            data[CONF_REQUESTED_ENERGY_ENTITY] = str(requested_entity_id)
+        if nominal_power_kw := user_input.get(CONF_NOMINAL_POWER_KW):
+            data[CONF_NOMINAL_POWER_KW] = float(nominal_power_kw)
     return data
 
 
@@ -1102,6 +1111,10 @@ def _validate_managed_load_input(
             value < 0 or not _is_kwh_entity(hass, str(requested_entity_id))
         ):
             errors[CONF_REQUESTED_ENERGY_ENTITY] = ERR_ENERGY_AMOUNT_REQUIRED
+    if load_type == MANAGED_LOAD_TYPE_GENERIC:
+        nominal_power = _finite_float(user_input.get(CONF_NOMINAL_POWER_KW))
+        if nominal_power is not None and nominal_power <= 0:
+            errors[CONF_NOMINAL_POWER_KW] = ERR_VALUE_POSITIVE
     return errors
 
 

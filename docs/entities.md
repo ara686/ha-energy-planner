@@ -58,13 +58,13 @@ forecast. `vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target`
 summarize the plan-specific simulation.
 
 `soc_forecast_with_managed` starts from the same planned simulation as
-`soc_forecast`, including grid charging and the low-tariff lock. For
-`generic` loads, it adds tomorrow's full historical or requested demand using
-the historical hourly shape; a load without a usable shape is spread evenly.
-For `hot_water`, it adds only energy actually allocated to surplus slots for
-each complete future day. For `electric_vehicle`, it adds only actual allocated
-solar slots today and on subsequent complete days while carrying the unmet
-remainder. Its compact `points` include
+`soc_forecast`, including grid charging and the low-tariff lock. Managed loads
+are placed into the earliest slots where forecast PV covers base house demand
+and the allocated managed energy, even while the battery is still charging.
+Each allocation is reduced if replay would increase grid import or violate the
+battery reserve. Unmet energy is not moved to a non-solar evening or night slot.
+The managed curve can therefore run below the base curve and later converge if
+subsequent PV fills the battery. Its compact `points` include
 `managed_consumption_kwh` where managed demand is scheduled.
 
 ## Managed Source Entities
@@ -124,7 +124,9 @@ EV inputs make only that EV recommendation unavailable and never trigger a
 history fallback.
 
 The suggested-today and suggested-tomorrow attributes for typed loads include
-`target_date`, `forecast_complete`, `available_surplus_kwh` and `timeline`.
+`target_date`, `forecast_complete`, `available_surplus_kwh`,
+`available_direct_solar_kwh`, `scheduled_managed_kwh`,
+`unallocated_direct_solar_kwh`, `reserve_limited_kwh` and `timeline`.
 Each solar timeline window contains ISO `start` and `end` timestamps, the stable
 mode `solar` and `energy_kwh`. Adjacent slots are merged only when they are
 contiguous; gaps remain separate. The timeline belongs to that one configured
