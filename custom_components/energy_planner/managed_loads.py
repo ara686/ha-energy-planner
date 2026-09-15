@@ -35,6 +35,7 @@ from .const import (
     CONF_MAXIMUM_CHARGING_POWER_KW,
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MINIMUM_TEMPERATURE_C,
+    CONF_NOMINAL_POWER_KW,
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_REQUIRED_ENERGY_ENTITY,
@@ -64,6 +65,7 @@ class ManagedLoadConfig:
     load_type: str = DEFAULT_MANAGED_LOAD_TYPE
     priority: int = DEFAULT_MANAGED_LOAD_PRIORITY
     requested_energy_entity_id: str | None = None
+    nominal_power_kw: float | None = None
     required_energy_entity_id: str | None = None
     maximum_charging_power_kw: float | None = None
     charging_efficiency: float = DEFAULT_EV_CHARGING_EFFICIENCY
@@ -137,6 +139,7 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             requested_energy_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_REQUESTED_ENERGY_ENTITY)
             ),
+            nominal_power_kw=_optional_float(subentry.data.get(CONF_NOMINAL_POWER_KW)),
             required_energy_entity_id=_optional_entity_id(
                 subentry.data.get(CONF_REQUIRED_ENERGY_ENTITY)
             ),

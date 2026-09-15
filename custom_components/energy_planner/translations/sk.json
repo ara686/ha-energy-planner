@@ -65,25 +65,27 @@
         },
         "generic": {
           "title": "Nastaviť všeobecný riadený odber",
-          "description": "Spotreba sa odhaduje z histórie, pokiaľ entita požadovanej energie neposkytne platnú hodnotu.",
+          "description": "Spotreba sa odhaduje z histórie, pokiaľ entita požadovanej energie neposkytne platnú hodnotu. Voliteľný menovitý príkon overí čas prevádzky v jednotlivých slotoch.",
           "data": {
             "managed_energy_entity": "Kumulatívny elektromer",
             "priority": "Priorita",
-            "requested_energy_entity": "Požadovaná energia na zajtra"
+            "requested_energy_entity": "Požadovaná energia na zajtra",
+            "nominal_power_kw": "Menovitý príkon (voliteľné)"
           }
         },
         "reconfigure_generic": {
           "title": "Upraviť všeobecný riadený odber",
-          "description": "Upravte elektromer alebo voliteľnú požadovanú energiu.",
+          "description": "Upravte elektromer, voliteľnú požadovanú energiu alebo menovitý príkon.",
           "data": {
             "managed_energy_entity": "Kumulatívny elektromer",
             "priority": "Priorita",
-            "requested_energy_entity": "Požadovaná energia na zajtra"
+            "requested_energy_entity": "Požadovaná energia na zajtra",
+            "nominal_power_kw": "Menovitý príkon (voliteľné)"
           }
         },
         "hot_water": {
           "title": "Nastaviť zásobník TÚV",
-          "description": "Minimum a maximum sú cieľové priemerné teploty nádrže. Plánovač iba odporúča využitie predpovedaného solárneho prebytku.",
+          "description": "Minimum a maximum sú cieľové priemerné teploty nádrže. Plánovač odporúča iba priamu predpovedanú výrobu FVE zostávajúcu po základnej spotrebe domu.",
           "data": {
             "managed_energy_entity": "Kumulatívny elektromer",
             "priority": "Priorita",
@@ -192,7 +194,7 @@
         "temperature_sensor_required": "Vyberte číselný teplotný senzor s podporovanou jednotkou teploty.",
         "temperature_range": "Minimálna teplota musí byť nižšia ako maximálna teplota.",
         "priority_invalid": "Priorita musí byť celé číslo aspoň 1.",
-        "value_positive": "Objem nádrže, príkon ohrevu a faktor premeny musia byť väčšie než nula.",
+        "value_positive": "Menovitý príkon, objem nádrže, príkon ohrevu a faktor premeny musia byť väčšie než nula.",
         "entity_required": "Vyberte dostupnú entitu požadovaného typu.",
         "workdays_required": "Vyberte aspoň jeden platný pracovný deň.",
         "times_distinct": "Čas odchodu a návratu musia byť rozdielne.",

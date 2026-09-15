@@ -212,9 +212,13 @@ def _compact_daily_allocations(values: list[Any]) -> list[dict[str, Any]]:
                     "state",
                     "target_date",
                     "available_surplus_kwh",
+                    "available_direct_solar_kwh",
                     "expected_demand_kwh",
                     "recommended_kwh",
+                    "scheduled_managed_kwh",
                     "unallocated_surplus_kwh",
+                    "unallocated_direct_solar_kwh",
+                    "reserve_limited_kwh",
                 )
             }
             | {"loads": compact_loads}
@@ -350,7 +354,16 @@ def _managed_source_allocation(
     if not isinstance(payload, dict):
         return {}
     attributes = dict(payload)
-    for key in ("target_date", "forecast_complete", "available_surplus_kwh"):
+    for key in (
+        "target_date",
+        "forecast_complete",
+        "available_surplus_kwh",
+        "unallocated_surplus_kwh",
+        "available_direct_solar_kwh",
+        "scheduled_managed_kwh",
+        "unallocated_direct_solar_kwh",
+        "reserve_limited_kwh",
+    ):
         if key in allocation:
             attributes[key] = allocation[key]
     return attributes

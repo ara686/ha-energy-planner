@@ -101,6 +101,41 @@ def test_optional_water_never_increases_grid_purchase():
     assert_balance(result)
 
 
+def test_solar_only_water_starts_from_direct_headroom_before_battery_is_full():
+    d = replace(
+        data(soc=20),
+        grid_charging_enabled=False,
+        nt_windows=[],
+        slots=[
+            ForecastSlot(
+                data().now + timedelta(hours=index),
+                3 if 8 <= index < 16 else 0,
+                1 if 8 <= index < 16 else 0,
+            )
+            for index in range(24)
+        ],
+    )
+    baseline = calculate_joint_plan(d)
+    result = calculate_joint_plan(d, water=[JointWater("water", 40, 200, 2.3)])
+
+    timeline = result.water["water"]["timeline"]
+    assert timeline
+    assert timeline[0]["start"] == (d.now + timedelta(hours=8)).isoformat()
+    assert all(action["mode"] == "solar" for action in timeline)
+    assert all(action["grid_kwh"] == 0 for action in timeline)
+    first_managed = next(
+        index
+        for index, point in enumerate(result.points)
+        if point["managed_by_source"].get("water", 0) > 0
+    )
+    assert baseline.points[first_managed]["soc_percent"] < 100
+    assert (
+        result.points[first_managed]["soc_percent"]
+        < baseline.points[first_managed]["soc_percent"]
+    )
+    assert result.summary["grid_import_kwh"] <= baseline.summary["grid_import_kwh"]
+
+
 def test_gas_fills_only_comfort_minimum_and_is_not_electricity():
     result = calculate_joint_plan(
         data(), water=[JointWater("water", 30, 200, 2.3, gas_backup=True)]

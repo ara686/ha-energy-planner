@@ -674,9 +674,13 @@ def test_managed_soc_forecast_attributes_include_compact_managed_energy():
                         "state": "ok",
                         "target_date": "2026-07-06",
                         "available_surplus_kwh": 4,
+                        "available_direct_solar_kwh": 6,
                         "expected_demand_kwh": 2,
                         "recommended_kwh": 2,
+                        "scheduled_managed_kwh": 2,
                         "unallocated_surplus_kwh": 2,
+                        "unallocated_direct_solar_kwh": 4,
+                        "reserve_limited_kwh": 1,
                         "warnings": ["omitted from compact attributes"],
                         "loads": {
                             "sensor.boiler": {
@@ -731,9 +735,13 @@ def test_managed_soc_forecast_attributes_include_compact_managed_energy():
             "state": "ok",
             "target_date": "2026-07-06",
             "available_surplus_kwh": 4,
+            "available_direct_solar_kwh": 6,
             "expected_demand_kwh": 2,
             "recommended_kwh": 2,
+            "scheduled_managed_kwh": 2,
             "unallocated_surplus_kwh": 2,
+            "unallocated_direct_solar_kwh": 4,
+            "reserve_limited_kwh": 1,
             "loads": {
                 "sensor.boiler": {
                     "load_type": "hot_water",
@@ -890,6 +898,9 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
                     "target_date": "2026-08-20",
                     "forecast_complete": True,
                     "available_surplus_kwh": 8.5,
+                    "available_direct_solar_kwh": 12,
+                    "unallocated_direct_solar_kwh": 8,
+                    "reserve_limited_kwh": 1.5,
                     "loads": {
                         "sensor.ev_energy_total": {
                             "state": "ok",
@@ -922,6 +933,9 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
                     "target_date": "2026-08-20",
                     "forecast_complete": True,
                     "available_surplus_kwh": 8.5,
+                    "available_direct_solar_kwh": 12,
+                    "unallocated_direct_solar_kwh": 8,
+                    "reserve_limited_kwh": 1.5,
                     "loads": {
                         "sensor.ev_energy_total": {
                             "state": "ok",
@@ -961,6 +975,9 @@ async def test_managed_source_sensors_expose_per_source_values(hass, config_entr
     assert ev_suggested.attributes["target_date"] == "2026-08-20"
     assert ev_suggested.attributes["forecast_complete"] is True
     assert ev_suggested.attributes["available_surplus_kwh"] == 8.5
+    assert ev_suggested.attributes["available_direct_solar_kwh"] == 12
+    assert ev_suggested.attributes["unallocated_direct_solar_kwh"] == 8
+    assert ev_suggested.attributes["reserve_limited_kwh"] == 1.5
     assert ev_suggested.attributes["planned_target_temperature"] == 44.3
     assert ev_suggested.attributes["timeline"] == [
         {

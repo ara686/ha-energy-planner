@@ -150,6 +150,57 @@ def test_generic_allocation_keeps_exact_solar_slots_and_timeline():
     ]
 
 
+def test_generic_nominal_power_limits_slots_and_shortens_final_interval():
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=30,
+        surplus_complete=True,
+        surplus_slots=[
+            SurplusSlot(start, 2),
+            SurplusSlot(start + timedelta(minutes=30), 2),
+        ],
+        loads=[_generic("pool", expected=1.5, power=2)],
+        passive_surplus_kwh=0,
+        direct_solar_kwh=4,
+        reserve_limited_kwh=0.5,
+    )
+
+    assert result.generic_energy_by_source_slot == {
+        ("pool", start): 1,
+        ("pool", start + timedelta(minutes=30)): 0.5,
+    }
+    assert result.available_surplus_kwh == 0
+    assert result.available_direct_solar_kwh == 4
+    assert result.unallocated_direct_solar_kwh == 2.5
+    assert result.reserve_limited_kwh == 0.5
+    assert result.as_dict()["scheduled_managed_kwh"] == 1.5
+    assert result.loads[0].as_dict()["timeline"] == [
+        {
+            "start": "2026-08-19T10:00:00",
+            "end": "2026-08-19T10:45:00",
+            "mode": "solar",
+            "energy_kwh": 1.5,
+        }
+    ]
+    assert result.loads[0].details["power_verified"] is True
+
+
+def test_generic_without_nominal_power_keeps_energy_only_compatibility():
+    start = datetime(2026, 8, 19, 10)
+    result = allocate_managed_day(
+        target_date=start.date(),
+        interval_minutes=60,
+        surplus_complete=True,
+        surplus_slots=[SurplusSlot(start, 2)],
+        loads=[_generic("pool", expected=2)],
+    )
+
+    assert result.loads[0].details["nominal_power_kw"] is None
+    assert result.loads[0].details["power_verified"] is False
+    assert any("pool" in warning for warning in result.warnings)
+
+
 def test_hot_water_power_limits_each_slot_across_minimum_and_flexible_phases():
     start = datetime(2026, 8, 19, 10)
     result = allocate_managed_day(
@@ -409,6 +460,7 @@ def _generic(
     *,
     expected: float,
     priority: int = 100,
+    power: float | None = None,
 ) -> GenericAllocationInput:
     return GenericAllocationInput(
         source_id=source_id,
@@ -425,6 +477,7 @@ def _generic(
             confidence="high",
             reason="historical_daily_usage",
         ),
+        nominal_power_kw=power,
     )
 
 

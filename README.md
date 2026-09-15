@@ -28,8 +28,9 @@ and binary sensors that you can use in dashboards or in your own automations.
 - Decide whether battery discharge is currently still safe for the plan.
 - Estimate unused PV surplus that can be used for flexible loads such as hot
   water, pool technology or EV charging.
-- Recommend how fully covered future surplus can be divided among typed managed
-  loads. Generic loads use recent usage or a requested-energy entity; hot-water
+- Recommend how direct PV above base house demand can be divided among typed
+  managed loads before the battery is full, without increasing the planned grid
+  draw. Generic loads use recent usage or a requested-energy entity; hot-water
   tanks use their current temperatures and physical parameters; electric
   vehicles use a current battery-energy request and charging-power limit.
 - Build an optional deadline-aware EV plan from vehicle availability, departure
@@ -84,8 +85,9 @@ Optional:
   types are `generic`, `hot_water` and `electric_vehicle`; each still requires
   its own cumulative energy meter so its consumption can be removed from the
   house profile.
-- A numeric requested-energy entity for a `generic` load, or two temperature
-  sensors and the tank parameters for a `hot_water` load. An
+- A numeric requested-energy entity and optional nominal input power in `kW`
+  for a `generic` load, or two temperature sensors and the tank parameters for
+  a `hot_water` load. An
   `electric_vehicle` load needs the remaining battery-side energy and a fixed
   maximum charger power in `kW`; `sensor.enyaq_charge_kwh` is a typical
   template-sensor input for the energy request.
@@ -135,7 +137,7 @@ Most useful entities:
 |--------|---------------|
 | `sensor.energy_planner_soc_forecast` | Planned SoC at the configured forecast horizon. It includes the planner's grid-charge target and preserves `lock_soc` during low tariff, so its attributes represent the expected controlled battery path in graphs. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostic passive SoC forecast without planned grid charging or the planner's low-tariff lock. It shows what the battery would do with only its configured physical minimum SoC. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Planned SoC at the configured horizon with only the actually allocated solar slots for generic, hot-water and EV loads included. Unallocated generic demand is not projected into evening or night hours. It uses the same grid-charge target and low-tariff `lock_soc` as the base forecast. Attributes contain compact graph points, per-day allocations and managed-demand scheduling details. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Planned SoC with managed loads started as soon as forecast PV covers both base house demand and their allocated energy. They may run while the battery is still charging, so this curve can be lower than the base curve and can converge again after later charging. Allocation never adds planned grid import, violates the minimum/`lock_soc` reserve, or creates evening/night windows without PV. |
 | `sensor.energy_planner_soc_forecast_24h` | Planned SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |
@@ -157,6 +159,15 @@ Most useful entities:
 | `sensor.energy_planner_managed_<source>_tracked_total` | Energy Planner's tracked total for one managed load. |
 
 See [all created entities](docs/entities.md) for the complete list.
+
+Managed allocation attributes keep the legacy passive-curtailment values
+`available_surplus_kwh` and `unallocated_surplus_kwh`. The separate
+`available_direct_solar_kwh`, `scheduled_managed_kwh`,
+`unallocated_direct_solar_kwh` and `reserve_limited_kwh` values show the PV
+headroom above base house demand, energy actually scheduled, headroom left, and
+energy withheld to protect the later battery/grid plan. A generic load without
+`nominal_power_kw` remains supported, but diagnostics warn that its per-slot
+power cannot be verified.
 
 ## Dashboards
 
@@ -185,8 +196,8 @@ for automations:
 - Use `binary_sensor.energy_planner_charge_now` to allow grid charging.
 - Use `binary_sensor.energy_planner_discharge_allowed` to allow battery
   discharge.
-- Use `sensor.energy_planner_unused_surplus_today` to start flexible loads when
-  there is enough predicted PV surplus.
+- Use each load's solar `timeline` to start it when direct PV is available;
+  `unused_surplus_today` remains a passive curtailment diagnostic.
 - Use each `managed_<source>_suggested_tomorrow` value as an input to your own
   next-day automation; Energy Planner still does not switch the device itself.
 - Use each load's `managed_<source>_suggested_today` as its solar-only budget
