@@ -97,6 +97,7 @@ async def test_diagnostics_include_hot_water_model_configuration(hass):
             "ev_home_battery_power_entity_id": None,
             "ev_grid_power_entity_id": None,
             "maximum_charging_power_kw": None,
+            "nominal_power_kw": None,
             "charging_efficiency": 0.9,
             "ev_allow_home_battery": True,
             "hot_water_alternative_source": "none",

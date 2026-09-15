@@ -58,6 +58,7 @@ from custom_components.energy_planner.const import (
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
+    CONF_NOMINAL_POWER_KW,
     CONF_NT_WINDOW_1_END,
     CONF_NT_WINDOW_1_START,
     CONF_NT_WINDOW_2_END,
@@ -560,6 +561,7 @@ async def test_managed_load_subentry_flow_accepts_requested_energy(hass):
             CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
             CONF_PRIORITY: 100,
             CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+            CONF_NOMINAL_POWER_KW: 3.6,
         },
     )
 
@@ -570,7 +572,24 @@ async def test_managed_load_subentry_flow_accepts_requested_energy(hass):
         CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
         CONF_PRIORITY: 100,
         CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        CONF_NOMINAL_POWER_KW: 3.6,
     }
+
+
+def test_generic_validation_rejects_non_positive_nominal_power(hass):
+    set_source_states(hass)
+    errors = _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=5),
+        {
+            CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
+            CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+            CONF_PRIORITY: 100,
+            CONF_NOMINAL_POWER_KW: 0,
+        },
+    )
+
+    assert errors[CONF_NOMINAL_POWER_KW] == "value_positive"
 
 
 async def test_managed_load_subentry_flow_accepts_hot_water_model(hass):
@@ -834,6 +853,7 @@ async def test_generic_and_ev_reconfigure_prefills_counterpart_and_cleans_fields
                     CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
                     CONF_PRIORITY: 100,
                     CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+                    CONF_NOMINAL_POWER_KW: 3.6,
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
                 "title": "EV charging energy",
@@ -873,18 +893,21 @@ async def test_generic_and_ev_reconfigure_prefills_counterpart_and_cleans_fields
     assert _suggested_values(result["data_schema"])[CONF_REQUESTED_ENERGY_ENTITY] == (
         "input_number.ev_requested_energy"
     )
+    assert CONF_NOMINAL_POWER_KW not in _suggested_values(result["data_schema"])
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         user_input={
             CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
             CONF_PRIORITY: 100,
             CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+            CONF_NOMINAL_POWER_KW: 7.2,
         },
     )
     assert result["type"] is FlowResultType.ABORT
     updated = entry.subentries[subentry.subentry_id].data
     assert CONF_MAXIMUM_CHARGING_POWER_KW not in updated
     assert CONF_CHARGING_EFFICIENCY not in updated
+    assert updated[CONF_NOMINAL_POWER_KW] == 7.2
 
 
 def test_electric_vehicle_validation_checks_units_values_and_efficiency(hass):
@@ -1096,7 +1119,10 @@ async def test_managed_load_subentry_reconfigure_replaces_optional_request(hass)
         version=3,
         subentries_data=(
             {
-                "data": {CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total"},
+                "data": {
+                    CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
+                    CONF_NOMINAL_POWER_KW: 3.6,
+                },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
                 "title": "EV charging energy",
                 "unique_id": "sensor.ev_energy_total",
@@ -1113,12 +1139,14 @@ async def test_managed_load_subentry_reconfigure_replaces_optional_request(hass)
             CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
         },
     )
+    assert _suggested_values(result["data_schema"])[CONF_NOMINAL_POWER_KW] == 3.6
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         user_input={
             CONF_MANAGED_ENERGY_ENTITY: "sensor.ev_energy_total",
             CONF_PRIORITY: 25,
             CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+            CONF_NOMINAL_POWER_KW: 7.2,
         },
     )
 
@@ -1129,6 +1157,7 @@ async def test_managed_load_subentry_reconfigure_replaces_optional_request(hass)
         CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
         CONF_PRIORITY: 25,
         CONF_REQUESTED_ENERGY_ENTITY: "input_number.ev_requested_energy",
+        CONF_NOMINAL_POWER_KW: 7.2,
     }
 
 

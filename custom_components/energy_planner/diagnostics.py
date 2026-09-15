@@ -33,6 +33,7 @@ async def async_get_config_entry_diagnostics(
                     "load_type": load.load_type,
                     "priority": load.priority,
                     "requested_energy_entity_id": load.requested_energy_entity_id,
+                    "nominal_power_kw": load.nominal_power_kw,
                     "required_energy_entity_id": load.required_energy_entity_id,
                     "ev_charging_power_entity_id": load.ev_charging_power_entity_id,
                     "ev_solar_power_entity_id": load.ev_solar_power_entity_id,

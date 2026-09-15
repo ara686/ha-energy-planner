@@ -59,6 +59,7 @@ be removed from the house profile and exposed by the historical sensors.
 | Field | Key | Required | Description |
 |-------|-----|----------|-------------|
 | Requested energy tomorrow | `requested_energy_entity` | Optional | A numeric sensor, number or input-number entity in `kWh`. A valid non-negative state replaces this load's historical demand estimate for tomorrow. |
+| Nominal input power | `nominal_power_kw` | Optional | Positive input power in `kW`. When set, it limits each slot and shortens the final timeline interval. Existing configurations without it use energy-only allocation and report an unverified-power diagnostic warning. |
 
 Without a valid request, the `generic` strategy estimates demand from historical
 daily consumption. The requested-energy input can be filled by a helper or
@@ -234,8 +235,16 @@ active-day energy = median of days with at least 0.05 kWh
 expected demand = active probability × active-day energy
 ```
 
-Allocation runs directly over passive-forecast `unused_surplus_kwh` slots in
-four phases:
+Allocation uses direct solar headroom in each slot:
+
+```text
+direct solar headroom = max(forecast PV - base house consumption, 0)
+```
+
+It does not wait for the battery to reach 100%. Each tentative allocation is
+replayed through the battery forecast and reduced when it would add grid import
+or grid charging, violate minimum SoC/`lock_soc`, or consume the reserve needed
+later in high tariff or overnight. Allocation then runs in four phases:
 
 1. `hot_water` electrical energy needed to reach the configured minimum.
 2. `electric_vehicle` charger-input energy.
@@ -244,7 +253,7 @@ four phases:
 
 Within each phase, lower priorities run first and equal priorities share a
 shortage proportionally. Hot-water allocation is limited by remaining demand,
-remaining surplus and `heater_power_kw × slot duration`. The configured minimum
+remaining direct solar and `heater_power_kw × slot duration`. The configured minimum
 is a solar target, not a guarantee; `minimum_shortfall_kwh` reports any unmet
 part. EV allocation uses the equivalent
 `maximum_charging_power_kw × slot duration` limit and reports electrical and
@@ -261,6 +270,16 @@ the unmet EV remainder and do not repeat generic demand. Each day's solar
 surplus and allocation remains separate. The model neither carries simulated
 tank temperature nor changes the EV input entity; its next state corrects the
 plan at the following recalculation. The `suggested_today` and
-`suggested_tomorrow` outputs remain solar-only managed-load allocations.
+`suggested_tomorrow` outputs remain solar-only managed-load allocations. Their
+timelines therefore contain only intervals with forecast PV; they never move
+unmet energy into evening or night.
+
+The allocation payload preserves `available_surplus_kwh` and
+`unallocated_surplus_kwh` for compatibility; those remain passive forecast
+curtailment values. `available_direct_solar_kwh`,
+`scheduled_managed_kwh`, `unallocated_direct_solar_kwh` and
+`reserve_limited_kwh` separately report raw direct headroom, actually scheduled
+managed energy, remaining direct headroom and the amount withheld by reserve
+protection.
 Deadline-aware battery and GRID decisions are exposed separately by the EV plan
 entities and are not added to the passive managed-load SoC forecast.

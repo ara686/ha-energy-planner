@@ -11,6 +11,7 @@ CONF_MANAGED_ENERGY_ENTITY = "managed_energy_entity"
 CONF_MANAGED_LOAD_TYPE = "managed_load_type"
 CONF_PRIORITY = "priority"
 CONF_REQUESTED_ENERGY_ENTITY = "requested_energy_entity"
+CONF_NOMINAL_POWER_KW = "nominal_power_kw"
 CONF_REQUIRED_ENERGY_ENTITY = "required_energy_entity"
 # Kept only for migrating v3 electric-vehicle subentries.
 CONF_MAXIMUM_CHARGING_POWER_ENTITY = "maximum_charging_power_entity"

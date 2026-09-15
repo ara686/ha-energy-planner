@@ -17,7 +17,7 @@ ManagedTimelineMode = Literal["solar"]
 
 @dataclass(frozen=True)
 class SurplusSlot:
-    """Unused solar energy available in one planner interval."""
+    """Direct solar energy available in one planner interval."""
 
     start: datetime
     available_kwh: float
@@ -30,6 +30,7 @@ class GenericAllocationInput:
     source_id: str
     priority: int
     estimate: ManagedLoadEstimate
+    nominal_power_kw: float | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,11 @@ class ManagedLoadAllocation:
                 if self.recommended_kwh is not None
                 else None
             ),
+            "scheduled_managed_kwh": (
+                _round(self.recommended_kwh)
+                if self.recommended_kwh is not None
+                else None
+            ),
             "reason": self.reason,
         }
         if self.load_type == "hot_water":
@@ -165,6 +171,9 @@ class ManagedDayAllocation:
     recommended_kwh: float | None
     unallocated_surplus_kwh: float | None
     loads: list[ManagedLoadAllocation]
+    available_direct_solar_kwh: float | None = None
+    unallocated_direct_solar_kwh: float | None = None
+    reserve_limited_kwh: float = 0.0
     generic_energy_by_source_slot: dict[tuple[str, datetime], float] = field(
         default_factory=dict
     )
@@ -193,11 +202,27 @@ class ManagedDayAllocation:
                 if self.recommended_kwh is not None
                 else None
             ),
+            "scheduled_managed_kwh": (
+                _round(self.recommended_kwh)
+                if self.recommended_kwh is not None
+                else None
+            ),
             "unallocated_surplus_kwh": (
                 _round(self.unallocated_surplus_kwh)
                 if self.unallocated_surplus_kwh is not None
                 else None
             ),
+            "available_direct_solar_kwh": (
+                _round(self.available_direct_solar_kwh)
+                if self.available_direct_solar_kwh is not None
+                else None
+            ),
+            "unallocated_direct_solar_kwh": (
+                _round(self.unallocated_direct_solar_kwh)
+                if self.unallocated_direct_solar_kwh is not None
+                else None
+            ),
+            "reserve_limited_kwh": _round(self.reserve_limited_kwh),
             "loads": {
                 load.source_id: load.as_dict()
                 for load in sorted(self.loads, key=lambda item: item.source_id)
@@ -213,8 +238,11 @@ def allocate_managed_day(
     surplus_complete: bool,
     surplus_slots: list[SurplusSlot],
     loads: list[ManagedAllocationInput],
+    passive_surplus_kwh: float | None = None,
+    direct_solar_kwh: float | None = None,
+    reserve_limited_kwh: float = 0.0,
 ) -> ManagedDayAllocation:
-    """Allocate one day's surplus in four ordered phases."""
+    """Allocate one day's safe direct solar in four ordered phases."""
     results = {load.source_id: _initial_result(load) for load in loads}
     expected = sum(item.expected_demand_kwh for item in results.values())
     if not surplus_complete:
@@ -231,6 +259,9 @@ def allocate_managed_day(
             recommended_kwh=None,
             unallocated_surplus_kwh=None,
             loads=list(results.values()),
+            available_direct_solar_kwh=None,
+            unallocated_direct_solar_kwh=None,
+            reserve_limited_kwh=reserve_limited_kwh,
             warnings=["Managed-load surplus forecast is not fully covered."],
         )
 
@@ -301,6 +332,7 @@ def allocate_managed_day(
                 source_id=load.source_id,
                 priority=load.priority,
                 desired_kwh=load.estimate.expected_demand_kwh,
+                maximum_power_kw=load.nominal_power_kw,
                 schedule_kind="generic",
             )
             for load in generic_loads
@@ -345,10 +377,19 @@ def allocate_managed_day(
             0.0,
         )
         if result.load_type in {"generic", "hot_water", "electric_vehicle"}:
+            fixed_power_kw = next(
+                (
+                    load.nominal_power_kw
+                    for load in generic_loads
+                    if load.source_id == result.source_id
+                ),
+                None,
+            )
             result.timeline = _merge_source_timeline(
                 source_id=result.source_id,
                 schedule_by_source_slot=schedule_by_source_slot,
                 interval_minutes=interval_minutes,
+                fixed_power_kw=fixed_power_kw,
             )
         if result.load_type == "hot_water":
             result.details["alternative_heating_recommended"] = (
@@ -378,15 +419,34 @@ def allocate_managed_day(
         warnings.append("No managed loads are configured.")
     if loads and not usable_loads:
         warnings.append("Managed loads have no usable demand estimate.")
+    warnings.extend(
+        "Generic managed load has no nominal power; timeline uses energy-only "
+        f"allocation: {load.source_id}."
+        for load in generic_loads
+        if load.nominal_power_kw is None
+    )
+    available_surplus = (
+        passive_surplus_kwh if passive_surplus_kwh is not None else initial_surplus
+    )
+    available_direct = (
+        direct_solar_kwh if direct_solar_kwh is not None else initial_surplus
+    )
     return ManagedDayAllocation(
         state="ok" if usable_loads else "insufficient_data",
         forecast_complete=True,
         target_date=target_date,
-        available_surplus_kwh=initial_surplus,
+        available_surplus_kwh=available_surplus,
         expected_demand_kwh=expected,
         recommended_kwh=recommended,
-        unallocated_surplus_kwh=unallocated,
+        unallocated_surplus_kwh=(
+            max(available_surplus - recommended, 0.0)
+            if passive_surplus_kwh is not None
+            else unallocated
+        ),
         loads=list(results.values()),
+        available_direct_solar_kwh=available_direct,
+        unallocated_direct_solar_kwh=max(available_direct - recommended, 0.0),
+        reserve_limited_kwh=reserve_limited_kwh,
         generic_energy_by_source_slot={
             (source_id, start): value
             for (source_id, start), value in schedule_by_source_slot.items()
@@ -497,8 +557,9 @@ def _merge_source_timeline(
     source_id: str,
     schedule_by_source_slot: dict[tuple[str, datetime], float],
     interval_minutes: int,
+    fixed_power_kw: float | None = None,
 ) -> list[ManagedLoadTimelineWindow]:
-    """Merge adjacent surplus slots for one managed load."""
+    """Merge adjacent direct-solar slots for one managed load."""
     allocations = {
         start: energy
         for (candidate_source_id, start), energy in schedule_by_source_slot.items()
@@ -508,7 +569,10 @@ def _merge_source_timeline(
     delta = timedelta(minutes=interval_minutes)
     for start in sorted(allocations, key=_timeline_time):
         energy = allocations[start]
-        end = _add_elapsed_time(start, delta)
+        duration = delta
+        if fixed_power_kw is not None and fixed_power_kw > 0:
+            duration = min(delta, timedelta(hours=energy / fixed_power_kw))
+        end = _add_elapsed_time(start, duration)
         if windows and _timeline_time(windows[-1].end) == _timeline_time(start):
             previous = windows[-1]
             windows[-1] = ManagedLoadTimelineWindow(
@@ -593,6 +657,8 @@ def _initial_result(load: ManagedAllocationInput) -> ManagedLoadAllocation:
             ),
             reason=estimate.reason,
             details={
+                "nominal_power_kw": load.nominal_power_kw,
+                "power_verified": load.nominal_power_kw is not None,
                 "observed_days": estimate.observed_days,
                 "active_days": estimate.active_days,
                 "active_probability": estimate.active_probability,

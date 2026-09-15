@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energy_planner.const import (
@@ -36,6 +37,7 @@ from custom_components.energy_planner.const import (
     CONF_MAXIMUM_TEMPERATURE_C,
     CONF_MIN_BASELINE_KWH_PER_HOUR,
     CONF_MINIMUM_TEMPERATURE_C,
+    CONF_NOMINAL_POWER_KW,
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_REQUIRED_ENERGY_ENTITY,
@@ -57,12 +59,14 @@ from custom_components.energy_planner.const import (
 from custom_components.energy_planner.coordinator import (
     EnergyPlannerCoordinator,
     _add_ev_charging_plans,
+    _add_managed_allocations,
     _add_managed_soc_forecast,
     _add_surplus_allocation,
     _async_planner_history_from_ha,
     _consumption_from_hourly_profile,
     _ev_action_window_minutes,
     _ev_charging_slots,
+    _remaining_today_direct_solar_slots,
     _remaining_today_surplus_slots,
     _solcast_entity_ids,
     _solcast_forecast,
@@ -76,6 +80,7 @@ from custom_components.energy_planner.models import (
     PlannerResult,
     TimeWindow,
 )
+from custom_components.energy_planner.planner import calculate_plan
 from custom_components.energy_planner.sources import (
     parse_float,
     parse_solcast_attributes,
@@ -828,6 +833,155 @@ def test_generic_soc_forecast_uses_only_allocated_solar_slots(hass):
     ]
 
 
+def test_direct_solar_allocation_starts_before_battery_is_full(hass):
+    now = datetime(2026, 8, 18)
+    tomorrow = now.date() + timedelta(days=1)
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=20,
+        battery_capacity_kwh=10,
+        battery_min_soc=20,
+        slots=[
+            ForecastSlot(
+                now + timedelta(hours=index),
+                3
+                if (now + timedelta(hours=index)).date() == tomorrow
+                and 8 <= (now + timedelta(hours=index)).hour < 16
+                else 0,
+                1
+                if (now + timedelta(hours=index)).date() == tomorrow
+                and 8 <= (now + timedelta(hours=index)).hour < 16
+                else 0,
+                solar_coverage=1,
+            )
+            for index in range(48)
+        ],
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        grid_charging_enabled=False,
+        interval_minutes=60,
+        forecast_horizon_hours=48,
+    )
+    entry = _generic_entry(nominal_power_kw=1)
+    hass.states.async_set(
+        "input_number.generic_requested_energy",
+        "2",
+        {"unit_of_measurement": "kWh"},
+    )
+    result = calculate_plan(planner_input)
+    allocations = _add_managed_allocations(
+        hass,
+        entry,
+        planner_input=planner_input,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=[],
+    )
+    _add_managed_soc_forecast(
+        planner_input=planner_input,
+        now=now,
+        allocations=allocations,
+        result=result,
+    )
+
+    allocation = next(item for item in allocations if item.target_date == tomorrow)
+    timeline = allocation.as_dict()["loads"]["sensor.generic_energy_total"]["timeline"]
+    assert timeline == [
+        {
+            "start": "2026-08-19T08:00:00",
+            "end": "2026-08-19T10:00:00",
+            "mode": "solar",
+            "energy_kwh": 2,
+        }
+    ]
+    assert allocation.available_direct_solar_kwh == 16
+    assert allocation.available_surplus_kwh == 8
+    assert allocation.recommended_kwh == 2
+
+    base_points = result.plan["soc_forecast_planned"]["points"]
+    managed_points = result.plan["soc_forecast_with_managed"]["points"]
+    active = [
+        (base, managed)
+        for base, managed in zip(base_points, managed_points, strict=True)
+        if managed.get("managed_consumption_kwh", 0) > 0
+    ]
+    assert active
+    assert all(managed["soc_percent"] < base["soc_percent"] for base, managed in active)
+    assert all(base["soc_percent"] < 100 for base, _managed in active)
+    assert all(
+        managed["solar_kwh"] + 1e-6 >= managed["consumption_kwh"]
+        for managed in managed_points
+        if managed.get("managed_consumption_kwh", 0) > 0
+    )
+    assert all(
+        managed["grid_import_kwh"] <= base["grid_import_kwh"] + 1e-6
+        for base, managed in zip(base_points, managed_points, strict=True)
+    )
+
+
+def test_direct_solar_allocation_is_clipped_to_preserve_later_grid_import(hass):
+    now = datetime(2026, 8, 18)
+    tomorrow = now.date() + timedelta(days=1)
+    slots = []
+    for index in range(48):
+        start = now + timedelta(hours=index)
+        solar = 4 if start.date() == tomorrow and start.hour == 8 else 0
+        consumption = 1 if start.date() == tomorrow and start.hour == 8 else 0
+        if start.date() == tomorrow and start.hour == 9:
+            consumption = 2
+        slots.append(ForecastSlot(start, solar, consumption, solar_coverage=1))
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=20,
+        battery_capacity_kwh=10,
+        battery_min_soc=20,
+        slots=slots,
+        nt_windows=[],
+        charge_window=TimeWindow("00:00", "00:00"),
+        grid_charging_enabled=False,
+        interval_minutes=60,
+        forecast_horizon_hours=48,
+        soc_eps_kwh=0.0001,
+    )
+    entry = _generic_entry(nominal_power_kw=4)
+    hass.states.async_set(
+        "input_number.generic_requested_energy",
+        "3",
+        {"unit_of_measurement": "kWh"},
+    )
+    result = calculate_plan(planner_input)
+    allocations = _add_managed_allocations(
+        hass,
+        entry,
+        planner_input=planner_input,
+        history=EnergyHistory(),
+        now=now,
+        result=result,
+        warnings=[],
+    )
+    _add_managed_soc_forecast(
+        planner_input=planner_input,
+        now=now,
+        allocations=allocations,
+        result=result,
+    )
+
+    allocation = next(item for item in allocations if item.target_date == tomorrow)
+    assert allocation.available_direct_solar_kwh == 3
+    assert allocation.recommended_kwh == pytest.approx(1, abs=0.01)
+    assert allocation.reserve_limited_kwh == pytest.approx(2, abs=0.01)
+    assert allocation.loads[0].recommended_kwh < 3
+    assert all(
+        managed["grid_import_kwh"] <= base["grid_import_kwh"] + 1e-6
+        for base, managed in zip(
+            result.plan["soc_forecast_planned"]["points"],
+            result.plan["soc_forecast_with_managed"]["points"],
+            strict=True,
+        )
+    )
+
+
 def test_ev_allocation_uses_remaining_today_then_carries_across_days(hass):
     now = datetime(2026, 8, 18, 12, 30)
     entry = _electric_vehicle_entry(include_generic=True, maximum_power_kw=2)
@@ -1191,6 +1345,41 @@ def test_remaining_today_ev_slots_cover_repeated_fall_dst_hour():
     assert len({slot.start.astimezone(UTC) for slot in slots}) == 24
 
 
+def test_remaining_today_direct_solar_slots_cover_fall_dst_and_stay_solar_only():
+    timezone = ZoneInfo("Europe/Prague")
+    now = datetime(2026, 10, 25, 0, 30, tzinfo=timezone)
+    first_utc = datetime(2026, 10, 24, 23, tzinfo=UTC)
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=50,
+        battery_capacity_kwh=10,
+        battery_min_soc=20,
+        slots=[
+            ForecastSlot(
+                (first_utc + timedelta(hours=index)).astimezone(timezone),
+                2,
+                1,
+                solar_coverage=1,
+            )
+            for index in range(24)
+        ],
+        nt_windows=[],
+        charge_window=TimeWindow("22:00", "04:00"),
+        interval_minutes=60,
+    )
+
+    slots, complete = _remaining_today_direct_solar_slots(
+        planner_input,
+        now=now,
+        interval_minutes=60,
+    )
+
+    assert complete
+    assert len(slots) == 24
+    assert all(slot.available_kwh == 1 for slot in slots)
+    assert len({slot.start.astimezone(UTC) for slot in slots}) == 24
+
+
 def test_remaining_today_ev_slots_skip_missing_spring_dst_hour():
     timezone = ZoneInfo("Europe/Prague")
     now = datetime(2026, 3, 29, 0, 30, tzinfo=timezone)
@@ -1213,6 +1402,37 @@ def test_remaining_today_ev_slots_skip_missing_spring_dst_hour():
     assert complete
     assert len(slots) == 22
     assert all(slot.start.hour != 2 for slot in slots)
+
+
+def test_remaining_today_direct_solar_requires_complete_remaining_forecast():
+    now = datetime(2026, 8, 18, 12, 30)
+    planner_input = PlannerInput(
+        now=now,
+        battery_soc=50,
+        battery_capacity_kwh=10,
+        battery_min_soc=20,
+        slots=[
+            ForecastSlot(
+                datetime(2026, 8, 18, hour),
+                2 if hour == 13 else 0,
+                1,
+                solar_coverage=0.5 if hour == 18 else 1,
+            )
+            for hour in range(13, 24)
+        ],
+        nt_windows=[],
+        charge_window=TimeWindow("22:00", "04:00"),
+        interval_minutes=60,
+    )
+
+    slots, complete = _remaining_today_direct_solar_slots(
+        planner_input,
+        now=now,
+        interval_minutes=60,
+    )
+
+    assert not complete
+    assert slots == []
 
 
 def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
@@ -1605,7 +1825,9 @@ def _deadline_aware_ev_entry(*, live_power: bool = False) -> MockConfigEntry:
     )
 
 
-def _generic_entry(*, requested: bool = True) -> MockConfigEntry:
+def _generic_entry(
+    *, requested: bool = True, nominal_power_kw: float | None = None
+) -> MockConfigEntry:
     data = {
         CONF_MANAGED_ENERGY_ENTITY: "sensor.generic_energy_total",
         CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_GENERIC,
@@ -1613,6 +1835,8 @@ def _generic_entry(*, requested: bool = True) -> MockConfigEntry:
     }
     if requested:
         data[CONF_REQUESTED_ENERGY_ENTITY] = "input_number.generic_requested_energy"
+    if nominal_power_kw is not None:
+        data[CONF_NOMINAL_POWER_KW] = nominal_power_kw
     return MockConfigEntry(
         domain=DOMAIN,
         data={},
