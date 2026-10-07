@@ -221,7 +221,19 @@ záloha. Pro EV plán podle odjezdu navíc plánuje jednorázový přepočet na 
 začátek a konec plánovaného režimu, takže poradní přechody nečekají na periodický
 interval. Změna EV požadavku energie, polohy, kabelu nebo povolení GRIDu vyvolá
 přepočet po desetisekundovém debounce; změny SoC baterie a kumulativních zdrojů
-energie si zachovávají 60sekundový debounce.
+energie řízených spotřebičů si zachovávají 60sekundový debounce. Tyto změny
+sdílejí jednu frontu: nejbližší přepočet zahrne všechny čekající změny.
+Pravidelný či ruční přepočet nebo přepočet na hranici EV plánu také zpracuje
+čekající změny, takže jejich původní časovače neopakují už hotový výpočet.
+Změny přijaté během výpočtu zůstávají ve frontě pro jeden následující přepočet.
+Nastavený interval je pravidelná záloha, nikoli omezení reakcí na změny vstupů.
+
+Simulační pokusy opakovaně využívají připravené vstupy a nezměněné části
+prognózy při zachování stejných energetických omezení, rozlišení prognózy
+a přesnosti hledání. Diagnostika obsahuje `last_refresh` s důvody spuštění,
+celkovou délkou v sekundách a výsledkem; stejný souhrn se zapisuje do logu
+na úrovni debug. Postup opakovatelného měření najdete v dokumentu
+[ověření výkonu](docs/performance.md).
 
 Deadline-aware EV akce používají povolovací okna s minimálním rozlišením 10
 minut, zatímco podkladová SoC prognóza si zachovává nastavené jemnější

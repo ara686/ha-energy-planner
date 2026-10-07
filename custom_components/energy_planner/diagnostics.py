@@ -58,6 +58,7 @@ async def async_get_config_entry_diagnostics(
         },
         "options": dict(entry.options),
         "entities": sorted(entities),
+        "last_refresh": getattr(coordinator, "last_refresh", {}),
         "last_state": getattr(result, "state", None),
         "last_warnings": getattr(result, "warnings", []),
         "last_plan": getattr(result, "plan", {}),

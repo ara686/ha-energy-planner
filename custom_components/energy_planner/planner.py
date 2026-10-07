@@ -537,6 +537,150 @@ def _empty_plan(
     }
 
 
+@dataclass(frozen=True)
+class _BatteryModel:
+    capacity: float
+    floor: float
+    lock: float
+    target: float | None
+    charge_limit: float
+
+    @classmethod
+    def from_input(
+        cls, data: PlannerInput, target: float | None, lock: float | None
+    ) -> _BatteryModel:
+        capacity = data.battery_capacity_kwh
+        return cls(
+            capacity,
+            _soc_to_kwh(data.battery_min_soc, capacity),
+            _soc_to_kwh(lock if lock is not None else data.battery_min_soc, capacity),
+            _soc_to_kwh(target, capacity) if target is not None else None,
+            data.grid_charge_max_kw
+            * (data.interval_minutes / 60)
+            * data.grid_charge_efficiency,
+        )
+
+    def step(
+        self, battery: float, net: float, is_nt: bool, is_charge: bool
+    ) -> tuple[float, float, float, float]:
+        """Return unrounded battery, grid supply, grid charge and surplus."""
+        grid = charge = surplus = 0.0
+        if net >= 0:
+            stored = min(net, self.capacity - battery)
+            battery += stored
+            surplus = net - stored
+        else:
+            discharged = min(
+                -net, max(0.0, battery - (self.lock if is_nt else self.floor))
+            )
+            battery -= discharged
+            grid = -net - discharged
+        if is_charge and self.target is not None and battery < self.target:
+            charge = min(
+                self.charge_limit, self.target - battery, self.capacity - battery
+            )
+            battery += charge
+        return battery, grid, charge, surplus
+
+
+class SocGridBudget:
+    """Check additions against a fixed grid budget without rendering forecasts.
+
+    Inputs and tariff flags are prepared once. Trials replay only the changed
+    suffix, retain full battery precision and stop at the first budget violation.
+    No state is reused between planner runs.
+    """
+
+    def __init__(
+        self,
+        data: PlannerInput,
+        *,
+        managed_consumption_by_slot: Mapping[datetime, float],
+        grid_charge_target_soc: float | None,
+        nt_lock_soc: float | None,
+    ) -> None:
+        self._model = _BatteryModel.from_input(
+            data, grid_charge_target_soc, nt_lock_soc
+        )
+        slots = _normalized_slots(data)
+        baseline = _simulate(
+            data, slots, data.battery_soc, grid_charge_target_soc, nt_lock_soc
+        ).points
+        self._indices: dict[datetime, list[int]] = {}
+        for i, slot in enumerate(slots):
+            self._indices.setdefault(_timeline_time(slot.start), []).append(i)
+        self._solar = [s.solar_kwh for s in slots]
+        self._home = [s.consumption_kwh for s in slots]
+        self._flags = [(p.is_nt, p.is_charge_window) for p in baseline]
+        self._budget = [(p.grid_import_kwh, p.grid_charge_kwh) for p in baseline]
+        managed = {_timeline_time(k): v for k, v in managed_consumption_by_slot.items()}
+        self._managed = [managed.get(_timeline_time(s.start), 0.0) for s in slots]
+        self._battery = [_soc_to_kwh(data.battery_soc, data.battery_capacity_kwh)]
+        self._prefix_valid = [True]
+        for i in range(len(slots)):
+            battery, grid, charge, _ = self._model.step(
+                self._battery[-1],
+                self._solar[i] - (self._home[i] + max(0.0, self._managed[i])),
+                *self._flags[i],
+            )
+            self._battery.append(battery)
+            self._prefix_valid.append(
+                self._prefix_valid[-1] and self._within(i, grid, charge)
+            )
+
+    def _within(self, i: int, grid: float, charge: float) -> bool:
+        budget_grid, budget_charge = self._budget[i]
+        # Preserve the public forecast's millikWh rounding and original tolerance.
+        return (
+            _round(grid) <= budget_grid + 1e-6
+            and _round(charge) <= budget_charge + 1e-6
+        )
+
+    def _trial(self, indices: list[int], value: float) -> list[float] | None:
+        index = indices[0]
+        if not self._prefix_valid[index]:
+            return None
+        battery = self._battery[index]
+        suffix = []
+        for i in range(index, len(self._solar)):
+            managed = self._managed[i] + (value if i in indices else 0.0)
+            battery, grid, charge, _ = self._model.step(
+                battery,
+                self._solar[i] - (self._home[i] + max(0.0, managed)),
+                *self._flags[i],
+            )
+            if not self._within(i, grid, charge):
+                return None
+            suffix.append(battery)
+        return suffix
+
+    def add(self, start: datetime, upper: float) -> float:
+        """Commit the same 18-step safe bound as a full forecast search."""
+        indices = self._indices.get(_timeline_time(start))
+        if indices is None:
+            # A schedule entry outside the normalized horizon has no effect.
+            return upper if self._prefix_valid[-1] else 0.0
+        index = indices[0]
+        suffix = self._trial(indices, upper)
+        safe = upper
+        if suffix is None:
+            low, high = 0.0, upper
+            for _ in range(18):
+                middle = (low + high) / 2
+                candidate = self._trial(indices, middle)
+                if candidate is not None:
+                    low, suffix = middle, candidate
+                else:
+                    high = middle
+            safe = low
+        if safe > 1e-6 and suffix is not None:
+            for i in indices:
+                self._managed[i] += safe
+            self._battery[index + 1 :] = suffix
+            self._prefix_valid[index + 1 :] = [True] * len(suffix)
+        return safe
+
+
 def _simulate(
     data: PlannerInput,
     slots: list[ForecastSlot],
@@ -545,22 +689,8 @@ def _simulate(
     nt_lock_soc: float | None = None,
 ) -> _Simulation:
     capacity = data.battery_capacity_kwh
-    floor_kwh = _soc_to_kwh(_clamp(data.battery_min_soc, 0.0, 100.0), capacity)
-    nt_lock_soc_value = nt_lock_soc if nt_lock_soc is not None else data.battery_min_soc
-    nt_lock_kwh = _soc_to_kwh(
-        _clamp(nt_lock_soc_value, 0.0, 100.0),
-        capacity,
-    )
-    target_kwh = (
-        _soc_to_kwh(_clamp(grid_charge_target_soc, 0.0, 100.0), capacity)
-        if grid_charge_target_soc is not None
-        else None
-    )
-    battery_kwh = _soc_to_kwh(_clamp(initial_soc, 0.0, 100.0), capacity)
-    interval_hours = data.interval_minutes / 60
-    grid_charge_limit_kwh = (
-        data.grid_charge_max_kw * interval_hours * data.grid_charge_efficiency
-    )
+    model = _BatteryModel.from_input(data, grid_charge_target_soc, nt_lock_soc)
+    battery_kwh = _soc_to_kwh(initial_soc, capacity)
 
     points: list[SocForecastPoint] = []
     vt_grid_import = 0.0
@@ -578,32 +708,12 @@ def _simulate(
         managed_consumption_kwh = max(0.0, slot.managed_consumption_kwh)
         consumption_kwh = max(0.0, slot.consumption_kwh) + managed_consumption_kwh
         net_kwh = solar_kwh - consumption_kwh
-        grid_import_kwh = 0.0
-        grid_charge_kwh = 0.0
-        slot_unused_surplus = 0.0
-
-        if net_kwh >= 0:
-            storable_kwh = min(net_kwh, capacity - battery_kwh)
-            battery_kwh += storable_kwh
-            slot_unused_surplus = net_kwh - storable_kwh
-        elif is_nt:
-            discharge_kwh = min(-net_kwh, max(0.0, battery_kwh - nt_lock_kwh))
-            battery_kwh -= discharge_kwh
-            grid_import_kwh += -net_kwh - discharge_kwh
-        else:
-            discharge_kwh = min(-net_kwh, max(0.0, battery_kwh - floor_kwh))
-            battery_kwh -= discharge_kwh
-            grid_import_kwh += -net_kwh - discharge_kwh
+        battery_kwh, grid_import_kwh, grid_charge_kwh, slot_unused_surplus = model.step(
+            battery_kwh, net_kwh, is_nt, is_charge
+        )
+        if not is_nt:
             vt_grid_import += grid_import_kwh
-
-        if is_charge and target_kwh is not None and battery_kwh < target_kwh:
-            grid_charge_kwh = min(
-                grid_charge_limit_kwh,
-                target_kwh - battery_kwh,
-                capacity - battery_kwh,
-            )
-            battery_kwh += grid_charge_kwh
-            charged_kwh += grid_charge_kwh
+        charged_kwh += grid_charge_kwh
 
         if battery_kwh >= capacity and first_full_time is None:
             first_full_time = slot.start
