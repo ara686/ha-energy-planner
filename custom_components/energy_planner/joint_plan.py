@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
+from functools import cached_property
 from math import inf, isfinite
 from typing import Any
 
@@ -74,7 +75,7 @@ class JointSlot:
     home: float
     generic: dict[str, float] = field(default_factory=dict)
 
-    @property
+    @cached_property
     def hours(self) -> float:
         return (instant(self.end) - instant(self.start)).total_seconds() / 3600
 
@@ -191,6 +192,57 @@ def _reserve(
     return reserve
 
 
+@dataclass(frozen=True)
+class _PreparedSlot:
+    nt: bool
+    charge_limit: float
+    discharge_limit: float
+    grid_limit: float
+    grid_charge_limit: float
+    export_limit: float
+    home: float
+    attributes: dict[str, Any]
+
+
+def _prepare_simulation(
+    data: PlannerInput,
+    slots: list[JointSlot],
+    limits: JointLimits,
+    reserve: list[float],
+) -> list[_PreparedSlot]:
+    return [
+        _PreparedSlot(
+            in_nt(s.start, data),
+            _limit(limits.battery_charge_kw) * s.hours,
+            _limit(limits.battery_discharge_kw) * s.hours,
+            _limit(limits.grid_import_kw) * s.hours,
+            data.grid_charge_max_kw * s.hours,
+            _limit(limits.export_kw) * s.hours,
+            s.home + sum(s.generic.values()),
+            {
+                "start": s.start.isoformat(),
+                "end": s.end.isoformat(),
+                "timestamp": s.end.isoformat(),
+                "is_nt": in_nt(s.start, data),
+                "solar_kwh": s.solar,
+                "home_kwh": s.home,
+                "reserve_kwh": min(data.battery_capacity_kwh, reserve[i + 1]),
+                "unreachable_reserve_kwh": max(
+                    0.0, reserve[i + 1] - data.battery_capacity_kwh
+                ),
+            },
+        )
+        for i, s in enumerate(slots)
+    ]
+
+
+@dataclass(frozen=True)
+class _Replay:
+    previous: list[dict[str, Any]]
+    index: int
+    added_grid: float
+
+
 def _simulate(
     data: PlannerInput,
     slots: list[JointSlot],
@@ -199,19 +251,32 @@ def _simulate(
     loads: list[dict[str, float]],
     grid_for_loads: list[float],
     fixed_charge: list[float] | None = None,
-) -> list[dict[str, Any]]:
+    *,
+    prepared: list[_PreparedSlot] | None = None,
+    replay: _Replay | None = None,
+) -> list[dict[str, Any]] | None:
     capacity = data.battery_capacity_kwh
     floor = capacity * data.battery_min_soc / 100
     battery = capacity * data.battery_soc / 100
-    points = []
-    for i, s in enumerate(slots):
+    prepared = (
+        prepared
+        if prepared is not None
+        else _prepare_simulation(data, slots, limits, reserve)
+    )
+    start = replay.index if replay is not None else 0
+    points = replay.previous[:start] if replay is not None else []
+    if start:
+        battery = points[-1]["battery_kwh"]
+    for i in range(start, len(slots)):
+        s = slots[i]
+        cached = prepared[i]
         before = battery
-        demand = s.home + sum(s.generic.values()) + sum(loads[i].values())
+        demand = cached.home + sum(loads[i].values())
         net = s.solar - demand
         charge_ac = discharge_ac = grid = unserved = 0.0
-        nt = in_nt(s.start, data)
-        charge_limit = _limit(limits.battery_charge_kw) * s.hours
-        grid_limit = _limit(limits.grid_import_kw) * s.hours
+        nt = cached.nt
+        charge_limit = cached.charge_limit
+        grid_limit = cached.grid_limit
         if net >= 0:
             charge_ac = min(
                 net,
@@ -228,7 +293,7 @@ def _simulate(
             discharge_ac = min(
                 deficit,
                 max(0.0, battery - protected) * limits.discharge_efficiency,
-                _limit(limits.battery_discharge_kw) * s.hours,
+                cached.discharge_limit,
             )
             battery -= discharge_ac / limits.discharge_efficiency
             grid = min(grid_limit, explicit_grid + deficit - discharge_ac)
@@ -243,26 +308,31 @@ def _simulate(
             grid_charge_ac = min(
                 desired,
                 max(0.0, grid_limit - grid),
-                data.grid_charge_max_kw * s.hours,
+                cached.grid_charge_limit,
                 max(0.0, charge_limit - charge_ac),
                 max(0.0, capacity - battery) / data.grid_charge_efficiency,
             )
             battery += grid_charge_ac * data.grid_charge_efficiency
-        export = min(unused, _limit(limits.export_kw) * s.hours)
+        if replay is not None:
+            previous = replay.previous[i]
+            if (
+                grid + grid_charge_ac
+                > previous["grid_import_kwh"]
+                + (replay.added_grid if i == start else 0)
+                + EPS
+                or unserved > previous["unserved_kwh"] + EPS
+                or battery + EPS < min(previous["battery_kwh"], reserve[i + 1])
+            ):
+                return None
+        export = min(unused, cached.export_limit)
         points.append(
             {
-                "start": s.start.isoformat(),
-                "end": s.end.isoformat(),
-                "timestamp": s.end.isoformat(),
-                "is_nt": nt,
-                "solar_kwh": s.solar,
-                "home_kwh": s.home,
+                **cached.attributes,
                 "managed_by_source": {**s.generic, **loads[i]},
                 "consumption_kwh": demand,
                 "battery_start_kwh": before,
                 "battery_kwh": battery,
                 "soc_percent": battery / capacity * 100,
-                "reserve_kwh": min(capacity, reserve[i + 1]),
                 "battery_charge_ac_kwh": charge_ac + grid_charge_ac,
                 "battery_discharge_ac_kwh": discharge_ac,
                 "grid_charge_ac_kwh": grid_charge_ac,
@@ -271,9 +341,12 @@ def _simulate(
                 "export_kwh": export,
                 "curtailed_kwh": unused - export,
                 "unserved_kwh": unserved,
-                "unreachable_reserve_kwh": max(0.0, reserve[i + 1] - capacity),
             }
         )
+        if replay is not None and battery == replay.previous[i]["battery_kwh"]:
+            # All later inputs are unchanged, including the fixed house charge.
+            points.extend(replay.previous[i + 1 :])
+            break
     return points
 
 
@@ -341,7 +414,11 @@ def calculate_joint_plan(
     reserve = _reserve(data, slots, limits)
     loads: list[dict[str, float]] = [{} for _ in slots]
     grid_loads = [0.0] * len(slots)
-    baseline = _simulate(data, slots, limits, reserve, loads, grid_loads)
+    prepared = _prepare_simulation(data, slots, limits, reserve)
+    baseline = _simulate(
+        data, slots, limits, reserve, loads, grid_loads, prepared=prepared
+    )
+    assert baseline is not None
     fixed_charge = [p["grid_charge_ac_kwh"] for p in baseline]
     points = baseline
     actions: dict[str, list[dict[str, Any]]] = {}
@@ -411,18 +488,19 @@ def calculate_joint_plan(
                 )
                 grid_loads[i] = old_grid + added_grid
                 candidate = _simulate(
-                    data, slots, limits, reserve, loads, grid_loads, fixed_charge
+                    data,
+                    slots,
+                    limits,
+                    reserve,
+                    loads,
+                    grid_loads,
+                    fixed_charge,
+                    prepared=prepared,
+                    replay=_Replay(previous_points, i, added_grid),
                 )
-                valid = all(
-                    p["grid_import_kwh"]
-                    <= previous["grid_import_kwh"] + (added_grid if j == i else 0) + EPS
-                    and p["unserved_kwh"] <= previous["unserved_kwh"] + EPS
-                    and p["battery_kwh"] + EPS
-                    >= min(previous["battery_kwh"], reserve[j + 1])
-                    for j, (p, previous) in enumerate(
-                        zip(candidate, previous_points, strict=True)
-                    )
-                )
+                if candidate is None:
+                    return False, previous_points
+                valid = True
                 tank = water_by_source.get(source)
                 if tank is not None:
                     temperature = tank.temperature

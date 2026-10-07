@@ -15,7 +15,6 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
     async_track_state_change_event,
@@ -65,7 +64,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     async def _handle_recalculate(call) -> None:
         for coordinator in _loaded_coordinators():
-            await coordinator.async_request_refresh()
+            await coordinator.async_request_refresh(reason="manual")
 
     async def _handle_export_debug(call) -> None:
         payload = {
@@ -224,18 +223,6 @@ def _register_battery_soc_refresh(
     if not entity_id:
         return
 
-    async def _request_refresh() -> None:
-        await coordinator.async_request_refresh()
-
-    debouncer = Debouncer(
-        hass,
-        _LOGGER,
-        cooldown=SOC_REFRESH_DEBOUNCE_SECONDS,
-        immediate=False,
-        function=_request_refresh,
-    )
-    entry.async_on_unload(debouncer.async_cancel)
-
     @callback
     def _handle_battery_soc_change(event) -> None:
         old_state = event.data.get("old_state")
@@ -245,7 +232,7 @@ def _register_battery_soc_refresh(
         if old_state is not None and old_state.state == new_state.state:
             return
         _LOGGER.debug("Battery SoC changed; scheduling Energy Planner refresh")
-        hass.async_create_task(debouncer.async_call())
+        coordinator.source_refresh.schedule("battery_soc", SOC_REFRESH_DEBOUNCE_SECONDS)
 
     entry.async_on_unload(
         async_track_state_change_event(
@@ -270,18 +257,6 @@ def _register_energy_source_history(
         entity_id: source_type for entity_id, source_type in tracked_sources
     }
 
-    async def _request_refresh() -> None:
-        await coordinator.async_request_refresh()
-
-    managed_refresh_debouncer = Debouncer(
-        hass,
-        _LOGGER,
-        cooldown=MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS,
-        immediate=False,
-        function=_request_refresh,
-    )
-    entry.async_on_unload(managed_refresh_debouncer.async_cancel)
-
     @callback
     def _handle_energy_source_change(event) -> None:
         old_state = event.data.get("old_state")
@@ -297,7 +272,9 @@ def _register_energy_source_history(
             previous_state=old_state,
         )
         if source_types[new_state.entity_id] == "managed":
-            hass.async_create_task(managed_refresh_debouncer.async_call())
+            coordinator.source_refresh.schedule(
+                "managed_energy", MANAGED_SOURCE_REFRESH_DEBOUNCE_SECONDS
+            )
 
     entry.async_on_unload(
         async_track_state_change_event(
@@ -333,18 +310,6 @@ def _register_managed_model_refresh(
     if not tracked_entities:
         return
 
-    async def _request_refresh() -> None:
-        await coordinator.async_request_refresh()
-
-    debouncer = Debouncer(
-        hass,
-        _LOGGER,
-        cooldown=EV_MODEL_REFRESH_DEBOUNCE_SECONDS,
-        immediate=False,
-        function=_request_refresh,
-    )
-    entry.async_on_unload(debouncer.async_cancel)
-
     @callback
     def _handle_managed_model_change(event) -> None:
         old_state = event.data.get("old_state")
@@ -361,7 +326,9 @@ def _register_managed_model_refresh(
             "Managed model input %s changed; scheduling Energy Planner refresh",
             new_state.entity_id,
         )
-        hass.async_create_task(debouncer.async_call())
+        coordinator.source_refresh.schedule(
+            "ev_model", EV_MODEL_REFRESH_DEBOUNCE_SECONDS
+        )
 
     entry.async_on_unload(
         async_track_state_change_event(
@@ -390,7 +357,7 @@ def _register_ev_plan_boundary_refresh(
     async def _handle_boundary(_now: datetime) -> None:
         nonlocal cancel_boundary
         cancel_boundary = None
-        await coordinator.async_request_refresh()
+        await coordinator.async_request_refresh(reason="ev_boundary")
 
     @callback
     def _schedule_boundary() -> None:

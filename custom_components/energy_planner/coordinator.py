@@ -5,6 +5,7 @@ import math
 import re
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
+from time import perf_counter
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass
@@ -90,7 +91,13 @@ from .managed_allocation import (
 )
 from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .models import PlannerInput, PlannerResult, SolarForecastPoint, TimeWindow
-from .planner import calculate_plan, calculate_soc_forecast, generate_forecast_slots
+from .planner import (
+    SocGridBudget,
+    calculate_plan,
+    calculate_soc_forecast,
+    generate_forecast_slots,
+)
+from .refresh import SourceRefreshQueue
 from .sources import parse_float, parse_solcast_attributes
 from .units import energy_value_to_kwh, is_supported_energy_unit, power_value_to_kw
 from .wallbox import WallboxModeOptions, wallbox_charging_source
@@ -131,6 +138,19 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
             update_interval=_coordinator_update_interval(entry),
         )
 
+        self.last_refresh: dict[str, Any] = {}
+        self.source_refresh = SourceRefreshQueue(hass, self._async_refresh_sources)
+        entry.async_on_unload(self.source_refresh.shutdown)
+
+    async def _async_refresh_sources(self) -> None:
+        await self.async_request_refresh()
+
+    async def async_request_refresh(self, *, reason: str | None = None) -> None:
+        """Record explicit triggers alongside coalesced source changes."""
+        if reason is not None:
+            self.source_refresh.note(reason)
+        await super().async_request_refresh()
+
     def update_interval_from_options(self) -> None:
         """Apply the current automatic recalculation interval option."""
         self.update_interval = _coordinator_update_interval(self.entry)
@@ -170,7 +190,27 @@ class EnergyPlannerCoordinator(DataUpdateCoordinator[PlannerResult]):
         self.history = await self._history_store.async_load()
 
     async def _async_update_data(self) -> PlannerResult:
-        """Fetch and calculate planner data."""
+        """Fetch and calculate planner data, consuming pending source changes."""
+        reasons = self.source_refresh.started(
+            "periodic" if self.last_refresh else "setup"
+        )
+        started = perf_counter()
+        success = False
+        try:
+            result = await self._async_build_data()
+            success = True
+            return result
+        finally:
+            self.last_refresh = {
+                "reasons": reasons,
+                "duration_seconds": round(perf_counter() - started, 3),
+                "success": success,
+            }
+            _LOGGER.debug("Energy Planner refresh: %s", self.last_refresh)
+            self.source_refresh.finished()
+
+    async def _async_build_data(self) -> PlannerResult:
+        """Read source inputs and run the pure planner in the executor."""
         now = dt_util.now()
         source_warnings: list[str] = []
         _record_consumption_history(
@@ -1461,30 +1501,15 @@ def _reserve_safe_direct_solar_slots(
         if isinstance(lock_soc, int | float)
         else planner_input.battery_min_soc
     )
-    baseline = calculate_soc_forecast(
+    budget = SocGridBudget(
         planner_input,
+        managed_consumption_by_slot=existing_managed_energy_by_slot,
         grid_charge_target_soc=target,
         nt_lock_soc=lock,
     )
-    assumed = dict(existing_managed_energy_by_slot)
     accepted: list[SurplusSlot] = []
     remaining = maximum_energy_kwh
     tolerance = 1e-6
-
-    def valid(slot_start: datetime, value: float) -> bool:
-        trial_schedule = dict(assumed)
-        trial_schedule[slot_start] = trial_schedule.get(slot_start, 0.0) + value
-        candidate = calculate_soc_forecast(
-            planner_input,
-            managed_consumption_by_slot=trial_schedule,
-            grid_charge_target_soc=target,
-            nt_lock_soc=lock,
-        )
-        return len(candidate.points) == len(baseline.points) and all(
-            point.grid_import_kwh <= base.grid_import_kwh + tolerance
-            and point.grid_charge_kwh <= base.grid_charge_kwh + tolerance
-            for point, base in zip(candidate.points, baseline.points, strict=True)
-        )
 
     for slot in sorted(candidate_slots, key=lambda item: _timeline_time(item.start)):
         if remaining <= tolerance:
@@ -1497,22 +1522,10 @@ def _reserve_safe_direct_solar_slots(
             )
         if upper <= tolerance:
             continue
-        if valid(slot.start, upper):
-            safe = upper
-        else:
-            low = 0.0
-            high = upper
-            for _ in range(18):
-                middle = (low + high) / 2
-                if valid(slot.start, middle):
-                    low = middle
-                else:
-                    high = middle
-            safe = low
+        safe = budget.add(slot.start, upper)
         if safe <= tolerance:
             continue
         accepted.append(SurplusSlot(slot.start, safe))
-        assumed[slot.start] = assumed.get(slot.start, 0.0) + safe
         remaining -= safe
 
     per_slot_limit = (
