@@ -117,7 +117,7 @@ async def test_ev_boundary_timer_refreshes_and_reschedules(
 
     async_fire_time_changed(hass, replacement_boundary)
     await hass.async_block_till_done()
-    coordinator.async_request_refresh.assert_awaited_once_with()
+    coordinator.async_request_refresh.assert_awaited_once_with(reason="ev_boundary")
 
 
 async def test_ev_boundary_timer_follows_start_transition_and_end(
@@ -138,7 +138,7 @@ async def test_ev_boundary_timer_follows_start_transition_and_end(
     )
     coordinator = _CoordinatorStub(result)
 
-    async def refresh() -> None:
+    async def refresh(*, reason: str) -> None:
         coordinator.set_data(result)
 
     coordinator.async_request_refresh.side_effect = refresh

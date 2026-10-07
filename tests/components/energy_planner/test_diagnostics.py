@@ -48,6 +48,9 @@ async def test_config_entry_diagnostics_include_compact_summary(hass, config_ent
         "sensor.ev_energy_total",
         "sensor.water_heater_energy_total",
     }
+    assert diagnostics["last_refresh"]["reasons"] == ["setup"]
+    assert diagnostics["last_refresh"]["success"] is True
+    assert diagnostics["last_refresh"]["duration_seconds"] >= 0
     assert diagnostics["last_state"] in {"ok", "warning"}
     assert diagnostics["history"]["bucket_count"] >= 0
     assert diagnostics["history"]["learning_days"] == 3

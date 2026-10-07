@@ -225,7 +225,18 @@ For deadline-aware EV plans, it also schedules a one-time recalculation at every
 planned mode start and end, so advisory transitions do not wait for the periodic
 interval. A changed EV energy request, location, cable or GRID permission
 triggers a recalculation after a 10-second debounce; battery SoC and cumulative
-energy-source changes retain their 60-second debounce.
+managed energy-source changes retain their 60-second debounce. These source
+changes share one queue: the earliest due refresh includes all pending changes.
+A periodic, manual or EV-boundary refresh also consumes pending source changes,
+so their old timers do not repeat a calculation already done. Changes received
+while calculating are retained for one subsequent refresh. The configured
+interval is a periodic fallback, not a limit on responses to changed inputs.
+
+Simulation trials reuse prepared inputs and unchanged forecast segments while
+keeping the same energy constraints, forecast resolution and search precision.
+Diagnostics include `last_refresh` with trigger reasons, total duration in
+seconds and success status; the same summary is logged at debug level.
+See [performance validation](docs/performance.md) for the reproducible benchmark.
 
 Deadline-aware EV actions use permission windows with a minimum resolution of
 10 minutes while the underlying SoC forecast keeps its configured finer
