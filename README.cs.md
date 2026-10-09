@@ -13,8 +13,9 @@ domácí baterií během dalšího dne. Kombinuje nedávnou spotřebu domu, voli
 > havarijní, provozní, finanční, fakturační, regulatorní ani compliance
 > rozhodnutí.
 
-Energy Planner **sám nic neovládá**. Pouze vytváří senzory a binární senzory,
-které můžete použít v dashboardech nebo ve vlastních automatizacích.
+Energy Planner **sám nic neovládá**. Vytváří senzory, binární senzory a konfigurační
+přepínač planneru, které můžete použít v dashboardech nebo ve vlastních
+automatizacích.
 
 ## S čím pomůže
 
@@ -22,8 +23,11 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
   očekávanou řízenou spotřebou na zítřek.
 - Pomůže rozhodnout, jestli má smysl baterii nabíjet v nízkém tarifu.
 - U instalací bez dvoutarifu umožní okna nízkého tarifu úplně vypnout.
-- Plánování nabíjení ze sítě lze vypnout nezávisle, pokud se baterie ze sítě
-  nabíjet nemá.
+- Plánování nabíjení domácí baterie ze sítě lze zapnout nebo vypnout přímo na
+  dashboardu pomocí `switch.energy_planner_grid_charging_enabled`. Přepínač
+  sdílí volbu v nastavení integrace, zachová hodnotu po restartu a přepočítá
+  plán i grafy SoC bez síťového nabíjení, pokud je vypnutý. Solární nabíjení
+  a povolení sítě pro EV se nemění. Viz [příklad přepínače na dashboardu](docs/dashboard.md#battery-grid-charging-switch).
 - Ukáže, jestli je podle plánu ještě povolené vybíjení baterie.
 - Odhadne nevyužitý přebytek z FVE pro bojler, bazén, ohřev vody nebo EV.
 - Doporučí rozdělení přímé výroby FVE nad základní spotřebou domu mezi typované
@@ -208,7 +212,8 @@ Příklady automatizací s placeholdery jsou v
 [příkladech automatizací](docs/automations.md). Automatizace vždy nejdřív ručně
 otestujte ve vlastním Home Assistantu.
 
-Plánování nabíjení ze sítě lze vypnout nezávisle v možnostech integrace. Po
+Plánování nabíjení ze sítě lze vypnout nezávisle v možnostech integrace nebo
+přepínačem `switch.energy_planner_grid_charging_enabled` na dashboardu. Po
 vypnutí planner ignoruje okno plánovaného nabíjení,
 `binary_sensor.energy_planner_charge_now` zůstane vypnutý a simulace plánu
 nezahrne žádné nabíjení ze sítě.
