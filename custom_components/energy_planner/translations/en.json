@@ -247,7 +247,7 @@
           "interval_minutes": "Planning interval in minutes",
           "history_correction_percent": "History correction percent",
           "min_baseline_kwh_per_hour": "Minimum baseline consumption in kWh per hour",
-          "grid_charging_enabled": "Enable grid-charging planning",
+          "grid_charging_enabled": "Allow battery grid charging during low tariff",
           "grid_charge_max_kw": "Maximum grid charging power in kW",
           "grid_charge_efficiency": "Grid charging efficiency",
           "soc_reserve_percent": "SoC reserve percent",
@@ -281,7 +281,7 @@
           "joint_maximum_ev_current": "Maximum EV current per phase (A)"
         },
         "data_description": {
-          "grid_charging_enabled": "Advisory planning only. Energy Planner never controls the battery or inverter.",
+          "grid_charging_enabled": "When disabled, the plan and SoC forecasts assume no home-battery charging from the grid. Solar charging and EV grid permissions are unchanged. The dashboard switch uses the same setting. Energy Planner never controls the inverter.",
           "charge_window_start": "Ignored when grid-charging planning is disabled.",
           "charge_window_end": "Ignored when grid-charging planning is disabled."
         }
@@ -478,6 +478,11 @@
       },
       "joint_grid_import": {
         "name": "Joint forecast grid import"
+      }
+    },
+    "switch": {
+      "grid_charging_enabled": {
+        "name": "Allow battery grid charging during low tariff"
       }
     }
   },

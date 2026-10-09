@@ -20,6 +20,26 @@ Screenshots can be added here later, for example:
 - per-source managed load chart, for example EV charging vs water heating
 - simple mobile dashboard tile set
 
+## Battery Grid-charging Switch
+
+Add this built-in tile next to the SoC chart to change whether the planner may
+charge the home battery from the grid during its configured charging periods:
+
+```yaml
+type: tile
+entity: switch.energy_planner_grid_charging_enabled
+name: Battery grid charging in NT
+icon: mdi:battery-charging-high
+```
+
+The switch shares the **Allow battery grid charging during low tariff** option
+and remembers its value across restarts. Turning it off recalculates the plan
+and SoC charts without grid charging; solar charging, tariff windows and EV
+grid permissions remain unchanged. Changing the value reloads the integration,
+so its sensors can briefly be unavailable. The switch changes planner advice;
+it does not control the battery or inverter. Copy the actual entity ID if you
+have renamed it in Home Assistant.
+
 ## Future SoC Forecast With ApexCharts
 
 Install `apexcharts-card` through HACS, then add a manual card:

@@ -14,8 +14,9 @@ exists in Home Assistant.
 > emergency, operational, financial, billing, regulatory, or compliance
 > decisions.
 
-Energy Planner **does not control anything by itself**. It only creates sensors
-and binary sensors that you can use in dashboards or in your own automations.
+Energy Planner **does not control anything by itself**. It creates sensors,
+binary sensors and a planner configuration switch that you can use in
+dashboards or in your own automations.
 
 ## What It Helps With
 
@@ -23,8 +24,11 @@ and binary sensors that you can use in dashboards or in your own automations.
 - Decide whether the battery should be charged during a low-tariff period.
 - Disable low-tariff windows entirely for installations without dual-rate
   electricity pricing.
-- Disable grid-charging planning independently when the battery must not be
-  charged from the grid.
+- Enable or disable home-battery grid-charging planning directly on a dashboard
+  with `switch.energy_planner_grid_charging_enabled`. This shares the Options
+  Flow setting, persists across restarts and recalculates the plan and SoC
+  charts without grid charging when off. Solar charging and EV grid permissions
+  are unchanged. See the [dashboard switch example](docs/dashboard.md#battery-grid-charging-switch).
 - Decide whether battery discharge is currently still safe for the plan.
 - Estimate unused PV surplus that can be used for flexible loads such as hot
   water, pool technology or EV charging.
@@ -213,7 +217,8 @@ Example automations with placeholders are in
 your own Home Assistant before letting them control real devices.
 
 Grid-charging planning can be disabled independently in the integration
-options. When disabled, the planned grid-charging window is ignored,
+options or with `switch.energy_planner_grid_charging_enabled` on a dashboard.
+When disabled, the planned grid-charging window is ignored,
 `binary_sensor.energy_planner_charge_now` stays off and no grid charging is
 included in plan-specific simulations.
 

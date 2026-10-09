@@ -148,6 +148,7 @@ async def test_setup_entry_creates_all_sensors(hass, config_entry):
         len(SENSOR_DESCRIPTIONS)
         + len(BINARY_SENSOR_DESCRIPTIONS)
         + 2 * len(MANAGED_SOURCE_SENSOR_DESCRIPTIONS)
+        + 1  # Persistent grid-charging configuration switch.
     )
 
     target_state = hass.states.get(entity_ids[f"{config_entry.entry_id}_target_soc"])

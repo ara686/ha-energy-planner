@@ -41,7 +41,7 @@ from .const import (
 from .managed_loads import managed_energy_entity_ids, managed_load_configs
 from .units import power_value_to_kw
 
-PLATFORMS = ["binary_sensor", "sensor"]
+PLATFORMS = ["binary_sensor", "sensor", "switch"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 SOC_REFRESH_DEBOUNCE_SECONDS = 60

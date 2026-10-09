@@ -247,7 +247,7 @@
           "interval_minutes": "Interval plánování v minutách",
           "history_correction_percent": "Korekce historie v procentech",
           "min_baseline_kwh_per_hour": "Minimální základní spotřeba v kWh za hodinu",
-          "grid_charging_enabled": "Používat plánování nabíjení ze sítě",
+          "grid_charging_enabled": "Povolit nabíjení baterie ze sítě v NT",
           "grid_charge_max_kw": "Maximální nabíjení ze sítě v kW",
           "grid_charge_efficiency": "Účinnost nabíjení ze sítě",
           "soc_reserve_percent": "Rezerva SoC v procentech",
@@ -281,7 +281,7 @@
           "joint_maximum_ev_current": "Maximální proud auta na fázi (A)"
         },
         "data_description": {
-          "grid_charging_enabled": "Jde jen o doporučení planneru. Energy Planner baterii ani měnič neovládá.",
+          "grid_charging_enabled": "Při vypnutí plán i předpovědi SoC počítají bez nabíjení domácí baterie ze sítě. Solární nabíjení a povolení sítě pro EV se nemění. Přepínač na dashboardu používá stejné nastavení. Energy Planner měnič neovládá.",
           "charge_window_start": "Při vypnutém plánování nabíjení ze sítě se ignoruje.",
           "charge_window_end": "Při vypnutém plánování nabíjení ze sítě se ignoruje."
         }
@@ -478,6 +478,11 @@
       },
       "joint_grid_import": {
         "name": "Společná předpověď odběru ze sítě"
+      }
+    },
+    "switch": {
+      "grid_charging_enabled": {
+        "name": "Povolit nabíjení baterie ze sítě v NT"
       }
     }
   },
