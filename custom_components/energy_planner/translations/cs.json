@@ -95,7 +95,11 @@
             "maximum_temperature_c": "Maximální průměrná teplota",
             "tank_volume_liters": "Objem nádrže",
             "heater_power_kw": "Elektrický příkon ohřevu",
-            "thermal_conversion_factor": "Faktor přeměny na teplo"
+            "thermal_conversion_factor": "Faktor přeměny na teplo",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "reconfigure_hot_water": {
@@ -110,7 +114,11 @@
             "maximum_temperature_c": "Maximální průměrná teplota",
             "tank_volume_liters": "Objem nádrže",
             "heater_power_kw": "Elektrický příkon ohřevu",
-            "thermal_conversion_factor": "Faktor přeměny na teplo"
+            "thermal_conversion_factor": "Faktor přeměny na teplo",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "electric_vehicle": {
@@ -133,7 +141,11 @@
             "ev_wallbox_mode_entity": "Výběr režimu wallboxu (volitelné)",
             "ev_workdays": "Pracovní dny",
             "ev_departure_time": "Čas odjezdu",
-            "ev_return_time": "Čas návratu"
+            "ev_return_time": "Čas návratu",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "reconfigure_electric_vehicle": {
@@ -156,7 +168,11 @@
             "ev_wallbox_mode_entity": "Výběr režimu wallboxu (volitelné)",
             "ev_workdays": "Pracovní dny",
             "ev_departure_time": "Čas odjezdu",
-            "ev_return_time": "Čas návratu"
+            "ev_return_time": "Čas návratu",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "wallbox_modes": {
@@ -198,7 +214,8 @@
         "entity_required": "Vyberte dostupnou entitu požadovaného typu.",
         "workdays_required": "Vyberte alespoň jeden platný pracovní den.",
         "times_distinct": "Čas odjezdu a návratu musí být odlišný.",
-        "wallbox_option_invalid": "Vyberte jednu z možností, které aktuálně nabízí helper režimu wallboxu."
+        "wallbox_option_invalid": "Vyberte jednu z možností, které aktuálně nabízí helper režimu wallboxu.",
+        "percentage_range": "Minimální SoC pro solární odběr musí být konečné číslo od 0 do 100 %."
       }
     }
   },

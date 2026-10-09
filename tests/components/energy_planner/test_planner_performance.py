@@ -63,7 +63,7 @@ def full_joint_simulator(simulate):
 
     def full(*args, replay=None, **kwargs):
         candidate = simulate(*args, **kwargs)
-        if replay is None:
+        if replay is None or candidate is None:
             return candidate
         reserve = args[3]
         for j, (point, previous) in enumerate(

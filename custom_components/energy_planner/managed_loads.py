@@ -39,6 +39,7 @@ from .const import (
     CONF_PRIORITY,
     CONF_REQUESTED_ENERGY_ENTITY,
     CONF_REQUIRED_ENERGY_ENTITY,
+    CONF_SOLAR_MINIMUM_SOC_PERCENT,
     CONF_TANK_VOLUME_LITERS,
     CONF_THERMAL_CONVERSION_FACTOR,
     CONF_TOP_TEMPERATURE_ENTITY,
@@ -51,6 +52,7 @@ from .const import (
     DEFAULT_HOT_WATER_THERMAL_CONVERSION_FACTOR,
     DEFAULT_MANAGED_LOAD_PRIORITY,
     DEFAULT_MANAGED_LOAD_TYPE,
+    DEFAULT_SOLAR_MINIMUM_SOC_PERCENT,
     MANAGED_LOAD_SUBENTRY,
     MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
     MANAGED_LOAD_TYPE_HOT_WATER,
@@ -69,6 +71,7 @@ class ManagedLoadConfig:
     required_energy_entity_id: str | None = None
     maximum_charging_power_kw: float | None = None
     charging_efficiency: float = DEFAULT_EV_CHARGING_EFFICIENCY
+    solar_minimum_soc_percent: float | None = DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
     ev_allow_home_battery: bool = True
     hot_water_alternative_source: str = "none"
     ev_charging_strategy: str = DEFAULT_EV_CHARGING_STRATEGY
@@ -145,6 +148,11 @@ def managed_load_configs(entry: ConfigEntry) -> list[ManagedLoadConfig]:
             ),
             maximum_charging_power_kw=_optional_float(
                 subentry.data.get(CONF_MAXIMUM_CHARGING_POWER_KW)
+            ),
+            solar_minimum_soc_percent=_optional_float(
+                subentry.data.get(
+                    CONF_SOLAR_MINIMUM_SOC_PERCENT, DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
+                )
             ),
             charging_efficiency=_float_or_default(
                 subentry.data.get(CONF_CHARGING_EFFICIENCY),
