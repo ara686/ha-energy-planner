@@ -7,8 +7,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 from .allocation import ManagedLoadEstimate
+from .const import DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
 from .electric_vehicle import ElectricVehicleDemand
 from .hot_water import HotWaterDemand
+from .planner import SocGridBudget
+from .solar import solar_block_reason
 
 LoadType = Literal["generic", "hot_water", "electric_vehicle"]
 AllocationState = Literal["ok", "insufficient_data"]
@@ -42,6 +45,7 @@ class HotWaterAllocationInput:
     heater_power_kw: float
     demand: HotWaterDemand
     alternative_source: str = "none"
+    solar_minimum_soc_percent: float = DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,9 @@ class ElectricVehicleAllocationInput:
     priority: int
     maximum_charging_power_kw: float
     demand: ElectricVehicleDemand
+    solar_minimum_soc_percent: float = DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
+    minimum_solar_power_kw: float = 0.0
+    solar_action_window_minutes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -241,6 +248,7 @@ def allocate_managed_day(
     passive_surplus_kwh: float | None = None,
     direct_solar_kwh: float | None = None,
     reserve_limited_kwh: float = 0.0,
+    budget: SocGridBudget | None = None,
 ) -> ManagedDayAllocation:
     """Allocate one day's safe direct solar in four ordered phases."""
     results = {load.source_id: _initial_result(load) for load in loads}
@@ -270,6 +278,7 @@ def allocate_managed_day(
         for slot in surplus_slots
     }
     initial_surplus = sum(slot_pool.values())
+    admission = _SolarAdmission(slot_pool, interval_minutes / 60, budget)
     power_used: dict[tuple[str, datetime], float] = {}
     hot_schedule: dict[datetime, float] = {}
     hot_by_source: dict[str, float] = {}
@@ -290,12 +299,15 @@ def allocate_managed_day(
                 priority=load.priority,
                 desired_kwh=load.demand.minimum_required_kwh,
                 maximum_power_kw=load.heater_power_kw,
+                minimum_power_kw=load.heater_power_kw,
+                solar_minimum_soc_percent=load.solar_minimum_soc_percent,
                 schedule_kind="hot_water",
             )
             for load in hot_loads
         ],
         interval_minutes=interval_minutes,
         slot_pool=slot_pool,
+        admission=admission,
         results=results,
         power_used=power_used,
         hot_schedule=hot_schedule,
@@ -312,12 +324,16 @@ def allocate_managed_day(
                 priority=load.priority,
                 desired_kwh=load.demand.electrical_remaining_kwh,
                 maximum_power_kw=load.maximum_charging_power_kw,
+                minimum_power_kw=load.minimum_solar_power_kw,
+                solar_action_window_minutes=load.solar_action_window_minutes,
+                solar_minimum_soc_percent=load.solar_minimum_soc_percent,
                 schedule_kind="electric_vehicle",
             )
             for load in ev_loads
         ],
         interval_minutes=interval_minutes,
         slot_pool=slot_pool,
+        admission=admission,
         results=results,
         power_used=power_used,
         hot_schedule=hot_schedule,
@@ -339,6 +355,7 @@ def allocate_managed_day(
         ],
         interval_minutes=interval_minutes,
         slot_pool=slot_pool,
+        admission=admission,
         results=results,
         power_used=power_used,
         hot_schedule=hot_schedule,
@@ -354,12 +371,15 @@ def allocate_managed_day(
                 priority=load.priority,
                 desired_kwh=load.demand.flexible_capacity_kwh,
                 maximum_power_kw=load.heater_power_kw,
+                minimum_power_kw=load.heater_power_kw,
+                solar_minimum_soc_percent=load.solar_minimum_soc_percent,
                 schedule_kind="hot_water",
             )
             for load in hot_loads
         ],
         interval_minutes=interval_minutes,
         slot_pool=slot_pool,
+        admission=admission,
         results=results,
         power_used=power_used,
         hot_schedule=hot_schedule,
@@ -390,6 +410,7 @@ def allocate_managed_day(
                 schedule_by_source_slot=schedule_by_source_slot,
                 interval_minutes=interval_minutes,
                 fixed_power_kw=fixed_power_kw,
+                power_by_source_slot=admission.power_by_source_slot,
             )
         if result.load_type == "hot_water":
             result.details["alternative_heating_recommended"] = (
@@ -412,6 +433,16 @@ def allocate_managed_day(
                 }
             )
     recommended = sum(result.recommended_kwh or 0.0 for result in results.values())
+    for result in results.values():
+        blocked = admission.blocked.get(result.source_id, set())
+        if blocked:
+            result.details["solar_block_reasons"] = sorted(blocked)
+            if not result.recommended_kwh:
+                result.reason = (
+                    "waiting_for_minimum_soc"
+                    if "waiting_for_minimum_soc" in blocked
+                    else "insufficient_solar_power"
+                )
     unallocated = sum(slot_pool.values())
     usable_loads = [result for result in results.values() if result.state == "ok"]
     warnings = []
@@ -446,7 +477,10 @@ def allocate_managed_day(
         loads=list(results.values()),
         available_direct_solar_kwh=available_direct,
         unallocated_direct_solar_kwh=max(available_direct - recommended, 0.0),
-        reserve_limited_kwh=reserve_limited_kwh,
+        reserve_limited_kwh=min(
+            max(0.0, available_direct - recommended),
+            reserve_limited_kwh + admission.reserve_limited_kwh,
+        ),
         generic_energy_by_source_slot={
             (source_id, start): value
             for (source_id, start), value in schedule_by_source_slot.items()
@@ -481,10 +515,127 @@ class _PhaseItem:
     maximum_power_kw: float | None = None
     schedule_kind: Literal["generic", "hot_water", "electric_vehicle"] | None = None
     allocated_kwh: float = 0.0
+    minimum_power_kw: float = 0.0
+    solar_minimum_soc_percent: float = 0.0
+    solar_action_window_minutes: int | None = None
 
     @property
     def remaining_kwh(self) -> float:
         return max(self.desired_kwh - self.allocated_kwh, 0.0)
+
+
+class _SolarAdmission:
+    """Reserve peak power and commit only real, reserve-safe load allocations."""
+
+    def __init__(
+        self, slots: dict[datetime, float], hours: float, budget: SocGridBudget | None
+    ) -> None:
+        self.hours = hours
+        self.budget = budget
+        self.peak_pool = {start: energy / hours for start, energy in slots.items()}
+        self.power_by_source_slot: dict[tuple[str, datetime], float] = {}
+        self.energy_by_source_slot: dict[tuple[str, datetime], float] = {}
+        self.blocked: dict[str, set[str]] = {}
+        self.reserve_limited_kwh = 0.0
+
+    def window_start(self, item: _PhaseItem, start: datetime) -> datetime:
+        minutes = item.solar_action_window_minutes
+        return (
+            start.replace(
+                minute=start.minute - start.minute % minutes, second=0, microsecond=0
+            )
+            if minutes
+            else start
+        )
+
+    def available_power(self, item: _PhaseItem, start: datetime) -> float:
+        minutes = item.solar_action_window_minutes
+        cursor = self.window_start(item, start)
+        count = round(minutes / (self.hours * 60)) if minutes else 1
+        return min(
+            self.peak_pool.get(cursor + timedelta(hours=i * self.hours), 0.0)
+            + self.power_by_source_slot.get(
+                (item.source_id, cursor + timedelta(hours=i * self.hours)), 0.0
+            )
+            for i in range(count)
+        )
+
+    def block_reason(self, item: _PhaseItem, start: datetime) -> str | None:
+        return solar_block_reason(
+            soc_percent=self.budget.soc_at(self.window_start(item, start))
+            if self.budget
+            else None,
+            minimum_soc_percent=item.solar_minimum_soc_percent,
+            available_power_kw=self.available_power(item, start),
+            minimum_power_kw=item.minimum_power_kw,
+        )
+
+    def minimum_energy(self, item: _PhaseItem, start: datetime) -> float:
+        old = self.energy_by_source_slot.get((item.source_id, start), 0.0)
+        return min(
+            item.remaining_kwh, max(0.0, item.minimum_power_kw * self.hours - old)
+        )
+
+    def required_power(self, item: _PhaseItem, start: datetime, value: float) -> float:
+        if item.schedule_kind == "hot_water" or (
+            item.schedule_kind == "generic" and item.maximum_power_kw is not None
+        ):
+            return item.maximum_power_kw or 0.0
+        old = self.energy_by_source_slot.get((item.source_id, start), 0.0)
+        return max(item.minimum_power_kw, (old + value) / self.hours)
+
+    def value_fits(self, item: _PhaseItem, start: datetime, value: float) -> bool:
+        if value + 1e-9 < self.minimum_energy(item, start):
+            return False
+        own = self.power_by_source_slot.get((item.source_id, start), 0.0)
+        return (
+            self.required_power(item, start, value)
+            <= min(self.peak_pool[start] + own, self.available_power(item, start))
+            + 1e-9
+        )
+
+    def group_fits(
+        self, items: dict[str, _PhaseItem], start: datetime, values: dict[str, float]
+    ) -> bool:
+        additional_power = 0.0
+        for source, value in values.items():
+            item = items[source]
+            if not self.value_fits(item, start, value):
+                return False
+            additional_power += self.required_power(
+                item, start, value
+            ) - self.power_by_source_slot.get((source, start), 0.0)
+        return additional_power <= self.peak_pool[start] + 1e-9
+
+    def accept(self, item: _PhaseItem, start: datetime, value: float) -> float:
+        reason = self.block_reason(item, start)
+        if reason:
+            self.blocked.setdefault(item.source_id, set()).add(reason)
+            return 0.0
+        if not self.value_fits(item, start, value):
+            self.blocked.setdefault(item.source_id, set()).add(
+                "insufficient_solar_power"
+            )
+            return 0.0
+        if self.budget:
+            safe = self.budget.add(
+                start,
+                value,
+                minimum_soc_percent=item.solar_minimum_soc_percent,
+                minimum_addition_kwh=self.minimum_energy(item, start),
+            )
+            self.reserve_limited_kwh += max(0.0, value - safe)
+            value = safe
+        if value <= 1e-12:
+            return 0.0
+        key = (item.source_id, start)
+        power = self.required_power(item, start, value)
+        self.peak_pool[start] -= power - self.power_by_source_slot.get(key, 0.0)
+        self.power_by_source_slot[key] = power
+        self.energy_by_source_slot[key] = (
+            self.energy_by_source_slot.get(key, 0.0) + value
+        )
+        return value
 
 
 def _allocate_phase(
@@ -500,6 +651,7 @@ def _allocate_phase(
     ev_by_source: dict[str, float],
     schedule_by_source_slot: dict[tuple[str, datetime], float],
     minimum_phase: bool = False,
+    admission: _SolarAdmission,
 ) -> None:
     for priority in sorted({item.priority for item in items}):
         group = [item for item in items if item.priority == priority]
@@ -514,7 +666,20 @@ def _allocate_phase(
                 remaining = item.remaining_kwh
                 if remaining <= 1e-12:
                     continue
-                capacity = remaining
+                reason = admission.block_reason(item, slot_start)
+                if reason:
+                    admission.blocked.setdefault(item.source_id, set()).add(reason)
+                    continue
+                capacity = min(
+                    remaining,
+                    max(
+                        0.0,
+                        admission.available_power(item, slot_start) * admission.hours
+                        - admission.energy_by_source_slot.get(
+                            (item.source_id, slot_start), 0.0
+                        ),
+                    ),
+                )
                 if item.maximum_power_kw is not None:
                     slot_limit = max(item.maximum_power_kw, 0.0) * interval_minutes / 60
                     already_used = power_used.get((item.source_id, slot_start), 0.0)
@@ -528,8 +693,36 @@ def _allocate_phase(
                 capacities=capacities,
                 weights=weights,
             )
+            if not admission.group_fits(items_by_source, slot_start, allocations):
+                allocations = {}
+                remaining_energy = available
+                remaining_power = admission.peak_pool[slot_start]
+                for source_id in sorted(capacities):
+                    item = items_by_source[source_id]
+                    old_power = admission.power_by_source_slot.get(
+                        (source_id, slot_start), 0.0
+                    )
+                    old_energy = admission.energy_by_source_slot.get(
+                        (source_id, slot_start), 0.0
+                    )
+                    upper = min(
+                        capacities[source_id],
+                        remaining_energy,
+                        (remaining_power + old_power) * admission.hours - old_energy,
+                    )
+                    if upper <= 1e-12 or not admission.value_fits(
+                        item, slot_start, upper
+                    ):
+                        continue
+                    power = admission.required_power(item, slot_start, upper)
+                    allocations[source_id] = upper
+                    remaining_energy -= upper
+                    remaining_power -= power - old_power
             for source_id, value in allocations.items():
                 item = items_by_source[source_id]
+                value = admission.accept(item, slot_start, value)
+                if value <= 1e-12:
+                    continue
                 item.allocated_kwh += value
                 result = results[source_id]
                 result.recommended_kwh = (result.recommended_kwh or 0.0) + value
@@ -550,6 +743,11 @@ def _allocate_phase(
                     ev_schedule[slot_start] = ev_schedule.get(slot_start, 0.0) + value
                     ev_by_source[source_id] = ev_by_source.get(source_id, 0.0) + value
                 slot_pool[slot_start] -= value
+            for item in group:
+                if item.remaining_kwh > 1e-12:
+                    reason = admission.block_reason(item, slot_start)
+                    if reason:
+                        admission.blocked.setdefault(item.source_id, set()).add(reason)
 
 
 def _merge_source_timeline(
@@ -558,6 +756,7 @@ def _merge_source_timeline(
     schedule_by_source_slot: dict[tuple[str, datetime], float],
     interval_minutes: int,
     fixed_power_kw: float | None = None,
+    power_by_source_slot: dict[tuple[str, datetime], float] | None = None,
 ) -> list[ManagedLoadTimelineWindow]:
     """Merge adjacent direct-solar slots for one managed load."""
     allocations = {
@@ -570,8 +769,9 @@ def _merge_source_timeline(
     for start in sorted(allocations, key=_timeline_time):
         energy = allocations[start]
         duration = delta
-        if fixed_power_kw is not None and fixed_power_kw > 0:
-            duration = min(delta, timedelta(hours=energy / fixed_power_kw))
+        power = (power_by_source_slot or {}).get((source_id, start), fixed_power_kw)
+        if power is not None and power > 0:
+            duration = min(delta, timedelta(hours=energy / power))
         end = _add_elapsed_time(start, duration)
         if windows and _timeline_time(windows[-1].end) == _timeline_time(start):
             previous = windows[-1]
@@ -679,6 +879,8 @@ def _initial_result(load: ManagedAllocationInput) -> ManagedLoadAllocation:
             flexible_capacity_kwh=load.demand.flexible_capacity_kwh,
             details={
                 **load.demand.as_dict(),
+                "solar_minimum_soc_percent": load.solar_minimum_soc_percent,
+                "minimum_solar_power_kw": load.heater_power_kw,
                 "alternative_source": load.alternative_source,
                 "alternative_heating_recommended": None,
             },
@@ -699,6 +901,8 @@ def _initial_result(load: ManagedAllocationInput) -> ManagedLoadAllocation:
                 "electrical_remaining_before_kwh": (demand.electrical_remaining_kwh),
                 "charging_efficiency": demand.charging_efficiency,
                 "maximum_charging_power_kw": load.maximum_charging_power_kw,
+                "solar_minimum_soc_percent": load.solar_minimum_soc_percent,
+                "minimum_solar_power_kw": load.minimum_solar_power_kw,
                 "electrical_shortfall_kwh": demand.electrical_remaining_kwh,
                 "battery_shortfall_kwh": demand.battery_remaining_kwh,
             },

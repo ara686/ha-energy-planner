@@ -616,6 +616,7 @@ class SocGridBudget:
         managed = {_timeline_time(k): v for k, v in managed_consumption_by_slot.items()}
         self._managed = [managed.get(_timeline_time(s.start), 0.0) for s in slots]
         self._battery = [_soc_to_kwh(data.battery_soc, data.battery_capacity_kwh)]
+        self._minimum_battery = [0.0] * len(slots)
         self._prefix_valid = [True]
         for i in range(len(slots)):
             battery, grid, charge, _ = self._model.step(
@@ -636,13 +637,27 @@ class SocGridBudget:
             and _round(charge) <= budget_charge + 1e-6
         )
 
-    def _trial(self, indices: list[int], value: float) -> list[float] | None:
+    def soc_at(self, start: datetime) -> float | None:
+        """Return full-precision SoC before a slot, including accepted demand."""
+        indices = self._indices.get(_timeline_time(start))
+        if indices is None:
+            return None
+        return self._battery[indices[0]] / self._model.capacity * 100
+
+    def _trial(
+        self, indices: list[int], value: float, minimum_battery: float = 0.0
+    ) -> list[float] | None:
         index = indices[0]
         if not self._prefix_valid[index]:
             return None
         battery = self._battery[index]
         suffix = []
         for i in range(index, len(self._solar)):
+            required = max(
+                self._minimum_battery[i], minimum_battery if i in indices else 0.0
+            )
+            if battery + 1e-9 < required:
+                return None
             managed = self._managed[i] + (value if i in indices else 0.0)
             battery, grid, charge, _ = self._model.step(
                 battery,
@@ -654,28 +669,43 @@ class SocGridBudget:
             suffix.append(battery)
         return suffix
 
-    def add(self, start: datetime, upper: float) -> float:
+    def add(
+        self,
+        start: datetime,
+        upper: float,
+        *,
+        minimum_soc_percent: float = 0.0,
+        minimum_addition_kwh: float = 0.0,
+    ) -> float:
         """Commit the same 18-step safe bound as a full forecast search."""
         indices = self._indices.get(_timeline_time(start))
         if indices is None:
             # A schedule entry outside the normalized horizon has no effect.
-            return upper if self._prefix_valid[-1] else 0.0
+            return upper if self._prefix_valid[-1] and minimum_soc_percent == 0 else 0.0
         index = indices[0]
-        suffix = self._trial(indices, upper)
+        minimum_battery = minimum_soc_percent * self._model.capacity / 100
+        if self._battery[index] + 1e-9 < minimum_battery:
+            return 0.0
+        suffix = self._trial(indices, upper, minimum_battery)
         safe = upper
         if suffix is None:
             low, high = 0.0, upper
             for _ in range(18):
                 middle = (low + high) / 2
-                candidate = self._trial(indices, middle)
+                candidate = self._trial(indices, middle, minimum_battery)
                 if candidate is not None:
                     low, suffix = middle, candidate
                 else:
                     high = middle
             safe = low
+        if safe + 1e-6 < minimum_addition_kwh:
+            return 0.0
         if safe > 1e-6 and suffix is not None:
             for i in indices:
                 self._managed[i] += safe
+                self._minimum_battery[i] = max(
+                    self._minimum_battery[i], minimum_battery
+                )
             self._battery[index + 1 :] = suffix
             self._prefix_valid[index + 1 :] = [True] * len(suffix)
         return safe
@@ -708,6 +738,7 @@ def _simulate(
         managed_consumption_kwh = max(0.0, slot.managed_consumption_kwh)
         consumption_kwh = max(0.0, slot.consumption_kwh) + managed_consumption_kwh
         net_kwh = solar_kwh - consumption_kwh
+        battery_start_kwh = battery_kwh
         battery_kwh, grid_import_kwh, grid_charge_kwh, slot_unused_surplus = model.step(
             battery_kwh, net_kwh, is_nt, is_charge
         )
@@ -726,6 +757,7 @@ def _simulate(
                 timestamp=slot.start,
                 soc_percent=_round_soc_percent(battery_kwh, capacity),
                 battery_kwh=_round(battery_kwh),
+                battery_start_kwh=battery_start_kwh,
                 solar_kwh=_round(solar_kwh),
                 consumption_kwh=_round(consumption_kwh),
                 managed_consumption_kwh=_round(managed_consumption_kwh),

@@ -43,6 +43,7 @@ class SocForecastPoint:
     solar_coverage: float = 1.0
     is_nt: bool = False
     is_charge_window: bool = False
+    battery_start_kwh: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         payload = {
@@ -58,6 +59,8 @@ class SocForecastPoint:
             "is_nt": self.is_nt,
             "is_charge_window": self.is_charge_window,
         }
+        if self.battery_start_kwh is not None:
+            payload["battery_start_kwh"] = self.battery_start_kwh
         if self.managed_consumption_kwh > 0:
             payload["managed_consumption_kwh"] = self.managed_consumption_kwh
         return payload

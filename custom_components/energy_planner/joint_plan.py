@@ -9,8 +9,11 @@ from functools import cached_property
 from math import inf, isfinite
 from typing import Any
 
+from .const import DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
 from .ev_plan import EVChargingPlanInput, _next_departure, _scheduled_home
+from .managed_allocation import _proportional_capped_allocations
 from .models import PlannerInput
+from .solar import solar_block_reason, valid_solar_minimum_soc
 
 EPS = 1e-7
 
@@ -65,6 +68,7 @@ class JointWater:
     loss_kw: float | None = None
     daily_draw_kwh: float | None = None
     priority: int = 1
+    solar_minimum_soc_percent: float = DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,7 @@ class JointSlot:
     solar: float
     home: float
     generic: dict[str, float] = field(default_factory=dict)
+    solar_coverage: float = 1.0
 
     @cached_property
     def hours(self) -> float:
@@ -147,6 +152,7 @@ def normalized_joint_slots(
                     max(0.0, slot.solar_kwh) * ratio,
                     max(0.0, slot.consumption_kwh) * ratio,
                     values,
+                    slot.solar_coverage,
                 )
             )
     return result
@@ -254,6 +260,7 @@ def _simulate(
     *,
     prepared: list[_PreparedSlot] | None = None,
     replay: _Replay | None = None,
+    minimum_start_kwh: list[float] | None = None,
 ) -> list[dict[str, Any]] | None:
     capacity = data.battery_capacity_kwh
     floor = capacity * data.battery_min_soc / 100
@@ -271,6 +278,8 @@ def _simulate(
         s = slots[i]
         cached = prepared[i]
         before = battery
+        if minimum_start_kwh is not None and before + 1e-9 < minimum_start_kwh[i]:
+            return None
         demand = cached.home + sum(loads[i].values())
         net = s.solar - demand
         charge_ac = discharge_ac = grid = unserved = 0.0
@@ -364,6 +373,11 @@ def calculate_joint_plan(
     optional load cannot buy additional battery energy or steal a future reserve.
     """
     limits = limits or JointLimits()
+    if any(
+        not valid_solar_minimum_soc(load.solar_minimum_soc_percent)
+        for load in (*water, *vehicles)
+    ):
+        raise ValueError("Invalid solar minimum SoC")
     for key in (
         "grid_import_kw",
         "battery_charge_kw",
@@ -423,6 +437,12 @@ def calculate_joint_plan(
     points = baseline
     actions: dict[str, list[dict[str, Any]]] = {}
     water_by_source = {tank.source_id: tank for tank in water}
+    solar_thresholds = {
+        load.source_id: load.solar_minimum_soc_percent for load in (*water, *vehicles)
+    }
+    minimum_start_kwh = [0.0] * len(slots)
+    peak_by_slot: list[dict[str, float]] = [{} for _ in slots]
+    blocked: dict[str, set[str]] = {}
 
     def allocate(
         source: str,
@@ -432,6 +452,7 @@ def calculate_joint_plan(
         allow_grid: bool = False,
         solar_only: bool = False,
         minimum_power: float = 0.0,
+        minimum_addition_kwh: float | None = None,
     ) -> float:
         nonlocal points
         remaining = max(0.0, demand)
@@ -441,19 +462,47 @@ def calculate_joint_plan(
             s = slots[i]
             existing = loads[i].get(source, 0.0)
             direct_solar = max(0.0, s.solar - points[i]["consumption_kwh"])
+            own_peak = peak_by_slot[i].get(source, 0.0)
+            solar_power = max(
+                0.0,
+                (s.solar - prepared[i].home) / s.hours
+                - sum(peak_by_slot[i].values())
+                + own_peak,
+            )
+            if solar_only:
+                if s.solar_coverage < 0.999:
+                    blocked.setdefault(source, set()).add("incomplete_solar_forecast")
+                    continue
+                reason = solar_block_reason(
+                    soc_percent=points[i]["battery_start_kwh"]
+                    / data.battery_capacity_kwh
+                    * 100,
+                    minimum_soc_percent=solar_thresholds[source],
+                    available_power_kw=min(power, solar_power),
+                    minimum_power_kw=minimum_power,
+                )
+                if reason:
+                    blocked.setdefault(source, set()).add(reason)
+                    continue
             cap = min(power * s.hours - existing, remaining)
             if limits.phase_limit_kw is not None:
                 # Phase distribution is an estimate, not a verified circuit model.
-                cap = min(
-                    cap,
-                    max(
-                        0.0,
-                        limits.phase_limit_kw * limits.phases * s.hours
-                        - points[i]["consumption_kwh"],
-                    ),
+                phase_power = max(
+                    0.0,
+                    limits.phase_limit_kw * limits.phases
+                    - prepared[i].home / s.hours
+                    - sum(peak_by_slot[i].values())
+                    + own_peak,
                 )
+                if minimum_power > phase_power + EPS:
+                    if solar_only:
+                        blocked.setdefault(source, set()).add(
+                            "insufficient_solar_power"
+                        )
+                    continue
+                cap = min(cap, max(0.0, phase_power * s.hours - existing))
             if solar_only:
-                cap = min(cap, direct_solar)
+                cap = min(cap, max(0.0, solar_power * s.hours - existing))
             elif not allow_grid:
                 slack = max(
                     0.0,
@@ -471,6 +520,12 @@ def calculate_joint_plan(
             if cap <= EPS:
                 continue
             old_grid = grid_loads[i]
+            old_minimum = minimum_start_kwh[i]
+            if solar_only:
+                minimum_start_kwh[i] = max(
+                    old_minimum,
+                    solar_thresholds[source] * data.battery_capacity_kwh / 100,
+                )
 
             def trial(
                 value: float,
@@ -497,6 +552,7 @@ def calculate_joint_plan(
                     fixed_charge,
                     prepared=prepared,
                     replay=_Replay(previous_points, i, added_grid),
+                    minimum_start_kwh=minimum_start_kwh,
                 )
                 if candidate is None:
                     return False, previous_points
@@ -531,35 +587,27 @@ def calculate_joint_plan(
                         high = mid
                 cap = low
                 valid, candidate = trial(cap)
-            # Require enough instantaneous supply to sustain 6 A; a final small
-            # request may finish early rather than run below the minimum current.
-            supply = cap / s.hours
-            final_short = remaining < minimum_power * s.hours and cap + EPS >= remaining
-            if final_short:
-                minimum_energy = minimum_power * s.hours
-                supports_minimum = (
-                    minimum_power <= power
-                    and (not solar_only or direct_solar + EPS >= minimum_energy)
-                    and trial(minimum_energy)[0]
-                )
-                valid, candidate = trial(cap)
-                final_short = supports_minimum
-            if (
-                not valid
-                or cap < 1e-5
-                or (supply + EPS < minimum_power and not final_short)
-            ):
+            minimum_addition = (
+                minimum_addition_kwh
+                if minimum_addition_kwh is not None
+                else min(remaining, max(0.0, minimum_power * s.hours - existing))
+            )
+            if not valid or cap < 1e-5 or cap + EPS < minimum_addition:
                 if existing:
                     loads[i][source] = existing
                 else:
                     loads[i].pop(source, None)
                 grid_loads[i] = old_grid
+                minimum_start_kwh[i] = old_minimum
                 continue
             grid_added = max(
                 0.0, candidate[i]["grid_import_kwh"] - points[i]["grid_import_kwh"]
             )
-            actual_power = max(minimum_power, min(power, cap / s.hours))
-            stop = elapsed(s.start, timedelta(hours=cap / actual_power))
+            actual_power = max(
+                own_peak, minimum_power, min(power, (existing + cap) / s.hours)
+            )
+            peak_by_slot[i][source] = actual_power
+            stop = elapsed(s.start, timedelta(hours=(existing + cap) / actual_power))
             solar_energy = cap if solar_only else min(cap, direct_solar)
             mode = (
                 "grid_low_tariff"
@@ -589,8 +637,122 @@ def calculate_joint_plan(
             remaining -= cap
         return max(0.0, remaining)
 
+    def solar_group(
+        requests: list[tuple[str, int, list[int], float, float, float]],
+    ) -> dict[str, float]:
+        """Share a phase's headroom only between physically feasible loads."""
+        remaining = {source: demand for source, _, _, demand, _, _ in requests}
+        for priority in sorted({request[1] for request in requests}):
+            group = [request for request in requests if request[1] == priority]
+            for i, slot in enumerate(slots):
+                available = max(0.0, slot.solar - points[i]["consumption_kwh"])
+                peak = max(
+                    0.0,
+                    (slot.solar - prepared[i].home) / slot.hours
+                    - sum(peak_by_slot[i].values()),
+                )
+                caps, weights, minima, powers = {}, {}, {}, {}
+                for source, _, indices, _, power, minimum in group:
+                    if i not in indices or remaining[source] <= EPS:
+                        continue
+                    if slot.solar_coverage < 0.999:
+                        blocked.setdefault(source, set()).add(
+                            "incomplete_solar_forecast"
+                        )
+                        continue
+                    own = peak_by_slot[i].get(source, 0.0)
+                    reason = solar_block_reason(
+                        soc_percent=points[i]["battery_start_kwh"]
+                        / data.battery_capacity_kwh
+                        * 100,
+                        minimum_soc_percent=solar_thresholds[source],
+                        available_power_kw=min(power, peak + own),
+                        minimum_power_kw=minimum,
+                    )
+                    if reason:
+                        blocked.setdefault(source, set()).add(reason)
+                        continue
+                    existing = loads[i].get(source, 0.0)
+                    caps[source] = min(
+                        remaining[source], max(0.0, power * slot.hours - existing)
+                    )
+                    weights[source] = remaining[source]
+                    minima[source] = min(
+                        remaining[source], max(0.0, minimum * slot.hours - existing)
+                    )
+                    powers[source] = (power, minimum, own, existing)
+
+                values = _proportional_capped_allocations(
+                    available=available, capacities=caps, weights=weights
+                )
+
+                def required_peak(
+                    source: str, value: float, *, powers=powers, slot=slot
+                ) -> float:
+                    _, minimum, own, existing = powers[source]
+                    return max(own, minimum, (existing + value) / slot.hours)
+
+                if (
+                    any(
+                        value + EPS < minima[source] for source, value in values.items()
+                    )
+                    or sum(
+                        required_peak(source, value) - powers[source][2]
+                        for source, value in values.items()
+                    )
+                    > peak + EPS
+                ):
+                    values = {}
+                    energy_left, power_left = available, peak
+                    for source in sorted(caps):
+                        _, _, own, existing = powers[source]
+                        value = min(
+                            caps[source],
+                            energy_left,
+                            max(0.0, (power_left + own) * slot.hours - existing),
+                        )
+                        if value <= EPS or value + EPS < minima[source]:
+                            continue
+                        extra_peak = required_peak(source, value) - own
+                        if extra_peak > power_left + EPS:
+                            continue
+                        values[source] = value
+                        energy_left -= value
+                        power_left -= extra_peak
+                for source, value in values.items():
+                    power, minimum, _, _ = powers[source]
+                    missing = allocate(
+                        source,
+                        [i],
+                        value,
+                        power,
+                        solar_only=True,
+                        minimum_power=minimum,
+                        minimum_addition_kwh=minima[source],
+                    )
+                    remaining[source] -= value - missing
+                for source, _, indices, _, power, minimum in group:
+                    if i not in indices or remaining[source] <= EPS:
+                        continue
+                    own = peak_by_slot[i].get(source, 0.0)
+                    actual_headroom = max(
+                        0.0,
+                        (slot.solar - prepared[i].home) / slot.hours
+                        - sum(peak_by_slot[i].values())
+                        + own,
+                    )
+                    if min(power, actual_headroom) + EPS < minimum:
+                        blocked.setdefault(source, set()).add(
+                            "insufficient_solar_power"
+                        )
+        return remaining
+
     water_results = {}
     sorted_water = sorted(water, key=lambda w: (w.priority, w.source_id))
+    deadlines_by_source: dict[str, list[dict[str, Any]]] = {
+        tank.source_id: [] for tank in sorted_water
+    }
+    gas_by_source = {tank.source_id: 0.0 for tank in sorted_water}
     for tank in sorted_water:
         if (
             not all(
@@ -607,60 +769,65 @@ def calculate_joint_plan(
             or tank.efficiency <= 0
         ):
             raise ValueError("Invalid water parameters")
-        heat_capacity = 0.001163 * tank.volume_liters
-        first_day = data.now.date()
-        deadlines = []
-        day = first_day
-        gas_so_far = 0.0
-        while True:
-            deadline = datetime.combine(day, tank.deadline, tzinfo=data.now.tzinfo)
-            if instant(deadline) > instant(slots[-1].end):
-                break
-            day += timedelta(days=1)
-            if instant(deadline) <= instant(data.now):
-                continue
-            hours = (instant(deadline) - instant(data.now)).total_seconds() / 3600
-            losses = (tank.loss_kw or 0.0) * hours + (
-                tank.daily_draw_kwh or 0.0
-            ) * hours / 24
-            assigned_before = sum(
-                loads[i].get(tank.source_id, 0)
-                for i, slot in enumerate(slots)
-                if instant(slot.end) <= instant(deadline)
-            )
-            deficit = (
-                max(
-                    0.0,
-                    heat_capacity * (tank.minimum - tank.temperature)
-                    + losses
-                    - assigned_before * tank.efficiency
-                    - gas_so_far,
+    for priority in sorted({tank.priority for tank in sorted_water}):
+        day = data.now.date()
+        while day <= slots[-1].end.date():
+            requests = []
+            pending = {}
+            for tank in sorted_water:
+                if tank.priority != priority:
+                    continue
+                deadline = datetime.combine(day, tank.deadline, tzinfo=data.now.tzinfo)
+                if not instant(data.now) < instant(deadline) <= instant(slots[-1].end):
+                    continue
+                hours = (instant(deadline) - instant(data.now)).total_seconds() / 3600
+                losses = ((tank.loss_kw or 0) + (tank.daily_draw_kwh or 0) / 24) * hours
+                indices = [
+                    i
+                    for i, slot in enumerate(slots)
+                    if instant(slot.end) <= instant(deadline)
+                ]
+                assigned = sum(loads[i].get(tank.source_id, 0.0) for i in indices)
+                deficit = (
+                    max(
+                        0.0,
+                        0.001163
+                        * tank.volume_liters
+                        * (tank.minimum - tank.temperature)
+                        + losses
+                        - assigned * tank.efficiency
+                        - gas_by_source[tank.source_id],
+                    )
+                    / tank.efficiency
                 )
-                / tank.efficiency
-            )
-            indices = [
-                i
-                for i, slot in enumerate(slots)
-                if instant(slot.end) <= instant(deadline)
-            ]
-            missing = allocate(
-                tank.source_id,
-                indices,
-                deficit,
-                tank.heater_kw,
-                solar_only=True,
-            )
-            gas = missing * tank.efficiency if tank.gas_backup else 0.0
-            gas_so_far += gas
-            deadlines.append(
-                {
-                    "deadline": deadline.isoformat(),
-                    "minimum_required_kwh": deficit,
-                    "minimum_shortfall_kwh": missing,
-                    "gas_thermal_kwh": gas,
-                    "estimated_losses_kwh": losses,
-                }
-            )
+                requests.append(
+                    (
+                        tank.source_id,
+                        priority,
+                        indices,
+                        deficit,
+                        tank.heater_kw,
+                        tank.heater_kw,
+                    )
+                )
+                pending[tank.source_id] = (tank, deadline, losses, deficit)
+            missing_by_source = solar_group(requests)
+            for source, (tank, deadline, losses, deficit) in pending.items():
+                missing = missing_by_source[source]
+                gas = missing * tank.efficiency if tank.gas_backup else 0.0
+                gas_by_source[source] += gas
+                deadlines_by_source[source].append(
+                    {
+                        "deadline": deadline.isoformat(),
+                        "minimum_required_kwh": deficit,
+                        "minimum_shortfall_kwh": missing,
+                        "gas_thermal_kwh": gas,
+                        "estimated_losses_kwh": losses,
+                    }
+                )
+            day += timedelta(days=1)
+    for tank in sorted_water:
+        deadlines = deadlines_by_source[tank.source_id]
         first = (
             deadlines[0]
             if deadlines
@@ -678,7 +845,7 @@ def calculate_joint_plan(
             "minimum_temperature": tank.minimum,
             "normal_temperature": tank.normal,
             "maximum_temperature": tank.maximum,
-            "gas_thermal_kwh": gas_so_far,
+            "gas_thermal_kwh": gas_by_source[tank.source_id],
             "alternative_heating_recommended": tank.gas_backup
             and first["gas_thermal_kwh"] > EPS,
             "future_losses_estimated_kwh": first["estimated_losses_kwh"],
@@ -689,15 +856,20 @@ def calculate_joint_plan(
             warnings.append(f"unverified_thermal_forecast:{tank.source_id}")
 
     vehicle_results = {}
+    vehicle_context = {}
+    solar_requests = []
     for vehicle in sorted(vehicles, key=lambda v: (v.priority, v.source_id)):
-        departure = _next_departure(data.now, vehicle)
+        departure = (
+            slots[-1].end if vehicle.solar_only else _next_departure(data.now, vehicle)
+        )
         indices = [
             i
-            for i, s in enumerate(slots)
-            if instant(s.end) <= instant(departure)
-            and _scheduled_home(s.start, vehicle)
+            for i, slot in enumerate(slots)
+            if instant(slot.end) <= instant(departure)
+            and (vehicle.solar_only or _scheduled_home(slot.start, vehicle))
         ]
-        remaining = vehicle.required_input_kwh
+        if vehicle.currently_home is None or vehicle.connected is None:
+            indices = []
         minimum = limits.minimum_ev_current * limits.voltage * limits.phases / 1000
         maximum = min(
             vehicle.maximum_charging_power_kw,
@@ -707,20 +879,38 @@ def calculate_joint_plan(
             vehicle.maximum_charging_power_kw,
             limits.maximum_ev_current * limits.voltage * limits.solar_phases / 1000,
         )
-        solar_minimum = (
-            limits.minimum_ev_current * limits.voltage * limits.solar_phases / 1000
+        solar_minimum = max(
+            vehicle.minimum_solar_power_kw,
+            limits.minimum_ev_current * limits.voltage * limits.solar_phases / 1000,
         )
-        if vehicle.currently_home is None or vehicle.connected is None:
-            indices = []
-        remaining = allocate(
-            vehicle.source_id,
-            indices,
-            remaining,
-            solar_maximum,
-            solar_only=True,
-            minimum_power=solar_minimum,
+        solar_requests.append(
+            (
+                vehicle.source_id,
+                vehicle.priority,
+                indices,
+                vehicle.required_input_kwh,
+                solar_maximum,
+                solar_minimum,
+            )
         )
-        if vehicle.allow_home_battery:
+        vehicle_context[vehicle.source_id] = (departure, indices, minimum, maximum)
+    solar_remaining = {}
+    completed_priorities = set()
+    for vehicle in sorted(vehicles, key=lambda v: (v.priority, v.source_id)):
+        if vehicle.priority not in completed_priorities:
+            solar_remaining.update(
+                solar_group(
+                    [
+                        request
+                        for request in solar_requests
+                        if request[1] == vehicle.priority
+                    ]
+                )
+            )
+            completed_priorities.add(vehicle.priority)
+        departure, indices, minimum, maximum = vehicle_context[vehicle.source_id]
+        remaining = solar_remaining[vehicle.source_id]
+        if vehicle.allow_home_battery and not vehicle.solar_only:
             remaining = allocate(
                 vehicle.source_id,
                 list(reversed(indices)),
@@ -730,13 +920,15 @@ def calculate_joint_plan(
             )
         remaining = allocate(
             vehicle.source_id,
-            [i for i in reversed(indices) if in_nt(slots[i].start, data)],
+            []
+            if vehicle.solar_only
+            else [i for i in reversed(indices) if in_nt(slots[i].start, data)],
             remaining,
             maximum,
             allow_grid=True,
             minimum_power=minimum,
         )
-        if vehicle.allow_high_tariff_grid:
+        if vehicle.allow_high_tariff_grid and not vehicle.solar_only:
             remaining = allocate(
                 vehicle.source_id,
                 [i for i in reversed(indices) if not in_nt(slots[i].start, data)],
@@ -786,29 +978,57 @@ def calculate_joint_plan(
             "next_action_mode": active["mode"] if active else None,
         }
 
-    for tank in sorted_water:
-        initial = 0.001163 * tank.volume_liters * tank.temperature
-        assigned = sum(load.get(tank.source_id, 0.0) for load in loads)
-        for target in (tank.normal, tank.maximum):
+    for target_attribute in ("normal", "maximum"):
+        requests = []
+        for tank in sorted_water:
+            assigned = sum(load.get(tank.source_id, 0.0) for load in loads)
             desired = (
                 max(
                     0.0,
-                    0.001163 * tank.volume_liters * target
-                    - initial
+                    0.001163
+                    * tank.volume_liters
+                    * (getattr(tank, target_attribute) - tank.temperature)
                     - assigned * tank.efficiency,
                 )
                 / tank.efficiency
             )
-            missing = allocate(
-                tank.source_id,
-                list(range(len(slots))),
-                desired,
-                tank.heater_kw,
-                solar_only=True,
+            requests.append(
+                (
+                    tank.source_id,
+                    tank.priority,
+                    list(range(len(slots))),
+                    desired,
+                    tank.heater_kw,
+                    tank.heater_kw,
+                )
             )
-            assigned += desired - missing
-        water_results[tank.source_id]["planned_electrical_kwh"] = assigned
+        solar_group(requests)
+    for tank in sorted_water:
+        water_results[tank.source_id]["planned_electrical_kwh"] = sum(
+            load.get(tank.source_id, 0.0) for load in loads
+        )
         water_results[tank.source_id]["timeline"] = actions.get(tank.source_id, [])
+
+    for source, value in {**water_results, **vehicle_results}.items():
+        value["solar_minimum_soc_percent"] = solar_thresholds[source]
+        if blocked.get(source):
+            value["solar_block_reasons"] = sorted(blocked[source])
+            if (
+                source in vehicle_results
+                and value.get("mode")
+                in {
+                    "shortfall",
+                    "wait_for_solar",
+                }
+            ) or (
+                source in water_results
+                and value.get("planned_electrical_kwh", 0) <= EPS
+            ):
+                value["reason"] = (
+                    "waiting_for_minimum_soc"
+                    if "waiting_for_minimum_soc" in blocked[source]
+                    else "insufficient_solar_power"
+                )
 
     targets = []
     for i, s in enumerate(slots):

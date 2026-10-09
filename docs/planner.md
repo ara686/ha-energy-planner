@@ -48,3 +48,11 @@ subtracting its measured consumption so far. A generic requested-energy entity
 continues to describe tomorrow only. Tomorrow includes all types, while later
 days repeat hot-water demand and carry EV remainder without repeating generic
 demand.
+
+Solar TUV and EV allocations require the configured per-source starting SoC
+(default 50%) and sufficient instantaneous surplus. Battery state is kept at full
+precision; rendered end-of-slot SoC never authorizes the slot's start. Accepted
+solar thresholds are retained in the simulation, so inserting an earlier load
+cannot invalidate a later session. Fixed heaters reserve their full input power;
+EV input varies above the configured current/voltage/solar-phase minimum.
+Short final requests shorten the timeline without weakening these power checks.

@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import datetime, time, timedelta
 from typing import Any
 
+from .const import EV_CHARGING_STRATEGY_SOLAR_ONLY
 from .ev_plan import EVChargingPlanInput
 from .joint_options import normalize_joint_options
 from .joint_plan import JointLimits, JointWater, calculate_joint_plan, instant
@@ -80,6 +81,7 @@ def add_joint_plan(
                     "shortfall_kwh": None,
                 }
                 continue
+            solar_only = load.ev_charging_strategy == EV_CHARGING_STRATEGY_SOLAR_ONLY
             connected = _binary_state_value(
                 hass.states.get(load.ev_connected_entity_id or "")
             )
@@ -96,11 +98,13 @@ def add_joint_plan(
                     priority=load.priority,
                     required_input_kwh=allocation_input.demand.electrical_remaining_kwh,
                     maximum_charging_power_kw=load.maximum_charging_power_kw or 0,
+                    solar_minimum_soc_percent=load.solar_minimum_soc_percent,
                     workdays=load.ev_workdays,
                     departure_time=load.ev_departure_time,
                     return_time=load.ev_return_time,
-                    currently_home=present,
-                    connected=connected,
+                    currently_home=True if solar_only else present,
+                    connected=True if solar_only else connected,
+                    solar_only=solar_only,
                     allow_home_battery=load.ev_allow_home_battery,
                     allow_high_tariff_grid=_binary_state_value(
                         hass.states.get(load.ev_grid_outside_nt_entity_id or "")
@@ -120,6 +124,7 @@ def add_joint_plan(
                     temperature=allocation_input.demand.average_temperature_c,
                     volume_liters=load.tank_volume_liters or 0,
                     heater_kw=load.heater_power_kw or 0,
+                    solar_minimum_soc_percent=load.solar_minimum_soc_percent,
                     efficiency=load.thermal_conversion_factor or 1,
                     minimum=options["joint_water_minimum"],
                     normal=options["joint_water_normal"],
@@ -340,6 +345,12 @@ def _publish_managed_results(
                 "reason": info.get("reason", "joint_plan"),
                 "timeline": timeline,
             }
+            if load.is_hot_water or load.is_electric_vehicle:
+                sources[source]["solar_minimum_soc_percent"] = info.get(
+                    "solar_minimum_soc_percent", load.solar_minimum_soc_percent
+                )
+                if info.get("solar_block_reasons"):
+                    sources[source]["solar_block_reasons"] = info["solar_block_reasons"]
             if not load.is_hot_water and not load.is_electric_vehicle:
                 sources[source].update(
                     {

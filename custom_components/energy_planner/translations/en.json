@@ -95,7 +95,11 @@
             "maximum_temperature_c": "Maximum average temperature",
             "tank_volume_liters": "Tank volume",
             "heater_power_kw": "Heater input power",
-            "thermal_conversion_factor": "Thermal conversion factor"
+            "thermal_conversion_factor": "Thermal conversion factor",
+            "solar_minimum_soc_percent": "Minimum home-battery SoC for solar operation"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solar operation requires this battery SoC at the start of every interval and enough PV surplus for the load. Grid and home-battery EV modes are unchanged."
           }
         },
         "reconfigure_hot_water": {
@@ -110,7 +114,11 @@
             "maximum_temperature_c": "Maximum average temperature",
             "tank_volume_liters": "Tank volume",
             "heater_power_kw": "Heater input power",
-            "thermal_conversion_factor": "Thermal conversion factor"
+            "thermal_conversion_factor": "Thermal conversion factor",
+            "solar_minimum_soc_percent": "Minimum home-battery SoC for solar operation"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solar operation requires this battery SoC at the start of every interval and enough PV surplus for the load. Grid and home-battery EV modes are unchanged."
           }
         },
         "electric_vehicle": {
@@ -133,7 +141,11 @@
             "ev_wallbox_mode_entity": "Wallbox mode selector (optional)",
             "ev_workdays": "Workdays",
             "ev_departure_time": "Departure time",
-            "ev_return_time": "Return time"
+            "ev_return_time": "Return time",
+            "solar_minimum_soc_percent": "Minimum home-battery SoC for solar operation"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solar operation requires this battery SoC at the start of every interval and enough PV surplus for the load. Grid and home-battery EV modes are unchanged."
           }
         },
         "reconfigure_electric_vehicle": {
@@ -156,7 +168,11 @@
             "ev_wallbox_mode_entity": "Wallbox mode selector (optional)",
             "ev_workdays": "Workdays",
             "ev_departure_time": "Departure time",
-            "ev_return_time": "Return time"
+            "ev_return_time": "Return time",
+            "solar_minimum_soc_percent": "Minimum home-battery SoC for solar operation"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solar operation requires this battery SoC at the start of every interval and enough PV surplus for the load. Grid and home-battery EV modes are unchanged."
           }
         },
         "wallbox_modes": {
@@ -198,7 +214,8 @@
         "entity_required": "Select an available entity of the required type.",
         "workdays_required": "Select at least one valid workday.",
         "times_distinct": "Departure and return times must be different.",
-        "wallbox_option_invalid": "Select one of the options currently exposed by the wallbox mode helper."
+        "wallbox_option_invalid": "Select one of the options currently exposed by the wallbox mode helper.",
+        "percentage_range": "Minimum solar SoC must be a finite number from 0 to 100%."
       }
     }
   },
