@@ -48,7 +48,7 @@ Every managed-load item first asks for these common fields:
 | Field | Key | Required | Description |
 |-------|-----|----------|-------------|
 | Managed load type | `managed_load_type` | Required | `generic` uses history or an explicit request. `hot_water` uses the physical tank model. `electric_vehicle` uses a current battery-side request and future charging-power limit. Pool is intentionally not offered until it has a dedicated model. |
-| Priority | `priority` | Required | Positive whole number, default `100`. Lower numbers are allocated first within an allocation phase. Loads with equal priority share shortages proportionally. |
+| Priority | `priority` | Required | Positive whole number, default `100`. Lower numbers are allocated first within an allocation phase. Equal priorities share shortages proportionally when all minimum input powers fit; otherwise a feasible load is chosen by priority and then `source_id`. |
 | Cumulative energy meter | `managed_energy_entity` | Required | A `total` or `total_increasing` energy sensor in a supported energy unit such as `Wh`, `kWh` or `MWh`. Its values are normalized to `kWh`; hourly and daily deltas are used for history. |
 
 The cumulative meter remains required for all types so managed consumption can
@@ -75,7 +75,8 @@ does not control the device.
 | Minimum average temperature | `minimum_temperature_c` | Required | Minimum target for the calculated average tank temperature in °C. Solar shortage can leave this target unmet. |
 | Maximum average temperature | `maximum_temperature_c` | Required | Maximum flexible solar target in °C; default `70`. Must be greater than the minimum and remain within the safe limits of the installation. |
 | Tank volume | `tank_volume_liters` | Required | Positive total water volume in liters. |
-| Heater input power | `heater_power_kw` | Required | Positive electrical input power in kW. It caps allocation in every planner slot. |
+| Heater input power | `heater_power_kw` | Required | Positive fixed electrical input power in kW. Solar surplus must cover the entire power above house demand and concurrent loads; the final interval may finish early. |
+| Minimum home-battery SoC for solar operation | `solar_minimum_soc_percent` | Required | Finite 0–100%, step 1%, default `50` for new and existing configurations. Tested at the start of each interval; `0` disables this additional threshold while preserving battery reserves. |
 | Thermal conversion factor | `thermal_conversion_factor` | Required | Positive delivered heat / consumed electricity ratio; default `1.0` for a resistive heater. A value above `1` can represent heat-pump COP. |
 
 For the assumed upright cylindrical tank with sensors at 20% and 80%, symmetry
@@ -99,6 +100,7 @@ load's recommendation; it never falls back to history.
 |-------|-----|----------|-------------|
 | Remaining battery energy | `required_energy_entity` | Required | Current non-negative energy still storable in the vehicle battery. `sensor`, `number` and `input_number` entities with units convertible to `kWh` are supported. For example, use `sensor.enyaq_charge_kwh`. |
 | Maximum charger power | `maximum_charging_power_kw` | Required | Fixed positive technical input limit in `kW`, entered with at most one decimal place. Default `11.0`. Available solar surplus separately limits the actual recommendation in every slot. |
+| Minimum home-battery SoC for solar operation | `solar_minimum_soc_percent` | Required | Finite 0–100%, step 1%, default `50` for new and existing configurations. Tested at the start of each interval; `0` disables this additional threshold while preserving battery reserves. |
 | Charging efficiency | `charging_efficiency` | Required | Battery energy divided by charger electrical input, greater than zero and at most `1`; default `0.90`. |
 | Charging strategy | `ev_charging_strategy` | Required | `solar_only` preserves the earlier solar-budget behavior. `deadline_aware` adds availability, deadline, battery-shift and GRID decisions. Existing EV entries migrate to `solar_only`. |
 | Vehicle position | `ev_presence_entity` | Deadline-aware | A `device_tracker`; `home` means available and any known non-home zone means away. |
@@ -132,6 +134,17 @@ The request is converted to charger-input energy:
 ```text
 electrical required kWh = battery required kWh / charging efficiency
 ```
+
+Solar input must cover the technical minimum charging power derived from
+`joint_minimum_ev_current × joint_voltage × joint_solar_ev_phases / 1000`.
+This applies to both strategies and planner modes. EV input follows the
+remaining surplus up to its maximum; a small final request can run briefly at
+least at the technical minimum. TUV and EV must also satisfy their own starting
+SoC thresholds. Later allocations are replayed to preserve both battery reserves
+and already accepted solar gates; production during a slot cannot authorize its
+start. Short sessions reserve full instantaneous power within the forecast slot.
+Deadline-aware solar advice uses the same accepted allocations as the managed
+SoC graph, with gates respected across its coarser permission windows.
 
 A zero request is valid. The integration watches the EV energy request and, for
 `deadline_aware`, the position, cable and GRID-permission entities. Their changes
@@ -212,7 +225,7 @@ runtime behavior.
 | Planning interval in minutes | `interval_minutes` | `sensor.energy_planner_planning_interval` | `5` | Positive number that divides 60 exactly. | Time step used for the planner simulation and forecast slots. Common values are `5`, `10`, `15`, `30` or `60`. |
 | History correction percent | `history_correction_percent` | `sensor.energy_planner_history_correction` | `5.0` | Greater than `-100` and at most `500`. | Extra percentage applied after the hourly consumption profile is calculated. |
 | Minimum baseline consumption in kWh per hour | `min_baseline_kwh_per_hour` | `sensor.energy_planner_minimum_baseline_consumption` | `0.2` | `0` or higher. | Fallback hourly home consumption when the target hour has no usable history sample. |
-| Enable grid-charging planning | `grid_charging_enabled` | — | Enabled | Boolean switch. | Disable this independently when the installation must not plan battery charging from the grid. Energy Planner never controls the charger directly. |
+| Allow battery grid charging during low tariff | `grid_charging_enabled` | `switch.energy_planner_grid_charging_enabled` | Enabled | Boolean switch, also available on dashboards. | Shares the Options Flow setting and persists across restarts. Changing it reloads the integration and recalculates the plan and all SoC forecasts; when off, no home-battery grid charging is simulated and `charge_now` stays off. Solar charging, tariff windows and EV grid permissions are unchanged. Energy Planner never controls the inverter. |
 | Maximum grid charging power in kW | `grid_charge_max_kw` | `sensor.energy_planner_maximum_grid_charging_power` | `5.5` | `0` or higher. | Maximum power the simulation may use when planning grid charging during the charge window. |
 | Grid charging efficiency | `grid_charge_efficiency` | `sensor.energy_planner_grid_charging_efficiency` | `0.92` | Greater than `0` and at most `1`. | Battery charging efficiency used when converting grid energy into stored battery energy. |
 | SoC reserve percent | `soc_reserve_percent` | `sensor.energy_planner_soc_reserve` | `1` | From `0` to `100`. | Extra SoC margin added to calculated lock/target values. |

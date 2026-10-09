@@ -95,7 +95,11 @@
             "maximum_temperature_c": "Maximální průměrná teplota",
             "tank_volume_liters": "Objem nádrže",
             "heater_power_kw": "Elektrický příkon ohřevu",
-            "thermal_conversion_factor": "Faktor přeměny na teplo"
+            "thermal_conversion_factor": "Faktor přeměny na teplo",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "reconfigure_hot_water": {
@@ -110,7 +114,11 @@
             "maximum_temperature_c": "Maximální průměrná teplota",
             "tank_volume_liters": "Objem nádrže",
             "heater_power_kw": "Elektrický příkon ohřevu",
-            "thermal_conversion_factor": "Faktor přeměny na teplo"
+            "thermal_conversion_factor": "Faktor přeměny na teplo",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "electric_vehicle": {
@@ -133,7 +141,11 @@
             "ev_wallbox_mode_entity": "Výběr režimu wallboxu (volitelné)",
             "ev_workdays": "Pracovní dny",
             "ev_departure_time": "Čas odjezdu",
-            "ev_return_time": "Čas návratu"
+            "ev_return_time": "Čas návratu",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "reconfigure_electric_vehicle": {
@@ -156,7 +168,11 @@
             "ev_wallbox_mode_entity": "Výběr režimu wallboxu (volitelné)",
             "ev_workdays": "Pracovní dny",
             "ev_departure_time": "Čas odjezdu",
-            "ev_return_time": "Čas návratu"
+            "ev_return_time": "Čas návratu",
+            "solar_minimum_soc_percent": "Minimální SoC domácí baterie pro solární odběr"
+          },
+          "data_description": {
+            "solar_minimum_soc_percent": "Solární odběr vyžaduje tento stav baterie na začátku každého intervalu a dostatečný přebytek FVE pro spotřebič. Síťové a bateriové režimy EV se nemění."
           }
         },
         "wallbox_modes": {
@@ -198,7 +214,8 @@
         "entity_required": "Vyberte dostupnou entitu požadovaného typu.",
         "workdays_required": "Vyberte alespoň jeden platný pracovní den.",
         "times_distinct": "Čas odjezdu a návratu musí být odlišný.",
-        "wallbox_option_invalid": "Vyberte jednu z možností, které aktuálně nabízí helper režimu wallboxu."
+        "wallbox_option_invalid": "Vyberte jednu z možností, které aktuálně nabízí helper režimu wallboxu.",
+        "percentage_range": "Minimální SoC pro solární odběr musí být konečné číslo od 0 do 100 %."
       }
     }
   },
@@ -247,7 +264,7 @@
           "interval_minutes": "Interval plánování v minutách",
           "history_correction_percent": "Korekce historie v procentech",
           "min_baseline_kwh_per_hour": "Minimální základní spotřeba v kWh za hodinu",
-          "grid_charging_enabled": "Používat plánování nabíjení ze sítě",
+          "grid_charging_enabled": "Povolit nabíjení baterie ze sítě v NT",
           "grid_charge_max_kw": "Maximální nabíjení ze sítě v kW",
           "grid_charge_efficiency": "Účinnost nabíjení ze sítě",
           "soc_reserve_percent": "Rezerva SoC v procentech",
@@ -281,7 +298,7 @@
           "joint_maximum_ev_current": "Maximální proud auta na fázi (A)"
         },
         "data_description": {
-          "grid_charging_enabled": "Jde jen o doporučení planneru. Energy Planner baterii ani měnič neovládá.",
+          "grid_charging_enabled": "Při vypnutí plán i předpovědi SoC počítají bez nabíjení domácí baterie ze sítě. Solární nabíjení a povolení sítě pro EV se nemění. Přepínač na dashboardu používá stejné nastavení. Energy Planner měnič neovládá.",
           "charge_window_start": "Při vypnutém plánování nabíjení ze sítě se ignoruje.",
           "charge_window_end": "Při vypnutém plánování nabíjení ze sítě se ignoruje."
         }
@@ -478,6 +495,11 @@
       },
       "joint_grid_import": {
         "name": "Společná předpověď odběru ze sítě"
+      }
+    },
+    "switch": {
+      "grid_charging_enabled": {
+        "name": "Povolit nabíjení baterie ze sítě v NT"
       }
     }
   },

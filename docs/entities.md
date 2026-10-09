@@ -1,12 +1,22 @@
 # Entities
 
-Energy Planner creates sensor and binary sensor entities only. It does not
-create switches, numbers, selects or any device-control entities in v1.
+Energy Planner creates sensors, binary sensors and a configuration switch for
+grid-charging planning. It does not control devices in v1.
 
 Entity IDs below are the typical defaults for an integration instance named
 `Energy Planner`. Home Assistant may add suffixes or use renamed entity IDs.
 Check the actual IDs in **Settings > Devices & services > Energy Planner >
 Entities**.
+
+## Configuration Switch
+
+| Typical entity ID | Option key | Category | Description |
+|-------------------|------------|----------|-------------|
+| `switch.energy_planner_grid_charging_enabled` | `grid_charging_enabled` | Configuration | Allows home-battery grid charging in the plan. Shares the Options Flow setting and persists across restarts; defaults to on when no value is stored. Turning it off recalculates SoC forecasts without grid charging and keeps `charge_now` off. Solar charging and EV grid permissions are unchanged. |
+
+Changing the value reloads the integration, so forecast sensors can briefly be
+unavailable. Repeating the current value does not reload it. The switch reports
+the saved configuration even when planner data is insufficient.
 
 ## Output Entities
 

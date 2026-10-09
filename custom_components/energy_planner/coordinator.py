@@ -79,6 +79,7 @@ from .ha_history import (
 )
 from .history import EnergyHistory, EnergyHistoryStore
 from .hot_water import HotWaterInput, calculate_hot_water_demand
+from .joint_options import normalize_joint_options
 from .managed_allocation import (
     ElectricVehicleAllocationInput,
     GenericAllocationInput,
@@ -98,6 +99,7 @@ from .planner import (
     generate_forecast_slots,
 )
 from .refresh import SourceRefreshQueue
+from .solar import valid_solar_minimum_soc
 from .sources import parse_float, parse_solcast_attributes
 from .units import energy_value_to_kwh, is_supported_energy_unit, power_value_to_kw
 from .wallbox import WallboxModeOptions, wallbox_charging_source
@@ -434,6 +436,8 @@ def _add_ev_charging_plans(
                 priority=load.priority,
                 required_input_kwh=(allocation_input.demand.electrical_remaining_kwh),
                 maximum_charging_power_kw=load.maximum_charging_power_kw or 0.0,
+                solar_minimum_soc_percent=load.solar_minimum_soc_percent,
+                minimum_solar_power_kw=_minimum_solar_ev_power_kw(entry),
                 workdays=load.ev_workdays,
                 departure_time=load.ev_departure_time,
                 return_time=load.ev_return_time,
@@ -448,12 +452,44 @@ def _add_ev_charging_plans(
 
     forecast = result.plan.get("soc_forecast_with_managed")
     restored_surplus_by_slot: dict[datetime, float] = {}
+    accepted_solar_by_source: dict[str, dict[datetime, float]] = {}
+    protected_battery_by_slot: dict[datetime, float] = {}
+    thresholds = {
+        load.source_entity_id: load.solar_minimum_soc_percent or 0
+        for load in managed_load_configs(entry)
+    }
     for allocation in allocations or []:
+        for load in allocation.loads:
+            if load.load_type not in {"hot_water", "electric_vehicle"}:
+                continue
+            for window in load.timeline:
+                cursor = window.start
+                while _timeline_time(cursor) < _timeline_time(window.end):
+                    key = _timeline_time(cursor)
+                    protected_battery_by_slot[key] = max(
+                        protected_battery_by_slot.get(key, 0.0),
+                        thresholds[load.source_id]
+                        * planner_input.battery_capacity_kwh
+                        / 100,
+                    )
+                    cursor = _add_elapsed_time(
+                        cursor, timedelta(minutes=planner_input.interval_minutes)
+                    )
         for (
             source_id,
             slot_start,
         ), energy_kwh in allocation.electric_vehicle_energy_by_source_slot.items():
             if source_id in deadline_source_ids:
+                action_start = slot_start.replace(
+                    minute=slot_start.minute
+                    - slot_start.minute % action_window_minutes,
+                    second=0,
+                    microsecond=0,
+                )
+                source_solar = accepted_solar_by_source.setdefault(source_id, {})
+                source_solar[action_start] = (
+                    source_solar.get(action_start, 0.0) + energy_kwh
+                )
                 restored_surplus_by_slot[slot_start] = (
                     restored_surplus_by_slot.get(slot_start, 0.0) + energy_kwh
                 )
@@ -466,6 +502,27 @@ def _add_ev_charging_plans(
         source_interval_minutes=planner_input.interval_minutes,
         action_window_minutes=action_window_minutes,
     )
+    slots = [
+        replace(
+            slot,
+            protected_battery_kwh=max(
+                (
+                    value
+                    for start, value in protected_battery_by_slot.items()
+                    if _timeline_time(slot.start)
+                    <= start
+                    < _timeline_time(
+                        slot.end
+                        or _add_elapsed_time(
+                            slot.start, timedelta(minutes=action_window_minutes)
+                        )
+                    )
+                ),
+                default=None,
+            ),
+        )
+        for slot in slots
+    ]
     safe_discharge_soc = result.plan.get("safe_discharge_soc")
     plans = calculate_ev_charging_plans(
         vehicles,
@@ -473,6 +530,9 @@ def _add_ev_charging_plans(
         slots=slots,
         interval_minutes=action_window_minutes,
         battery_capacity_kwh=planner_input.battery_capacity_kwh,
+        accepted_solar_by_source=accepted_solar_by_source
+        if allocations is not None
+        else None,
         safe_discharge_soc=(
             float(safe_discharge_soc)
             if isinstance(safe_discharge_soc, int | float)
@@ -610,6 +670,7 @@ def _ev_charging_slots(
             EVChargingSlot(
                 start=start,
                 battery_kwh=float(battery_kwh),
+                battery_start_kwh=point.get("battery_start_kwh"),
                 unused_surplus_kwh=max(float(surplus_kwh), 0.0),
                 solar_coverage=float(solar_coverage),
                 is_low_tariff=bool(point.get("is_nt")),
@@ -658,6 +719,17 @@ def _aggregate_ev_charging_slots(
                     start=cursor,
                     unused_surplus_kwh=sum(slot.unused_surplus_kwh for slot in group),
                     battery_kwh=group[-1].battery_kwh,
+                    battery_start_kwh=group[0].battery_start_kwh,
+                    minimum_battery_start_kwh=min(
+                        slot.battery_start_kwh
+                        if slot.battery_start_kwh is not None
+                        else slot.battery_kwh
+                        for slot in group
+                    ),
+                    available_solar_power_kw=min(
+                        slot.unused_surplus_kwh * 60 / source_interval_minutes
+                        for slot in group
+                    ),
                     solar_coverage=min(slot.solar_coverage for slot in group),
                     is_low_tariff=all(slot.is_low_tariff for slot in group),
                 )
@@ -787,6 +859,11 @@ def _add_managed_allocations(
     allocations: list[ManagedDayAllocation] = []
     carried_ev_inputs = electric_vehicle_inputs
     managed_energy_by_slot: dict[datetime, float] = {}
+    allocation_budget = (
+        _managed_solar_budget(planner_input, result)
+        if planner_input is not None
+        else None
+    )
 
     if today_inputs:
         if planner_input is None:
@@ -804,20 +881,15 @@ def _add_managed_allocations(
                 interval_minutes=interval_minutes,
             )
             raw_direct_kwh = sum(slot.available_kwh for slot in raw_slots)
-            today_slots, reserve_limited_kwh = _reserve_safe_direct_solar_slots(
-                planner_input=planner_input,
-                result=result,
-                candidate_slots=raw_slots,
-                existing_managed_energy_by_slot=managed_energy_by_slot,
-                maximum_energy_kwh=_maximum_managed_demand_kwh(today_inputs),
-                maximum_power_kw=_maximum_managed_power_kw(today_inputs),
-            )
+            today_slots = raw_slots
+            reserve_limited_kwh = 0.0
         passive_today = result.plan.get("unused_surplus_kwh")
         today_allocation = allocate_managed_day(
             target_date=today,
             interval_minutes=interval_minutes,
             surplus_complete=today_complete,
             surplus_slots=today_slots,
+            budget=allocation_budget,
             loads=today_inputs,
             passive_surplus_kwh=(
                 float(passive_today)
@@ -890,16 +962,7 @@ def _add_managed_allocations(
         ]
         if target_date == tomorrow:
             day_inputs.extend(generic_inputs)
-        if planner_input is not None and complete:
-            surplus_slots, reserve_limited_kwh = _reserve_safe_direct_solar_slots(
-                planner_input=planner_input,
-                result=result,
-                candidate_slots=surplus_slots,
-                existing_managed_energy_by_slot=managed_energy_by_slot,
-                maximum_energy_kwh=_maximum_managed_demand_kwh(day_inputs),
-                maximum_power_kw=_maximum_managed_power_kw(day_inputs),
-            )
-        elif planner_input is not None:
+        if planner_input is not None and not complete:
             surplus_slots = []
         passive_surplus = summary.get("unused_surplus_kwh")
         day_allocation = allocate_managed_day(
@@ -907,6 +970,7 @@ def _add_managed_allocations(
             interval_minutes=interval_minutes,
             surplus_complete=complete,
             surplus_slots=surplus_slots,
+            budget=allocation_budget,
             loads=day_inputs,
             passive_surplus_kwh=(
                 float(passive_surplus)
@@ -1020,6 +1084,17 @@ def _managed_allocation_inputs(
             electric_vehicle_input = _electric_vehicle_allocation_input(
                 hass, load, warnings
             )
+            if isinstance(electric_vehicle_input, ElectricVehicleAllocationInput):
+                electric_vehicle_input = replace(
+                    electric_vehicle_input,
+                    minimum_solar_power_kw=_minimum_solar_ev_power_kw(entry),
+                    solar_action_window_minutes=(
+                        _ev_action_window_minutes(_interval_minutes(entry))
+                        if load.ev_charging_strategy
+                        == EV_CHARGING_STRATEGY_DEADLINE_AWARE
+                        else None
+                    ),
+                )
             load_inputs.append(electric_vehicle_input)
             continue
         daily_usage = history.managed_source_daily_usage(
@@ -1074,7 +1149,9 @@ def _hot_water_allocation_input(
         load.tank_volume_liters,
         load.heater_power_kw,
     )
-    if any(value is None for value in required_config):
+    if any(value is None for value in required_config) or not valid_solar_minimum_soc(
+        load.solar_minimum_soc_percent
+    ):
         reason = "invalid_hot_water_configuration"
         warnings.append(
             f"Hot-water load has incomplete configuration: {load.source_entity_id}."
@@ -1143,6 +1220,7 @@ def _hot_water_allocation_input(
         heater_power_kw=load.heater_power_kw,
         demand=demand,
         alternative_source=load.hot_water_alternative_source,
+        solar_minimum_soc_percent=load.solar_minimum_soc_percent,
     )
 
 
@@ -1152,7 +1230,11 @@ def _electric_vehicle_allocation_input(
     warnings: list[str],
 ) -> ManagedAllocationInput:
     """Build one electric-vehicle input or an explicit unavailable result."""
-    if load.required_energy_entity_id is None or load.maximum_charging_power_kw is None:
+    if (
+        load.required_energy_entity_id is None
+        or load.maximum_charging_power_kw is None
+        or not valid_solar_minimum_soc(load.solar_minimum_soc_percent)
+    ):
         warnings.append(
             "Electric-vehicle load has incomplete configuration: "
             f"{load.source_entity_id}."
@@ -1224,6 +1306,7 @@ def _electric_vehicle_allocation_input(
         priority=load.priority,
         maximum_charging_power_kw=load.maximum_charging_power_kw,
         demand=demand,
+        solar_minimum_soc_percent=load.solar_minimum_soc_percent,
     )
 
 
@@ -1479,6 +1562,34 @@ def _maximum_managed_power_kw(
         elif isinstance(load, ElectricVehicleAllocationInput):
             total += load.maximum_charging_power_kw
     return max(total, 0.0)
+
+
+def _minimum_solar_ev_power_kw(entry: ConfigEntry) -> float:
+    """Use the same phase/current model for every solar charging strategy."""
+    options = normalize_joint_options(dict(entry.options))
+    return (
+        options["joint_minimum_ev_current"]
+        * options["joint_voltage"]
+        * options["joint_solar_ev_phases"]
+        / 1000
+    )
+
+
+def _managed_solar_budget(
+    planner_input: PlannerInput, result: PlannerResult
+) -> SocGridBudget:
+    target = result.plan.get("target_soc")
+    lock = result.plan.get("lock_soc")
+    return SocGridBudget(
+        planner_input,
+        managed_consumption_by_slot={},
+        grid_charge_target_soc=float(target)
+        if isinstance(target, int | float)
+        else None,
+        nt_lock_soc=float(lock)
+        if isinstance(lock, int | float)
+        else planner_input.battery_min_soc,
+    )
 
 
 def _reserve_safe_direct_solar_slots(

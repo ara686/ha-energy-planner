@@ -8,6 +8,9 @@ from datetime import UTC, datetime, time, timedelta
 from math import isfinite
 from typing import Literal
 
+from .const import DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
+from .solar import solar_block_reason, valid_solar_minimum_soc
+
 EVChargingMode = Literal[
     "off",
     "connect_vehicle",
@@ -48,6 +51,10 @@ class EVChargingSlot:
     is_low_tariff: bool = False
     capacity_scale: float = 1.0
     end: datetime | None = None
+    battery_start_kwh: float | None = None
+    minimum_battery_start_kwh: float | None = None
+    available_solar_power_kw: float | None = None
+    protected_battery_kwh: float | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +74,9 @@ class EVChargingPlanInput:
     allow_home_battery: bool = True
     current_charging_power_kw: float | None = None
     current_charging_source: EVChargingSource | None = None
+    solar_minimum_soc_percent: float = DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
+    minimum_solar_power_kw: float = 0.0
+    solar_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,6 +88,7 @@ class EVChargingWindow:
     mode: EVChargingMode
     energy_kwh: float
     solar_kwh: float = 0.0
+    solar_peak_kw: float = 0.0
 
     def as_dict(self) -> dict[str, object]:
         """Return a compact recorder-friendly representation."""
@@ -174,6 +185,7 @@ def calculate_ev_charging_plan(
     interval_minutes: int,
     battery_capacity_kwh: float,
     safe_discharge_soc: float,
+    accepted_solar_by_slot: dict[datetime, float] | None = None,
 ) -> EVChargingPlan:
     """Allocate EV demand across solar, shifted battery energy and grid."""
     if (
@@ -182,6 +194,9 @@ def calculate_ev_charging_plan(
         or data.maximum_charging_power_kw <= 0
         or battery_capacity_kwh <= 0
         or not data.workdays
+        or not valid_solar_minimum_soc(data.solar_minimum_soc_percent)
+        or not isfinite(data.minimum_solar_power_kw)
+        or data.minimum_solar_power_kw < 0
     ):
         return _unavailable(data, "invalid_configuration", interval_minutes)
 
@@ -263,6 +278,24 @@ def calculate_ev_charging_plan(
         slot for slot in before_departure if _scheduled_home(slot.start, data)
     ]
 
+    def solar_reason(slot: EVChargingSlot) -> str | None:
+        starting_battery = slot.minimum_battery_start_kwh
+        if starting_battery is None:
+            starting_battery = slot.battery_start_kwh
+        if starting_battery is None:
+            starting_battery = slot.battery_kwh
+        available_power = slot.available_solar_power_kw
+        if available_power is None:
+            available_power = slot.unused_surplus_kwh / (
+                interval_hours * slot.capacity_scale
+            )
+        return solar_block_reason(
+            soc_percent=starting_battery / battery_capacity_kwh * 100,
+            minimum_soc_percent=data.solar_minimum_soc_percent,
+            available_power_kw=min(data.maximum_charging_power_kw, available_power),
+            minimum_power_kw=data.minimum_solar_power_kw,
+        )
+
     solar_kwh = _allocate_slots(
         slots=home_slots,
         desired_kwh=remaining,
@@ -271,7 +304,23 @@ def calculate_ev_charging_plan(
         allocations=allocations,
         capacity_used=capacity_used,
         available_fn=lambda slot: (
-            max(slot.unused_surplus_kwh, 0.0) if slot.solar_coverage >= 0.999 else 0.0
+            accepted_solar_by_slot.get(slot.start, 0.0)
+            if accepted_solar_by_slot is not None
+            else min(
+                max(slot.unused_surplus_kwh, 0.0),
+                (
+                    slot.available_solar_power_kw * interval_hours * slot.capacity_scale
+                    if slot.available_solar_power_kw is not None
+                    else float("inf")
+                ),
+            )
+            if slot.solar_coverage >= 0.999 and solar_reason(slot) is None
+            else 0.0
+        ),
+        minimum_slot_kwh=(
+            data.minimum_solar_power_kw * interval_hours
+            if accepted_solar_by_slot is None
+            else 0.0
         ),
     )
     solar_allocations = {start: value[1] for start, value in allocations.items()}
@@ -295,6 +344,43 @@ def calculate_ev_charging_plan(
         battery_capacity_kwh * max(0.0, min(safe_discharge_soc, 100.0)) / 100
     )
     battery_available_kwh = max(departure_battery - safe_battery_kwh, 0.0)
+    # A battery draw may precede a solar session, but cannot weaken its gate.
+    protected_starts = [
+        (
+            slot,
+            max(
+                slot.protected_battery_kwh or 0.0,
+                data.solar_minimum_soc_percent * battery_capacity_kwh / 100
+                if solar_allocations.get(slot.start, 0.0) > 0
+                else 0.0,
+            ),
+        )
+        for slot in ordered
+        if slot.protected_battery_kwh is not None
+        or solar_allocations.get(slot.start, 0.0) > 0
+    ]
+
+    def battery_headroom(candidate: EVChargingSlot) -> float:
+        headroom = slot_limit
+        for future, minimum in protected_starts:
+            if _timeline_time(future.start) <= _timeline_time(candidate.start):
+                continue
+            starting = (
+                future.minimum_battery_start_kwh
+                if future.minimum_battery_start_kwh is not None
+                else future.battery_start_kwh
+                if future.battery_start_kwh is not None
+                else future.battery_kwh
+            )
+            reserved = sum(
+                energy
+                for start, (mode, energy) in allocations.items()
+                if mode == "home_battery"
+                and _timeline_time(start) < _timeline_time(future.start)
+            )
+            headroom = min(headroom, max(0.0, starting - minimum - reserved))
+        return headroom
+
     battery_target = (
         min(remaining, lost_surplus_kwh, battery_available_kwh)
         if data.allow_home_battery
@@ -317,7 +403,7 @@ def calculate_ev_charging_plan(
         slot_limit_kwh=slot_limit,
         allocations=allocations,
         capacity_used=capacity_used,
-        available_fn=lambda _slot: slot_limit,
+        available_fn=battery_headroom,
     )
     remaining -= grid_low_tariff_kwh + home_battery_kwh
 
@@ -353,13 +439,20 @@ def calculate_ev_charging_plan(
         sum(
             min(max(slot.unused_surplus_kwh, 0.0), slot_limit)
             for slot in ordered
-            if slot.solar_coverage >= 0.999
+            if slot.solar_coverage >= 0.999 and solar_reason(slot) is None
         ),
     )
+    ends = {slot.start: slot.end for slot in home_slots if slot.end}
+    for slot in home_slots:
+        allocated = allocations.get(slot.start)
+        if allocated and allocated[0] == "solar" and data.minimum_solar_power_kw > 0:
+            full_duration = interval_hours * slot.capacity_scale
+            duration = min(full_duration, allocated[1] / data.minimum_solar_power_kw)
+            ends[slot.start] = _add_elapsed_time(slot.start, timedelta(hours=duration))
     windows = _merge_windows(
         allocations,
         interval_minutes,
-        ends={slot.start: slot.end for slot in home_slots if slot.end},
+        ends=ends,
         solar=solar_allocations,
     )
     recommended_mode, reason = _current_mode(
@@ -368,6 +461,12 @@ def calculate_ev_charging_plan(
         windows=windows,
         shortfall_kwh=remaining,
     )
+    blocked = {solar_reason(slot) for slot in home_slots if solar_reason(slot)}
+    if recommended_mode in {"wait_for_solar", "shortfall"} and solar_kwh <= 1e-9:
+        if "waiting_for_minimum_soc" in blocked:
+            reason = "waiting_for_minimum_soc"
+        elif "insufficient_solar_power" in blocked:
+            reason = "insufficient_solar_power"
     charging_power_kw = _current_charging_power_kw(data)
     observed_mode = _observed_charging_mode(
         data,
@@ -421,6 +520,7 @@ def calculate_ev_charging_plans(
     interval_minutes: int,
     battery_capacity_kwh: float,
     safe_discharge_soc: float,
+    accepted_solar_by_source: dict[str, dict[datetime, float]] | None = None,
 ) -> dict[str, EVChargingPlan]:
     """Plan multiple vehicles in priority order against shared energy."""
     available_slots = list(slots)
@@ -433,9 +533,21 @@ def calculate_ev_charging_plans(
             interval_minutes=interval_minutes,
             battery_capacity_kwh=battery_capacity_kwh,
             safe_discharge_soc=safe_discharge_soc,
+            accepted_solar_by_slot=(
+                accepted_solar_by_source.get(vehicle.source_id, {})
+                if accepted_solar_by_source is not None
+                else None
+            ),
         )
         plans[vehicle.source_id] = plan
-        available_slots = _reserve_shared_energy(available_slots, plan)
+        available_slots = _reserve_shared_energy(
+            available_slots,
+            plan,
+            interval_minutes=interval_minutes,
+            minimum_battery_kwh=vehicle.solar_minimum_soc_percent
+            * battery_capacity_kwh
+            / 100,
+        )
     return plans
 
 
@@ -448,6 +560,7 @@ def _allocate_slots(
     allocations: dict[datetime, tuple[EVChargingMode, float]],
     capacity_used: dict[datetime, float],
     available_fn: Callable[[EVChargingSlot], float],
+    minimum_slot_kwh: float = 0.0,
 ) -> float:
     remaining = max(desired_kwh, 0.0)
     allocated = 0.0
@@ -456,7 +569,11 @@ def _allocate_slots(
             break
         used = capacity_used.get(slot.start, 0.0)
         capacity = max(slot_limit_kwh * slot.capacity_scale - used, 0.0)
-        value = min(remaining, capacity, max(float(available_fn(slot)), 0.0))
+        available = max(float(available_fn(slot)), 0.0)
+        minimum = minimum_slot_kwh * slot.capacity_scale
+        if min(capacity, available) + 1e-9 < minimum:
+            continue
+        value = min(remaining, capacity, available)
         if value <= 1e-9:
             continue
         existing = allocations.get(slot.start)
@@ -529,6 +646,9 @@ def _merge_windows(
     for start in sorted(allocations, key=_timeline_time):
         mode, energy = allocations[start]
         end = (ends or {}).get(start) or _add_elapsed_time(start, delta)
+        solar_peak = (solar or {}).get(start, 0.0) / (
+            (_timeline_time(end) - _timeline_time(start)).total_seconds() / 3600
+        )
         if (
             windows
             and windows[-1].mode == mode
@@ -541,11 +661,12 @@ def _merge_windows(
                 mode,
                 previous.energy_kwh + energy,
                 previous.solar_kwh + (solar or {}).get(start, 0.0),
+                max(previous.solar_peak_kw, solar_peak),
             )
         else:
             windows.append(
                 EVChargingWindow(
-                    start, end, mode, energy, (solar or {}).get(start, 0.0)
+                    start, end, mode, energy, (solar or {}).get(start, 0.0), solar_peak
                 )
             )
     return windows
@@ -576,9 +697,13 @@ def _forecast_covers_window(
 def _reserve_shared_energy(
     slots: list[EVChargingSlot],
     plan: EVChargingPlan,
+    *,
+    interval_minutes: int,
+    minimum_battery_kwh: float,
 ) -> list[EVChargingSlot]:
     """Reserve solar and shifted battery energy for lower-priority EVs."""
     reserved_solar: dict[datetime, float] = {}
+    reserved_peak: dict[datetime, float] = {}
     for window in plan.timeline:
         if window.solar_kwh <= 0 and window.mode != "solar":
             continue
@@ -593,11 +718,37 @@ def _reserve_shared_energy(
         for slot in matching:
             value = min(remaining, max(slot.unused_surplus_kwh, 0.0))
             reserved_solar[slot.start] = value
+            reserved_peak[slot.start] = window.solar_peak_kw
             remaining -= value
+
+    def battery_draw_before(timestamp: datetime) -> float:
+        total = 0.0
+        for window in plan.timeline:
+            if window.mode != "home_battery":
+                continue
+            duration = (
+                _timeline_time(window.end) - _timeline_time(window.start)
+            ).total_seconds()
+            elapsed = max(
+                0.0,
+                min(
+                    duration,
+                    (
+                        _timeline_time(timestamp) - _timeline_time(window.start)
+                    ).total_seconds(),
+                ),
+            )
+            total += window.energy_kwh * elapsed / duration
+        return total
 
     shifted_surplus_remaining = plan.home_battery_kwh
     reserved: list[EVChargingSlot] = []
     for slot in slots:
+        past_draw = battery_draw_before(slot.start)
+        end_draw = battery_draw_before(
+            slot.end
+            or _add_elapsed_time(slot.start, timedelta(minutes=interval_minutes))
+        )
         surplus = max(
             slot.unused_surplus_kwh - reserved_solar.get(slot.start, 0.0),
             0.0,
@@ -618,6 +769,35 @@ def _reserve_shared_energy(
                 slot,
                 unused_surplus_kwh=surplus,
                 battery_kwh=max(slot.battery_kwh - plan.home_battery_kwh, 0.0),
+                battery_start_kwh=(
+                    max(0.0, slot.battery_start_kwh - past_draw)
+                    if slot.battery_start_kwh is not None
+                    else None
+                ),
+                minimum_battery_start_kwh=(
+                    max(0.0, slot.minimum_battery_start_kwh - end_draw)
+                    if slot.minimum_battery_start_kwh is not None
+                    else None
+                ),
+                protected_battery_kwh=max(
+                    slot.protected_battery_kwh or 0.0,
+                    minimum_battery_kwh
+                    if reserved_solar.get(slot.start, 0.0) > 0
+                    else 0.0,
+                )
+                if slot.protected_battery_kwh is not None
+                or reserved_solar.get(slot.start, 0.0) > 0
+                else None,
+                available_solar_power_kw=max(
+                    0.0,
+                    (
+                        slot.available_solar_power_kw
+                        if slot.available_solar_power_kw is not None
+                        else slot.unused_surplus_kwh
+                        / (interval_minutes / 60 * slot.capacity_scale)
+                    )
+                    - reserved_peak.get(slot.start, 0.0),
+                ),
             )
         )
     return reserved

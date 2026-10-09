@@ -70,6 +70,7 @@ from custom_components.energy_planner.const import (
     CONF_REQUIRED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
+    CONF_SOLAR_MINIMUM_SOC_PERCENT,
     CONF_SUN_START_REQUIRED_MINUTES,
     CONF_TANK_VOLUME_LITERS,
     CONF_THERMAL_CONVERSION_FACTOR,
@@ -615,6 +616,7 @@ async def test_managed_load_subentry_flow_accepts_hot_water_model(hass):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == {
         **_hot_water_input(priority=5),
+        CONF_SOLAR_MINIMUM_SOC_PERCENT: 50,
         CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_HOT_WATER,
     }
 
@@ -642,6 +644,7 @@ async def test_managed_load_subentry_flow_accepts_electric_vehicle_model(hass):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == {
         **_electric_vehicle_input(priority=5),
+        CONF_SOLAR_MINIMUM_SOC_PERCENT: 50,
         CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
         CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_SOLAR_ONLY,
     }
@@ -751,6 +754,7 @@ async def test_deadline_aware_ev_maps_exact_wallbox_options(hass):
     assert result["data"] == {
         **deadline_input,
         **mapping,
+        CONF_SOLAR_MINIMUM_SOC_PERCENT: 50,
         CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE,
         CONF_EV_WORKDAYS: [0, 1, 2, 3, 4],
     }
@@ -1173,6 +1177,7 @@ async def test_managed_load_reconfigure_type_switch_removes_hot_water_fields(has
             {
                 "data": {
                     **_hot_water_input(),
+                    CONF_SOLAR_MINIMUM_SOC_PERCENT: 75,
                     CONF_MANAGED_LOAD_TYPE: MANAGED_LOAD_TYPE_HOT_WATER,
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,
@@ -1800,3 +1805,99 @@ def test_invalid_source_preferences_are_rejected(invalid):
 
     with pytest.raises(OptionsValidationError):
         normalize_options({**options_flow_input(), "hot_water_gas_sources": invalid})
+
+
+@pytest.mark.parametrize(
+    "load_type", [MANAGED_LOAD_TYPE_HOT_WATER, MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE]
+)
+def test_solar_soc_schema_has_default_range_unit_and_step(load_type):
+    schema = _managed_load_details_schema(load_type)
+    marker, selector = next(
+        (key, value)
+        for key, value in schema.schema.items()
+        if key.schema == CONF_SOLAR_MINIMUM_SOC_PERCENT
+    )
+    assert marker.default() == 50
+    assert selector.config["min"] == 0
+    assert selector.config["max"] == 100
+    assert selector.config["step"] == 1
+    assert selector.config["unit_of_measurement"] == "%"
+
+
+@pytest.mark.parametrize("value", [-1, 101, float("inf"), float("nan"), "invalid"])
+@pytest.mark.parametrize(
+    "load_type", [MANAGED_LOAD_TYPE_HOT_WATER, MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE]
+)
+def test_solar_soc_validation_rejects_out_of_range_and_non_finite(
+    hass, value, load_type
+):
+    set_source_states(hass)
+    _set_hot_water_temperature_states(hass)
+    _set_ev_input_states(hass)
+    fields = (
+        _hot_water_input()
+        if load_type == MANAGED_LOAD_TYPE_HOT_WATER
+        else _electric_vehicle_input()
+    )
+    errors = _validate_managed_load_input(
+        hass,
+        MockConfigEntry(domain=DOMAIN, data={}, version=5),
+        {
+            **fields,
+            CONF_MANAGED_LOAD_TYPE: load_type,
+            CONF_SOLAR_MINIMUM_SOC_PERCENT: value,
+        },
+    )
+    assert errors[CONF_SOLAR_MINIMUM_SOC_PERCENT] == "percentage_range"
+
+
+@pytest.mark.parametrize(
+    "load_type", [MANAGED_LOAD_TYPE_HOT_WATER, MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE]
+)
+@pytest.mark.parametrize("value", [0, 65, 100])
+async def test_solar_soc_reconfigure_preserves_identity_and_saves_threshold(
+    hass, load_type, value
+):
+    set_source_states(hass)
+    _set_hot_water_temperature_states(hass)
+    _set_ev_input_states(hass)
+    fields = (
+        _hot_water_input()
+        if load_type == MANAGED_LOAD_TYPE_HOT_WATER
+        else _electric_vehicle_input()
+    )
+    source = fields[CONF_MANAGED_ENERGY_ENTITY]
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        version=5,
+        subentries_data=(
+            {
+                "data": {**fields, CONF_MANAGED_LOAD_TYPE: load_type},
+                "subentry_type": MANAGED_LOAD_SUBENTRY,
+                "title": "Load",
+                "unique_id": source,
+            },
+        ),
+    )
+    entry.add_to_hass(hass)
+    subentry = next(iter(entry.subentries.values()))
+    result = await entry.start_subentry_reconfigure_flow(hass, subentry.subentry_id)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={CONF_MANAGED_LOAD_TYPE: load_type},
+    )
+    marker = next(
+        key
+        for key in result["data_schema"].schema
+        if key.schema == CONF_SOLAR_MINIMUM_SOC_PERCENT
+    )
+    assert marker.default() == 50
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        user_input={**fields, CONF_SOLAR_MINIMUM_SOC_PERCENT: value},
+    )
+    assert result["type"] is FlowResultType.ABORT
+    updated = entry.subentries[subentry.subentry_id]
+    assert updated.unique_id == source
+    assert updated.data[CONF_SOLAR_MINIMUM_SOC_PERCENT] == value

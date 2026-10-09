@@ -40,6 +40,7 @@ def _vehicle(**overrides) -> EVChargingPlanInput:
     values = {
         "source_id": "sensor.ev_energy",
         "priority": 1,
+        "solar_minimum_soc_percent": 0,
         "required_input_kwh": 6.0,
         "maximum_charging_power_kw": 3.0,
         "currently_home": True,

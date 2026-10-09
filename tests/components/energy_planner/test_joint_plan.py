@@ -109,14 +109,16 @@ def test_solar_only_water_starts_from_direct_headroom_before_battery_is_full():
         slots=[
             ForecastSlot(
                 data().now + timedelta(hours=index),
-                3 if 8 <= index < 16 else 0,
+                3.3 if 8 <= index < 16 else 0,
                 1 if 8 <= index < 16 else 0,
             )
             for index in range(24)
         ],
     )
     baseline = calculate_joint_plan(d)
-    result = calculate_joint_plan(d, water=[JointWater("water", 40, 200, 2.3)])
+    result = calculate_joint_plan(
+        d, water=[JointWater("water", 40, 200, 2.3, solar_minimum_soc_percent=0)]
+    )
 
     timeline = result.water["water"]["timeline"]
     assert timeline
@@ -253,7 +255,11 @@ def test_legacy_ev_solar_does_not_block_nt_top_up():
         for i in range(30)
     ]
     result = calculate_ev_charging_plan(
-        replace(ev(required=5, allow_home_battery=False), departure_time=time(13)),
+        replace(
+            ev(required=5, allow_home_battery=False),
+            departure_time=time(13),
+            solar_minimum_soc_percent=0,
+        ),
         now=now,
         slots=slots,
         interval_minutes=10,

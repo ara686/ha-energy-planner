@@ -28,9 +28,12 @@ def test_allocation_runs_all_four_phases_in_order():
         target_date=start.date(),
         interval_minutes=60,
         surplus_complete=True,
-        surplus_slots=[SurplusSlot(start, 9)],
+        surplus_slots=[
+            SurplusSlot(start, 8),
+            SurplusSlot(start + timedelta(hours=1), 1),
+        ],
         loads=[
-            _hot_water("boiler", required=2, flexible=3, power=20),
+            _hot_water("boiler", required=2, flexible=3, power=2),
             _electric_vehicle("car", required=4, power=20),
             _generic("generic", expected=2),
         ],
@@ -40,7 +43,7 @@ def test_allocation_runs_all_four_phases_in_order():
     assert loads["boiler"].minimum_allocated_kwh == 2
     assert loads["car"].recommended_kwh == 4
     assert loads["generic"].recommended_kwh == 2
-    assert loads["boiler"].recommended_kwh == 3
+    assert loads["boiler"].recommended_kwh == 2
 
 
 def test_ev_priority_and_equal_priority_shortage_are_proportional():
@@ -109,12 +112,12 @@ def test_allocation_runs_hot_water_minimum_generic_then_hot_water_flexible():
 
     loads = {load.source_id: load for load in result.loads}
     assert loads["boiler"].minimum_allocated_kwh == 2
-    assert loads["boiler"].recommended_kwh == 5
+    assert loads["boiler"].recommended_kwh == 4
     assert loads["boiler"].minimum_shortfall_kwh == 0
     assert loads["pool"].recommended_kwh == 3
-    assert result.recommended_kwh == 8
-    assert result.unallocated_surplus_kwh == 0
-    assert sum(result.hot_water_energy_by_slot.values()) == 5
+    assert result.recommended_kwh == 7
+    assert result.unallocated_surplus_kwh == 1
+    assert sum(result.hot_water_energy_by_slot.values()) == 4
 
 
 def test_generic_allocation_keeps_exact_solar_slots_and_timeline():
@@ -232,8 +235,8 @@ def test_timeline_is_separate_per_source_and_preserves_slot_gaps():
             SurplusSlot(start + timedelta(hours=3), 4),
         ],
         loads=[
-            _hot_water("first", required=6, flexible=0, power=10),
-            _hot_water("second", required=6, flexible=0, power=10),
+            _hot_water("first", required=6, flexible=0, power=2),
+            _hot_water("second", required=6, flexible=0, power=2),
         ],
     )
 
@@ -306,7 +309,7 @@ def test_hot_water_planned_target_temperature(
                 "boiler",
                 required=required,
                 flexible=flexible,
-                power=20,
+                power=max(available, 1),
             )
         ],
     )
@@ -325,8 +328,8 @@ def test_lower_number_priority_is_allocated_first():
         surplus_complete=True,
         surplus_slots=[SurplusSlot(start, 4)],
         loads=[
-            _hot_water("first", required=4, flexible=0, power=10, priority=1),
-            _hot_water("second", required=4, flexible=0, power=10, priority=2),
+            _hot_water("first", required=4, flexible=0, power=4, priority=1),
+            _hot_water("second", required=4, flexible=0, power=4, priority=2),
         ],
     )
 
@@ -344,8 +347,8 @@ def test_equal_priorities_share_shortage_proportionally():
         surplus_complete=True,
         surplus_slots=[SurplusSlot(start, 3)],
         loads=[
-            _hot_water("small", required=2, flexible=0, power=10),
-            _hot_water("large", required=4, flexible=0, power=10),
+            _hot_water("small", required=2, flexible=0, power=1),
+            _hot_water("large", required=4, flexible=0, power=2),
         ],
     )
 
@@ -442,6 +445,7 @@ def _hot_water(
         source_id=source_id,
         priority=priority,
         heater_power_kw=power,
+        solar_minimum_soc_percent=0,
         demand=HotWaterDemand(
             top_temperature_c=50,
             bottom_temperature_c=30,
@@ -499,6 +503,7 @@ def _electric_vehicle(
         source_id=source_id,
         priority=priority,
         maximum_charging_power_kw=power,
+        solar_minimum_soc_percent=0,
         demand=demand,
     )
 
@@ -507,7 +512,7 @@ def _electric_vehicle(
     "source,surplus,complete,recommended,shortfall",
     [
         ("gas", 0, True, True, 2),
-        ("gas", 1, True, True, 1),
+        ("gas", 1, True, True, 2),
         ("gas", 2, True, False, 0),
         ("gas", 5, True, False, 0),
         ("none", 0, True, False, 2),
@@ -519,7 +524,7 @@ def test_hot_water_alternative_is_advisory(
 ):
     start = datetime(2026, 9, 14, 10, tzinfo=UTC)
     load = replace(
-        _hot_water("boiler", required=2, flexible=3, power=10),
+        _hot_water("boiler", required=2, flexible=3, power=2),
         alternative_source=source,
     )
     result = allocate_managed_day(
@@ -533,6 +538,10 @@ def test_hot_water_alternative_is_advisory(
     assert item["alternative_source"] == source
     assert item["alternative_heating_recommended"] is recommended
     assert item["minimum_shortfall_kwh"] == shortfall
-    assert result.recommended_kwh == (surplus if complete else None)
+    assert result.recommended_kwh == (
+        min(surplus, 2) if complete and surplus >= 2 else 0 if complete else None
+    )
     if complete:
-        assert sum(result.hot_water_energy_by_slot.values()) == surplus
+        assert sum(result.hot_water_energy_by_slot.values()) == (
+            2 if surplus >= 2 else 0
+        )

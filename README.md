@@ -14,8 +14,9 @@ exists in Home Assistant.
 > emergency, operational, financial, billing, regulatory, or compliance
 > decisions.
 
-Energy Planner **does not control anything by itself**. It only creates sensors
-and binary sensors that you can use in dashboards or in your own automations.
+Energy Planner **does not control anything by itself**. It creates sensors,
+binary sensors and a planner configuration switch that you can use in
+dashboards or in your own automations.
 
 ## What It Helps With
 
@@ -23,8 +24,11 @@ and binary sensors that you can use in dashboards or in your own automations.
 - Decide whether the battery should be charged during a low-tariff period.
 - Disable low-tariff windows entirely for installations without dual-rate
   electricity pricing.
-- Disable grid-charging planning independently when the battery must not be
-  charged from the grid.
+- Enable or disable home-battery grid-charging planning directly on a dashboard
+  with `switch.energy_planner_grid_charging_enabled`. This shares the Options
+  Flow setting, persists across restarts and recalculates the plan and SoC
+  charts without grid charging when off. Solar charging and EV grid permissions
+  are unchanged. See the [dashboard switch example](docs/dashboard.md#battery-grid-charging-switch).
 - Decide whether battery discharge is currently still safe for the plan.
 - Estimate unused PV surplus that can be used for flexible loads such as hot
   water, pool technology or EV charging.
@@ -106,6 +110,37 @@ use the resulting `kWh` energy sensor.
 See [detailed configuration](docs/configuration.md) for the full input list,
 accepted units and runtime options.
 
+## Solar operation of hot water and EV
+
+Each `hot_water` and `electric_vehicle` item has **Minimum home-battery SoC
+for solar operation** (`solar_minimum_soc_percent`), editable when adding or
+reconfiguring that load. The default is **50%**, including existing items without
+a stored value; the range is 0–100% in 1% steps. Setting 0 removes this extra
+threshold while keeping the battery's minimum and planning reserve protected.
+
+Solar operation requires both the threshold at the **start of the interval**
+and sufficient PV surplus above base house consumption and concurrent loads.
+Reaching the threshold during an interval permits a later interval; a subsequent
+drop pauses solar operation again. These checks apply in `shadow` and
+`advisory`, and the recommendations, timelines and managed SoC graph use the
+accepted allocations.
+
+A 2.3 kW water heater with 0.7 kW base house demand needs at least 3.0 kW of PV.
+It runs at its fixed input power and can finish its remaining request with a
+shorter final interval. EV solar power follows the remaining surplus between its
+technical minimum and configured maximum. The minimum is derived from the
+configured minimum current, voltage and solar phase count (normally
+6 A × 230 V × 1 = 1.38 kW). A small final EV request may also finish early.
+Concurrent loads reserve their instantaneous power even when they run briefly.
+Equal priorities share energy proportionally when their minimum powers fit;
+otherwise a feasible load is selected by priority and then `source_id`.
+
+This threshold affects solar operation. EV grid permissions, home-battery
+transfer rules, gas backup for water heating and tariff windows retain their
+roles. Compact `solar_block_reasons` diagnostics explain
+`waiting_for_minimum_soc`, `insufficient_solar_power` or incomplete coverage.
+Energy Planner continues to publish advice without controlling devices.
+
 ## First Results
 
 Energy Planner builds an hourly consumption profile from Home Assistant history.
@@ -137,7 +172,7 @@ Most useful entities:
 |--------|---------------|
 | `sensor.energy_planner_soc_forecast` | Planned SoC at the configured forecast horizon. It includes the planner's grid-charge target and preserves `lock_soc` during low tariff, so its attributes represent the expected controlled battery path in graphs. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostic passive SoC forecast without planned grid charging or the planner's low-tariff lock. It shows what the battery would do with only its configured physical minimum SoC. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Planned SoC with managed loads started as soon as forecast PV covers both base house demand and their allocated energy. They may run while the battery is still charging, so this curve can be lower than the base curve and can converge again after later charging. Allocation never adds planned grid import, violates the minimum/`lock_soc` reserve, or creates evening/night windows without PV. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Planned SoC with managed solar loads admitted only after their starting-SoC threshold and instantaneous PV surplus requirements are satisfied. They may run while the battery is still charging, so this curve can be lower than the base curve and can converge again after later charging. Allocation never adds planned grid import, violates the minimum/`lock_soc` reserve, or creates evening/night windows without PV. |
 | `sensor.energy_planner_soc_forecast_24h` | Planned SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |
@@ -213,7 +248,8 @@ Example automations with placeholders are in
 your own Home Assistant before letting them control real devices.
 
 Grid-charging planning can be disabled independently in the integration
-options. When disabled, the planned grid-charging window is ignored,
+options or with `switch.energy_planner_grid_charging_enabled` on a dashboard.
+When disabled, the planned grid-charging window is ignored,
 `binary_sensor.energy_planner_charge_now` stays off and no grid charging is
 included in plan-specific simulations.
 

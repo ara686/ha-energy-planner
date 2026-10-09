@@ -571,7 +571,7 @@ def test_managed_soc_forecast_does_not_schedule_unallocated_generic_demand(hass)
 
 def test_hot_water_allocation_repeats_demand_for_complete_future_days(hass):
     now = datetime(2026, 8, 18, 12)
-    entry = _hot_water_entry()
+    entry = _hot_water_entry(heater_power_kw=5)
     _set_hot_water_temperatures(hass, top="122", bottom="86", unit="°F")
     result = PlannerResult(
         state="ok",
@@ -615,8 +615,8 @@ def test_hot_water_allocation_repeats_demand_for_complete_future_days(hass):
     assert first_load["minimum_required_kwh"] == 1.163
     assert second_load["minimum_required_kwh"] == 1.163
     assert first_load["recommended_kwh"] == 5
-    assert second_load["recommended_kwh"] == 1
-    assert second_load["minimum_shortfall_kwh"] == 0.163
+    assert second_load["recommended_kwh"] == 0
+    assert second_load["minimum_shortfall_kwh"] == 1.163
     assert 40 < first_load["planned_target_temperature"] < 70
     assert first_load["timeline"] == [
         {
@@ -763,7 +763,9 @@ def test_hot_water_soc_forecast_uses_only_allocated_surplus_slots(hass):
     assert forecast["managed_expected_kwh"] == 2
     assert forecast["managed_scheduled_kwh"] == 2
     assert forecast["managed_scheduled_by_source"] == {"sensor.boiler_energy_total": 2}
-    assert [point["managed_consumption_kwh"] for point in forecast["points"]] == [
+    assert [
+        point.get("managed_consumption_kwh", 0) for point in forecast["points"]
+    ] == [
         1,
         1,
     ]
@@ -823,7 +825,9 @@ def test_generic_soc_forecast_uses_only_allocated_solar_slots(hass):
     forecast = result.plan["soc_forecast_with_managed"]
     assert forecast["managed_scheduled_kwh"] == 2
     assert forecast["managed_scheduled_by_source"] == {"sensor.generic_energy_total": 2}
-    assert [point["managed_consumption_kwh"] for point in forecast["points"]] == [
+    assert [
+        point.get("managed_consumption_kwh", 0) for point in forecast["points"]
+    ] == [
         1,
         1,
     ]
@@ -944,7 +948,7 @@ def test_direct_solar_allocation_is_clipped_to_preserve_later_grid_import(hass):
         forecast_horizon_hours=48,
         soc_eps_kwh=0.0001,
     )
-    entry = _generic_entry(nominal_power_kw=4)
+    entry = _generic_entry(nominal_power_kw=3)
     hass.states.async_set(
         "input_number.generic_requested_energy",
         "3",
@@ -994,7 +998,7 @@ def test_ev_allocation_uses_remaining_today_then_carries_across_days(hass):
     today_points = [
         {
             "timestamp": datetime(2026, 8, 18, hour),
-            "unused_surplus_kwh": 1 if hour < 17 else 0,
+            "unused_surplus_kwh": 2 if hour < 15 else 0,
             "solar_coverage": 1,
         }
         for hour in range(13, 24)
@@ -1002,14 +1006,14 @@ def test_ev_allocation_uses_remaining_today_then_carries_across_days(hass):
     tomorrow_points = [
         {
             "timestamp": datetime(2026, 8, 19, hour),
-            "unused_surplus_kwh": 1 if hour < 4 else 0,
+            "unused_surplus_kwh": 2 if hour < 2 else 0,
         }
         for hour in range(24)
     ]
     third_day_points = [
         {
             "timestamp": datetime(2026, 8, 20, hour),
-            "unused_surplus_kwh": 1 if hour < 4 else 0,
+            "unused_surplus_kwh": 2 if hour < 2 else 0,
         }
         for hour in range(24)
     ]
@@ -1437,7 +1441,7 @@ def test_remaining_today_direct_solar_requires_complete_remaining_forecast():
 
 def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
     now = datetime(2026, 8, 18, 21, 30)
-    entry = _electric_vehicle_entry(maximum_power_kw=1)
+    entry = _electric_vehicle_entry(maximum_power_kw=2)
     _set_electric_vehicle_inputs(hass, battery_required="1.8")
     slot_starts = [datetime(2026, 8, 18, 22), datetime(2026, 8, 18, 23)]
     result = PlannerResult(
@@ -1449,7 +1453,7 @@ def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
                 "points": [
                     {
                         "timestamp": start,
-                        "unused_surplus_kwh": 1,
+                        "unused_surplus_kwh": 2,
                         "solar_coverage": 1,
                     }
                     for start in slot_starts
@@ -1489,9 +1493,11 @@ def test_ev_soc_forecast_uses_only_allocated_solar_slots(hass):
     forecast = result.plan["soc_forecast_with_managed"]
     assert forecast["managed_scheduled_kwh"] == 2
     assert forecast["managed_scheduled_by_source"] == {"sensor.ev_energy_total": 2}
-    assert [point["managed_consumption_kwh"] for point in forecast["points"]] == [
-        1,
-        1,
+    assert [
+        point.get("managed_consumption_kwh", 0) for point in forecast["points"]
+    ] == [
+        2,
+        0,
     ]
 
 
@@ -1674,8 +1680,9 @@ def test_deadline_aware_ev_uses_surplus_remaining_after_other_managed_loads(hass
     )
 
     plan = result.plan["ev_charging_plans"]["sensor.ev_energy_total"]
-    assert plan["solar_kwh"] == 2.5
-    assert plan["shortfall_kwh"] == 3.5
+    assert plan["solar_kwh"] == 1.5
+    assert plan["shortfall_kwh"] == 4.5
+    assert sum(window["solar_kwh"] for window in plan["timeline"]) == 1.5
 
 
 def test_ev_action_windows_aggregate_complete_forecast_groups() -> None:
@@ -1750,6 +1757,7 @@ def _electric_vehicle_entry(
                 CONF_PRIORITY: 10,
                 CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
                 CONF_MAXIMUM_CHARGING_POWER_KW: maximum_power_kw,
+                "solar_minimum_soc_percent": 0,
                 CONF_CHARGING_EFFICIENCY: 0.9,
             },
             "subentry_type": MANAGED_LOAD_SUBENTRY,
@@ -1805,6 +1813,7 @@ def _deadline_aware_ev_entry(*, live_power: bool = False) -> MockConfigEntry:
                     CONF_PRIORITY: 10,
                     CONF_REQUIRED_ENERGY_ENTITY: "sensor.enyaq_charge_kwh",
                     CONF_MAXIMUM_CHARGING_POWER_KW: 3,
+                    "solar_minimum_soc_percent": 0,
                     CONF_CHARGING_EFFICIENCY: 1,
                     CONF_EV_CHARGING_STRATEGY: EV_CHARGING_STRATEGY_DEADLINE_AWARE,
                     CONF_EV_PRESENCE_ENTITY: "device_tracker.enyaq",
@@ -1925,6 +1934,7 @@ def _hot_water_entry(
                     CONF_MAXIMUM_TEMPERATURE_C: maximum_temperature_c,
                     CONF_TANK_VOLUME_LITERS: tank_volume_liters,
                     CONF_HEATER_POWER_KW: heater_power_kw,
+                    "solar_minimum_soc_percent": 0,
                     CONF_THERMAL_CONVERSION_FACTOR: 1,
                 },
                 "subentry_type": MANAGED_LOAD_SUBENTRY,

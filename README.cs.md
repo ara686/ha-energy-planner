@@ -13,8 +13,9 @@ domácí baterií během dalšího dne. Kombinuje nedávnou spotřebu domu, voli
 > havarijní, provozní, finanční, fakturační, regulatorní ani compliance
 > rozhodnutí.
 
-Energy Planner **sám nic neovládá**. Pouze vytváří senzory a binární senzory,
-které můžete použít v dashboardech nebo ve vlastních automatizacích.
+Energy Planner **sám nic neovládá**. Vytváří senzory, binární senzory a konfigurační
+přepínač planneru, které můžete použít v dashboardech nebo ve vlastních
+automatizacích.
 
 ## S čím pomůže
 
@@ -22,8 +23,11 @@ které můžete použít v dashboardech nebo ve vlastních automatizacích.
   očekávanou řízenou spotřebou na zítřek.
 - Pomůže rozhodnout, jestli má smysl baterii nabíjet v nízkém tarifu.
 - U instalací bez dvoutarifu umožní okna nízkého tarifu úplně vypnout.
-- Plánování nabíjení ze sítě lze vypnout nezávisle, pokud se baterie ze sítě
-  nabíjet nemá.
+- Plánování nabíjení domácí baterie ze sítě lze zapnout nebo vypnout přímo na
+  dashboardu pomocí `switch.energy_planner_grid_charging_enabled`. Přepínač
+  sdílí volbu v nastavení integrace, zachová hodnotu po restartu a přepočítá
+  plán i grafy SoC bez síťového nabíjení, pokud je vypnutý. Solární nabíjení
+  a povolení sítě pro EV se nemění. Viz [příklad přepínače na dashboardu](docs/dashboard.md#battery-grid-charging-switch).
 - Ukáže, jestli je podle plánu ještě povolené vybíjení baterie.
 - Odhadne nevyužitý přebytek z FVE pro bojler, bazén, ohřev vody nebo EV.
 - Doporučí rozdělení přímé výroby FVE nad základní spotřebou domu mezi typované
@@ -103,6 +107,37 @@ Pokud máte spotřebu domu jen jako okamžitý výkon, například
 Podrobný seznam vstupů, jednotek a provozních možností je v
 [detailní konfiguraci](docs/configuration.md).
 
+## Solární odběr TUV a EV
+
+Každá položka `hot_water` a `electric_vehicle` má **Minimální SoC domácí baterie
+pro solární odběr** (`solar_minimum_soc_percent`), které lze nastavit při přidání
+nebo úpravě spotřebiče. Výchozí hodnota je **50 %**, i pro starší položky bez
+uloženého údaje. Rozsah je 0–100 % s krokem 1 %. Hodnota 0 odstraní dodatečný
+práh, ale zachová ochranu minima a plánované rezervy baterie.
+
+Solární odběr vyžaduje současně dosažený práh **na začátku intervalu** a
+dostatečný přebytek FVE nad běžnou spotřebou domu a souběžnými odběry. Dosažení
+prahu během intervalu povolí až pozdější interval; při následném poklesu se
+odběr opět pozastaví. Pravidla platí v režimech `shadow` i `advisory`.
+Doporučení, časové plány a graf SoC s řízenými odběry vycházejí z přijatých alokací.
+
+Těleso TUV s příkonem 2,3 kW při běžné spotřebě domu 0,7 kW potřebuje alespoň
+3,0 kW FVE. Běží pevným příkonem a poslední interval lze zkrátit podle zbývajícího
+požadavku. Solární příkon EV se přizpůsobuje zbývajícímu přebytku mezi technickým
+minimem a nastaveným maximem. Minimum se odvozuje z nastaveného minimálního
+proudu, napětí a počtu solárních fází (běžně 6 A × 230 V × 1 = 1,38 kW).
+Také malý zbývající požadavek EV lze dokončit kratším během. Souběžné odběry
+rezervují okamžitý příkon i při krátkém běhu. Shodné priority se dělí poměrně,
+pokud se vejdou jejich minimální příkony; jinak se vybere realizovatelný odběr
+podle priority a následně `source_id`.
+
+Práh se týká solárního odběru. Povolení EV ze sítě, pravidla využití domácí
+baterie, záložní plynový ohřev TUV a tarifní okna si zachovávají svou funkci.
+Kompaktní diagnostika `solar_block_reasons` uvádí čekání na SoC
+(`waiting_for_minimum_soc`), nedostatečný příkon (`insufficient_solar_power`)
+nebo neúplné pokrytí předpovědi. Energy Planner nadále pouze doporučuje a
+neovládá zařízení.
+
 ## První výsledky
 
 Energy Planner staví hodinový profil spotřeby z historie Home Assistantu.
@@ -134,7 +169,7 @@ Nejužitečnější entity:
 |--------|--------|
 | `sensor.energy_planner_soc_forecast` | Plánované SoC na konci nastaveného horizontu. Zahrnuje cílové nabití ze sítě a během NT zachovává `lock_soc`, takže body v atributech odpovídají očekávanému řízenému průběhu baterie v grafu. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostická pasivní predikce bez plánovaného nabíjení ze sítě a bez zámku planneru v NT. Ukazuje průběh pouze s nastaveným fyzickým minimem SoC baterie. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Plánované SoC s řízenými odběry spuštěnými hned, jak předpověď FVE pokryje základní spotřebu domu i přidělenou energii. Mohou běžet už během nabíjení baterie, proto může být tato křivka nižší než základní a po pozdějším dobití se mohou znovu spojit. Alokace nezvýší plánovaný odběr ze sítě, neporuší minimum ani rezervu `lock_soc` a nevytváří večerní či noční intervaly bez FVE. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Plánované SoC s řízenými solárními odběry povolenými až po splnění prahu SoC na začátku intervalu a požadavku na okamžitý přebytek FVE. Mohou běžet už během nabíjení baterie, proto může být tato křivka nižší než základní a po pozdějším dobití se mohou znovu spojit. Alokace nezvýší plánovaný odběr ze sítě, neporuší minimum ani rezervu `lock_soc` a nevytváří večerní či noční intervaly bez FVE. |
 | `sensor.energy_planner_soc_forecast_24h` | Plánované SoC přesně za 24 hodin od posledního výpočtu. |
 | `binary_sensor.energy_planner_charge_now` | Zapnuto, když povolené plánování nabíjení ze sítě říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |
@@ -208,7 +243,8 @@ Příklady automatizací s placeholdery jsou v
 [příkladech automatizací](docs/automations.md). Automatizace vždy nejdřív ručně
 otestujte ve vlastním Home Assistantu.
 
-Plánování nabíjení ze sítě lze vypnout nezávisle v možnostech integrace. Po
+Plánování nabíjení ze sítě lze vypnout nezávisle v možnostech integrace nebo
+přepínačem `switch.energy_planner_grid_charging_enabled` na dashboardu. Po
 vypnutí planner ignoruje okno plánovaného nabíjení,
 `binary_sensor.energy_planner_charge_now` zůstane vypnutý a simulace plánu
 nezahrne žádné nabíjení ze sítě.

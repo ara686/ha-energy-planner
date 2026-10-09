@@ -78,6 +78,7 @@ from .const import (
     CONF_REQUIRED_ENERGY_ENTITY,
     CONF_SOC_EPS_KWH,
     CONF_SOC_RESERVE_PERCENT,
+    CONF_SOLAR_MINIMUM_SOC_PERCENT,
     CONF_SOLCAST_ADDITIONAL_ENTITIES,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
@@ -98,6 +99,7 @@ from .const import (
     DEFAULT_MANAGED_LOAD_TYPE,
     DEFAULT_NAME,
     DEFAULT_NT_WINDOWS,
+    DEFAULT_SOLAR_MINIMUM_SOC_PERCENT,
     DOMAIN,
     EV_CHARGING_STRATEGY_DEADLINE_AWARE,
     EV_CHARGING_STRATEGY_SOLAR_ONLY,
@@ -841,6 +843,13 @@ def _managed_load_details_schema(load_type: str) -> vol.Schema:
             default=DEFAULT_MANAGED_LOAD_PRIORITY,
         ): _number_selector(minimum=1, step=1),
     }
+    if load_type in {MANAGED_LOAD_TYPE_HOT_WATER, MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE}:
+        fields[
+            vol.Required(
+                CONF_SOLAR_MINIMUM_SOC_PERCENT,
+                default=DEFAULT_SOLAR_MINIMUM_SOC_PERCENT,
+            )
+        ] = _number_selector(minimum=0, maximum=100, step=1, unit_of_measurement="%")
     if load_type == MANAGED_LOAD_TYPE_HOT_WATER:
         fields.update(
             {
@@ -979,6 +988,12 @@ def _clean_managed_load_data(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_MANAGED_LOAD_TYPE: load_type,
         CONF_PRIORITY: int(user_input[CONF_PRIORITY]),
     }
+    if load_type in {MANAGED_LOAD_TYPE_HOT_WATER, MANAGED_LOAD_TYPE_ELECTRIC_VEHICLE}:
+        data[CONF_SOLAR_MINIMUM_SOC_PERCENT] = float(
+            user_input.get(
+                CONF_SOLAR_MINIMUM_SOC_PERCENT, DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
+            )
+        )
     if load_type == MANAGED_LOAD_TYPE_HOT_WATER:
         data.update(
             {
@@ -1118,11 +1133,24 @@ def _validate_managed_load_input(
     return errors
 
 
+def _validate_solar_minimum_soc(
+    user_input: dict[str, Any], errors: dict[str, str]
+) -> None:
+    value = _finite_float(
+        user_input.get(
+            CONF_SOLAR_MINIMUM_SOC_PERCENT, DEFAULT_SOLAR_MINIMUM_SOC_PERCENT
+        )
+    )
+    if value is None or not 0 <= value <= 100:
+        errors[CONF_SOLAR_MINIMUM_SOC_PERCENT] = ERR_PERCENTAGE_RANGE
+
+
 def _validate_hot_water_input(
     hass: HomeAssistant,
     user_input: dict[str, Any],
     errors: dict[str, str],
 ) -> None:
+    _validate_solar_minimum_soc(user_input, errors)
     top_entity = str(user_input[CONF_TOP_TEMPERATURE_ENTITY])
     bottom_entity = str(user_input[CONF_BOTTOM_TEMPERATURE_ENTITY])
     _validate_temperature_entity(hass, top_entity, CONF_TOP_TEMPERATURE_ENTITY, errors)
@@ -1152,6 +1180,7 @@ def _validate_electric_vehicle_input(
     errors: dict[str, str],
 ) -> None:
     """Validate electric-vehicle energy, power and efficiency inputs."""
+    _validate_solar_minimum_soc(user_input, errors)
     required_entity = str(user_input[CONF_REQUIRED_ENERGY_ENTITY])
     required_state = hass.states.get(required_entity)
     required_value = parse_float(required_state.state if required_state else None)
