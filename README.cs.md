@@ -167,9 +167,9 @@ Nejužitečnější entity:
 
 | Entita | Význam |
 |--------|--------|
-| `sensor.energy_planner_soc_forecast` | Plánované SoC na konci nastaveného horizontu. Zahrnuje cílové nabití ze sítě a během NT zachovává `lock_soc`, takže body v atributech odpovídají očekávanému řízenému průběhu baterie v grafu. |
+| `sensor.energy_planner_soc_forecast` | Plánované SoC na konci nastaveného horizontu. Zahrnuje cílové nabití ze sítě a během NT zachovává časově proměnnou rezervu na zbývající spotřebu ve VT do příštího souvislého pokrytí spotřeby FVE. Rezerva na již uplynulý večer se uvolní a každá další noc používá vlastní předpověď; `lock_soc` udává počáteční rezervu. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostická pasivní predikce bez plánovaného nabíjení ze sítě a bez zámku planneru v NT. Ukazuje průběh pouze s nastaveným fyzickým minimem SoC baterie. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Plánované SoC s řízenými solárními odběry povolenými až po splnění prahu SoC na začátku intervalu a požadavku na okamžitý přebytek FVE. Mohou běžet už během nabíjení baterie, proto může být tato křivka nižší než základní a po pozdějším dobití se mohou znovu spojit. Alokace nezvýší plánovaný odběr ze sítě, neporuší minimum ani rezervu `lock_soc` a nevytváří večerní či noční intervaly bez FVE. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Plánované SoC s řízenými solárními odběry povolenými až po splnění prahu SoC na začátku intervalu a požadavku na okamžitý přebytek FVE. Mohou běžet už během nabíjení baterie, proto může být tato křivka nižší než základní a po pozdějším dobití se mohou znovu spojit. Alokace nezvýší plánovaný odběr ze sítě, neporuší minimum ani časově proměnnou rezervu v NT a nevytváří večerní či noční intervaly bez FVE. |
 | `sensor.energy_planner_soc_forecast_24h` | Plánované SoC přesně za 24 hodin od posledního výpočtu. |
 | `binary_sensor.energy_planner_charge_now` | Zapnuto, když povolené plánování nabíjení ze sítě říká, že teď má smysl nabíjet. |
 | `binary_sensor.energy_planner_discharge_allowed` | Zapnuto, když plán povoluje vybíjení baterie. |

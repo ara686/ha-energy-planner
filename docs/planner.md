@@ -14,11 +14,22 @@ Solcast `pv_estimate` values are normalized by the Home Assistant source parser
 from kW to kWh using the forecast period length. The pure planner only receives
 PV energy per period.
 
-The SoC forecast output is a compact passive time series. It starts from the
-current battery SoC and applies the normalized consumption and PV forecast
-without assuming Energy Planner automations have already charged the battery or
-prevented discharge. Plan-specific target simulations are reported separately by
-the `vt_grid_import_kwh_at_target` and `charged_kwh_total_at_target` outputs.
+The default SoC sensor exposes the planned battery path, including grid-charge
+planning and a time-varying low-tariff reserve. A separate passive forecast uses
+only the configured physical minimum SoC. Both start from current battery SoC.
+
+The low-tariff reserve protects only remaining high-tariff net demand until the
+next sustained solar start, plus the configured minimum SoC and reserve margin.
+A backwards pass computes this reserve for each slot in linear time. Elapsed
+evening demand is no longer reserved during the following night, and subsequent
+nights use their own solar and consumption forecasts. If no sustained solar
+start exists, the reserve covers the remaining known forecast. The scalar
+`lock_soc` reports the initial reserve, not a fixed floor for the whole horizon.
+The managed forecast and incremental admission budget share the base-input
+reserve schedule; adding a managed load cannot silently relax that schedule.
+Explicit scalar locks remain supported by the pure forecast API for callers
+that do not opt into `dynamic_nt_reserve`.
+
 When `grid_charging_enabled` is false, the planner does not mark charging-window
 slots, does not add simulated grid charge and keeps the `charge_now` decision
 off. Low-tariff windows remain an independent input.
