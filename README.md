@@ -170,9 +170,9 @@ Most useful entities:
 
 | Entity | What it means |
 |--------|---------------|
-| `sensor.energy_planner_soc_forecast` | Planned SoC at the configured forecast horizon. It includes the planner's grid-charge target and preserves `lock_soc` during low tariff, so its attributes represent the expected controlled battery path in graphs. |
+| `sensor.energy_planner_soc_forecast` | Planned SoC at the configured forecast horizon. It includes the planner's grid-charge target and preserves a time-varying low-tariff reserve for the remaining high-tariff demand until the next sustained solar start. Past evening demand is released, and each future night uses its own forecast; `lock_soc` reports the initial reserve. |
 | `sensor.energy_planner_soc_forecast_passive` | Diagnostic passive SoC forecast without planned grid charging or the planner's low-tariff lock. It shows what the battery would do with only its configured physical minimum SoC. |
-| `sensor.energy_planner_soc_forecast_with_managed_loads` | Planned SoC with managed solar loads admitted only after their starting-SoC threshold and instantaneous PV surplus requirements are satisfied. They may run while the battery is still charging, so this curve can be lower than the base curve and can converge again after later charging. Allocation never adds planned grid import, violates the minimum/`lock_soc` reserve, or creates evening/night windows without PV. |
+| `sensor.energy_planner_soc_forecast_with_managed_loads` | Planned SoC with managed solar loads admitted only after their starting-SoC threshold and instantaneous PV surplus requirements are satisfied. They may run while the battery is still charging, so this curve can be lower than the base curve and can converge again after later charging. Allocation never adds planned grid import, violates the minimum or time-varying low-tariff reserve, or creates evening/night windows without PV. |
 | `sensor.energy_planner_soc_forecast_24h` | Planned SoC exactly 24 hours from the last calculation. |
 | `binary_sensor.energy_planner_charge_now` | On when enabled grid-charging planning says charging is currently useful. |
 | `binary_sensor.energy_planner_discharge_allowed` | On when the plan says battery discharge is still allowed. |

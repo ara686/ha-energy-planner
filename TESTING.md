@@ -67,7 +67,8 @@ Planner tests:
   23/25-hour DST days, including EV today boundaries
 - history correction
 - partial current hour and forecast horizon boundary
-- planned SoC forecast respecting the NT lock, plus passive comparison, for exactly 24 hours and longer horizons
+- planned SoC forecast respecting the remaining-demand NT reserve, plus passive comparison, for exactly 24 hours and longer horizons
+- release of elapsed evening reserves, distinct future-night solar starts, scarce nights, absent/brief solar starts and DST transitions
 - planned SoC forecast with expected managed demand, the same NT lock and grid
   charging behavior as the base forecast, and hourly-profile fallback
 - SoC forecast using Solcast attributes from HA entities
