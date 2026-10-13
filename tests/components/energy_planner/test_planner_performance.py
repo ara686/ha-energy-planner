@@ -112,7 +112,8 @@ def sample_data(seed, *, count=96):
 
 
 @pytest.mark.parametrize("seed", range(8))
-def test_reserve_budget_matches_full_forecasts(seed):
+@pytest.mark.parametrize("dynamic_nt_reserve", [False, True])
+def test_reserve_budget_matches_full_forecasts(seed, dynamic_nt_reserve):
     data = sample_data(seed)
     existing = (
         {data.slots[3].start: 0.01, data.slots[70].start: 0.1} if seed % 2 else {}
@@ -121,6 +122,7 @@ def test_reserve_budget_matches_full_forecasts(seed):
         managed_consumption_by_slot=existing,
         grid_charge_target_soc=60 if seed % 3 else None,
         nt_lock_soc=40,
+        dynamic_nt_reserve=dynamic_nt_reserve,
     )
     expected = FullForecastBudget(data, **kwargs)
     actual = planner.SocGridBudget(data, **kwargs)

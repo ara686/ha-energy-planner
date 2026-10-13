@@ -1358,6 +1358,7 @@ def _add_managed_soc_forecast(
     forecast = calculate_soc_forecast(
         planner_input,
         managed_consumption_by_slot=energy_by_slot,
+        dynamic_nt_reserve=True,
         grid_charge_target_soc=(
             float(target_soc) if isinstance(target_soc, int | float) else None
         ),
@@ -1583,6 +1584,7 @@ def _managed_solar_budget(
     return SocGridBudget(
         planner_input,
         managed_consumption_by_slot={},
+        dynamic_nt_reserve=True,
         grid_charge_target_soc=float(target)
         if isinstance(target, int | float)
         else None,
@@ -1615,6 +1617,7 @@ def _reserve_safe_direct_solar_slots(
     budget = SocGridBudget(
         planner_input,
         managed_consumption_by_slot=existing_managed_energy_by_slot,
+        dynamic_nt_reserve=True,
         grid_charge_target_soc=target,
         nt_lock_soc=lock,
     )

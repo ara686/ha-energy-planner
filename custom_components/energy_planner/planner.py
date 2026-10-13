@@ -90,9 +90,15 @@ def calculate_soc_forecast(
     managed_consumption_by_slot: Mapping[datetime, float] | None = None,
     grid_charge_target_soc: float | None = None,
     nt_lock_soc: float | None = None,
+    dynamic_nt_reserve: bool = False,
 ) -> SocForecastSimulation:
-    """Calculate a SoC forecast with optional managed demand and planner actions."""
+    """Calculate a SoC forecast with optional managed demand and planner actions.
+
+    Dynamic reserves replace the scalar NT lock with remaining base demand;
+    added managed consumption never changes the reserve schedule itself.
+    """
     slots = _normalized_slots(data)
+    reserves = _nt_reserve_kwh(data, slots) if dynamic_nt_reserve else None
     if managed_consumption_by_slot:
         normalized_managed_consumption = {
             _timeline_time(slot_start): value
@@ -118,6 +124,7 @@ def calculate_soc_forecast(
             if nt_lock_soc is not None
             else _clamp(data.battery_min_soc, 0.0, 100.0)
         ),
+        nt_reserve_kwh=reserves,
     )
     horizon_end = _add_elapsed_time(
         data.now, timedelta(hours=max(data.forecast_horizon_hours, 24))
@@ -251,6 +258,7 @@ def calculate_plan(data: PlannerInput) -> PlannerResult:
         initial_soc=current_soc,
         grid_charge_target_soc=target_soc,
         nt_lock_soc=lock_soc,
+        nt_reserve_kwh=_nt_reserve_kwh(data, slots),
     )
     forecast_24h = _point_at_or_project_end(
         forecast_simulation.points,
@@ -561,18 +569,26 @@ class _BatteryModel:
         )
 
     def step(
-        self, battery: float, net: float, is_nt: bool, is_charge: bool
+        self,
+        battery: float,
+        net: float,
+        is_nt: bool,
+        is_charge: bool,
+        reserve_kwh: float | None = None,
     ) -> tuple[float, float, float, float]:
         """Return unrounded battery, grid supply, grid charge and surplus."""
         grid = charge = surplus = 0.0
+        lock = self.lock if reserve_kwh is None else reserve_kwh
+        if reserve_kwh is not None and is_charge and self.target is not None:
+            # Do not discharge below an active charging target and immediately
+            # recharge that same energy when the remaining NT reserve falls.
+            lock = max(lock, self.target)
         if net >= 0:
             stored = min(net, self.capacity - battery)
             battery += stored
             surplus = net - stored
         else:
-            discharged = min(
-                -net, max(0.0, battery - (self.lock if is_nt else self.floor))
-            )
+            discharged = min(-net, max(0.0, battery - (lock if is_nt else self.floor)))
             battery -= discharged
             grid = -net - discharged
         if is_charge and self.target is not None and battery < self.target:
@@ -598,13 +614,21 @@ class SocGridBudget:
         managed_consumption_by_slot: Mapping[datetime, float],
         grid_charge_target_soc: float | None,
         nt_lock_soc: float | None,
+        dynamic_nt_reserve: bool = False,
     ) -> None:
         self._model = _BatteryModel.from_input(
             data, grid_charge_target_soc, nt_lock_soc
         )
         slots = _normalized_slots(data)
+        reserves = _nt_reserve_kwh(data, slots) if dynamic_nt_reserve else None
+        self._reserves = reserves if reserves is not None else [None] * len(slots)
         baseline = _simulate(
-            data, slots, data.battery_soc, grid_charge_target_soc, nt_lock_soc
+            data,
+            slots,
+            data.battery_soc,
+            grid_charge_target_soc,
+            nt_lock_soc,
+            nt_reserve_kwh=reserves,
         ).points
         self._indices: dict[datetime, list[int]] = {}
         for i, slot in enumerate(slots):
@@ -623,6 +647,7 @@ class SocGridBudget:
                 self._battery[-1],
                 self._solar[i] - (self._home[i] + max(0.0, self._managed[i])),
                 *self._flags[i],
+                reserve_kwh=self._reserves[i],
             )
             self._battery.append(battery)
             self._prefix_valid.append(
@@ -663,6 +688,7 @@ class SocGridBudget:
                 battery,
                 self._solar[i] - (self._home[i] + max(0.0, managed)),
                 *self._flags[i],
+                reserve_kwh=self._reserves[i],
             )
             if not self._within(i, grid, charge):
                 return None
@@ -717,6 +743,8 @@ def _simulate(
     initial_soc: float,
     grid_charge_target_soc: float | None,
     nt_lock_soc: float | None = None,
+    *,
+    nt_reserve_kwh: list[float] | None = None,
 ) -> _Simulation:
     capacity = data.battery_capacity_kwh
     model = _BatteryModel.from_input(data, grid_charge_target_soc, nt_lock_soc)
@@ -729,7 +757,7 @@ def _simulate(
     unused_surplus_today = 0.0
     first_full_time: datetime | None = None
 
-    for slot in slots:
+    for index, slot in enumerate(slots):
         is_nt = _is_in_windows(slot.start, data.nt_windows)
         is_charge = data.grid_charging_enabled and _is_in_window(
             slot.start, data.charge_window
@@ -740,7 +768,11 @@ def _simulate(
         net_kwh = solar_kwh - consumption_kwh
         battery_start_kwh = battery_kwh
         battery_kwh, grid_import_kwh, grid_charge_kwh, slot_unused_surplus = model.step(
-            battery_kwh, net_kwh, is_nt, is_charge
+            battery_kwh,
+            net_kwh,
+            is_nt,
+            is_charge,
+            reserve_kwh=nt_reserve_kwh[index] if nt_reserve_kwh is not None else None,
         )
         if not is_nt:
             vt_grid_import += grid_import_kwh
@@ -862,6 +894,7 @@ def _calculate_charge_to_soc(
     initial_soc: float,
     nt_lock_soc: float,
 ) -> float:
+    reserves = _nt_reserve_kwh(data, slots)
     low = max(floor_soc, nt_lock_soc)
     no_charge = _simulate(
         data,
@@ -869,6 +902,7 @@ def _calculate_charge_to_soc(
         initial_soc,
         grid_charge_target_soc=low,
         nt_lock_soc=nt_lock_soc,
+        nt_reserve_kwh=reserves,
     )
     if no_charge.vt_grid_import_kwh <= data.soc_eps_kwh:
         return low
@@ -879,6 +913,7 @@ def _calculate_charge_to_soc(
         initial_soc,
         grid_charge_target_soc=100.0,
         nt_lock_soc=nt_lock_soc,
+        nt_reserve_kwh=reserves,
     )
     if full_charge.vt_grid_import_kwh > data.soc_eps_kwh:
         return 100.0
@@ -892,6 +927,7 @@ def _calculate_charge_to_soc(
             initial_soc,
             grid_charge_target_soc=mid,
             nt_lock_soc=nt_lock_soc,
+            nt_reserve_kwh=reserves,
         )
         if simulation.vt_grid_import_kwh <= data.soc_eps_kwh:
             high = mid
@@ -909,12 +945,14 @@ def _calculate_safe_discharge_soc(
     grid_charge_target_soc: float,
     nt_lock_soc: float,
 ) -> float:
+    reserves = _nt_reserve_kwh(data, slots)
     floor_simulation = _simulate(
         data,
         slots,
         floor_soc,
         grid_charge_target_soc=grid_charge_target_soc,
         nt_lock_soc=nt_lock_soc,
+        nt_reserve_kwh=reserves,
     )
     if floor_simulation.vt_grid_import_kwh <= data.soc_eps_kwh:
         return floor_soc
@@ -930,6 +968,7 @@ def _calculate_safe_discharge_soc(
             mid,
             grid_charge_target_soc=grid_charge_target_soc,
             nt_lock_soc=nt_lock_soc,
+            nt_reserve_kwh=reserves,
         )
         if simulation.vt_grid_import_kwh <= data.soc_eps_kwh:
             best = mid
@@ -937,6 +976,47 @@ def _calculate_safe_discharge_soc(
         else:
             low = mid
     return _round(_clamp(best, floor_soc, current_soc))
+
+
+def _nt_reserve_kwh(data: PlannerInput, slots: list[ForecastSlot]) -> list[float]:
+    """Reserve only remaining high-tariff demand until the next solar start.
+
+    Walk backwards so elapsed demand never carries into later tariff windows
+    or nights. A sustained solar start ends each reserve horizon; without one,
+    protect the remaining known high-tariff demand. Managed additions use this
+    base-input schedule too, so admission and the final forecast agree.
+    """
+    required_slots = max(
+        1, ceil(data.sun_start_required_minutes / data.interval_minutes)
+    )
+    reserves = [0.0] * len(slots)
+    remaining = 0.0
+    solar_streak = 0
+    for index in range(len(slots) - 1, -1, -1):
+        slot = slots[index]
+        demand = slot.consumption_kwh + slot.managed_consumption_kwh
+        if slot.solar_kwh > 0 and slot.solar_kwh >= demand:
+            solar_streak += 1
+        else:
+            solar_streak = 0
+        if solar_streak >= required_slots:
+            remaining = 0.0
+        elif not _is_in_windows(slot.start, data.nt_windows):
+            remaining = max(0.0, demand - slot.solar_kwh + remaining)
+        reserve_soc = _clamp(
+            _round_soc_percent(
+                _soc_to_kwh(data.battery_min_soc, data.battery_capacity_kwh)
+                + remaining,
+                data.battery_capacity_kwh,
+            )
+            + data.soc_reserve_percent,
+            data.battery_min_soc,
+            100.0,
+        )
+        if reserve_soc >= 95:
+            reserve_soc = 100.0
+        reserves[index] = _soc_to_kwh(reserve_soc, data.battery_capacity_kwh)
+    return reserves
 
 
 def _vt_deficit_kwh(
