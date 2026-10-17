@@ -620,6 +620,16 @@ async def test_advisory_sensors_publish_numeric_soc_curve_points(hass, config_en
             assert isinstance(point["soc_percent"], int)
             assert abs(point["soc_percent"] - raw_points[point["timestamp"]]) <= 0.5
 
+    forecast_24h_id = registry.async_get_entity_id(
+        SENSOR_DOMAIN, DOMAIN, f"{config_entry.entry_id}_soc_forecast_24h"
+    )
+    forecast_24h = hass.states.get(forecast_24h_id)
+    assert forecast_24h is not None
+    expected_24h = config_entry.runtime_data.data.plan["soc_forecast_planned_24h"][
+        "soc_percent"
+    ]
+    assert abs(float(forecast_24h.state) - expected_24h) <= 0.5
+
 
 @pytest.mark.parametrize(
     ("value", "expected"),

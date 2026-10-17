@@ -1213,8 +1213,7 @@ def _forecast_24h_soc(result: PlannerResult) -> int | None:
     point = result.plan.get("soc_forecast_planned_24h")
     if not isinstance(point, dict):
         return None
-    value = point.get("soc_percent")
-    return value if isinstance(value, int) else None
+    return _rounded_soc_or_none(point.get("soc_percent"))
 
 
 def _source_display_name(hass: HomeAssistant, entity_id: str) -> str:
