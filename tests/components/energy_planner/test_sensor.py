@@ -586,6 +586,72 @@ async def test_consumption_history_sensor_exposes_hourly_points(hass, config_ent
     }
 
 
+async def test_advisory_sensors_publish_numeric_soc_curve_points(hass, config_entry):
+    set_source_states(hass)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry,
+        options={**config_entry.options, "joint_planning_mode": "advisory"},
+    )
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    for entity_key, plan_key in (
+        ("soc_forecast", "soc_forecast_planned"),
+        ("soc_forecast_passive", "soc_forecast"),
+        ("soc_forecast_with_managed", "soc_forecast_with_managed"),
+    ):
+        entity_id = registry.async_get_entity_id(
+            SENSOR_DOMAIN, DOMAIN, f"{config_entry.entry_id}_{entity_key}"
+        )
+        state = hass.states.get(entity_id)
+        assert state is not None
+        assert state.attributes["source"] == "joint_plan"
+        points = state.attributes["points"]
+        assert points
+        raw_points = {
+            point["timestamp"]: point["soc_percent"]
+            for point in config_entry.runtime_data.data.plan[plan_key]["points"]
+        }
+        assert any(isinstance(value, float) for value in raw_points.values())
+        for point in points:
+            assert isinstance(point["soc_percent"], int)
+            assert abs(point["soc_percent"] - raw_points[point["timestamp"]]) <= 0.5
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (57.494557057056916, 57),
+        (75.8302045876815, 76),
+        (20, 20),
+        (None, None),
+        ("57.5", None),
+        (float("nan"), None),
+        (float("inf"), None),
+        (True, None),
+    ],
+)
+def test_forecast_attributes_round_numeric_soc_and_reject_invalid_values(
+    value, expected
+):
+    now = datetime(2026, 10, 17, 16, 30, tzinfo=UTC)
+    result = PlannerResult(
+        state="ok",
+        updated=now,
+        plan={
+            "soc_forecast_planned": {
+                "source": "joint_plan",
+                "points": [{"timestamp": now.isoformat(), "soc_percent": value}],
+            }
+        },
+    )
+
+    assert _soc_forecast_attributes(result)["points"][0]["soc_percent"] == expected
+
+
 def test_soc_forecast_attributes_stay_under_recorder_limit_with_five_minute_points():
     now = datetime(2026, 7, 5, 16, 30, tzinfo=UTC)
     points = [

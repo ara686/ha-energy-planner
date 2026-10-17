@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from math import isfinite
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -242,7 +243,7 @@ def _compact_forecast_points(points: list[Any]) -> list[dict[str, Any]]:
         )
         compact_point = {
             "timestamp": point.get("timestamp"),
-            "soc_percent": _int_or_none(point.get("soc_percent")),
+            "soc_percent": _rounded_soc_or_none(point.get("soc_percent")),
             "unused_surplus_kwh": _round_energy(unused_surplus_kwh),
         }
         managed_consumption_kwh = sum(
@@ -311,8 +312,15 @@ def _round_energy(value: Any) -> float | None:
     return round(value, _ENERGY_ATTRIBUTE_PRECISION)
 
 
-def _int_or_none(value: Any) -> int | None:
-    return int(value) if isinstance(value, int) else None
+def _rounded_soc_or_none(value: Any) -> int | None:
+    """Keep compact curve percentages numeric for both planner outputs."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not isfinite(value)
+    ):
+        return None
+    return round(value)
 
 
 def _managed_source_history(result: PlannerResult, source_id: str) -> dict[str, Any]:
