@@ -1,4 +1,4 @@
-"""UI-configurable joint-planner policy and optional technical sources."""
+"""UI-configurable joint-planner policy and optional technical limits."""
 
 from __future__ import annotations
 
@@ -19,13 +19,15 @@ DEFAULTS: dict[str, Any] = {
     "joint_water_maximum": 65.0,
     "joint_water_deadline": "17:00:00",
 }
-ENTITY_KEYS = (
-    "joint_grid_import_limit_entity",
-    "joint_battery_charge_limit_entity",
-    "joint_battery_discharge_limit_entity",
-    "joint_export_limit_entity",
-    "joint_phase_limit_entity",
-)
+POWER_LIMIT_ENTITIES: dict[str, str] = {
+    "joint_grid_import_limit_kw": "joint_grid_import_limit_entity",
+    "joint_battery_charge_limit_kw": "joint_battery_charge_limit_entity",
+    "joint_battery_discharge_limit_kw": "joint_battery_discharge_limit_entity",
+    "joint_export_limit_kw": "joint_export_limit_entity",
+    "joint_phase_limit_kw": "joint_phase_limit_entity",
+}
+# Read legacy sources until the user saves the numeric Options Flow.
+ENTITY_KEYS = tuple(POWER_LIMIT_ENTITIES.values())
 OPTIONAL_NUMBERS = ("joint_water_loss_kw", "joint_water_daily_draw_kwh")
 
 
@@ -66,9 +68,11 @@ def normalize_joint_options(values: dict[str, Any]) -> dict[str, Any]:
             if not value.startswith(("sensor.", "number.", "input_number.")):
                 raise ValueError("Invalid power-limit entity")
             result[key] = value
-    for key in OPTIONAL_NUMBERS:
+    for key in (*POWER_LIMIT_ENTITIES, *OPTIONAL_NUMBERS):
         if values.get(key) is not None:
+            if isinstance(values[key], bool):
+                raise ValueError("Invalid numeric limit or estimate")
             result[key] = float(values[key])
             if not isfinite(result[key]) or result[key] < 0:
-                raise ValueError("Invalid thermal estimate")
+                raise ValueError("Invalid numeric limit or estimate")
     return result

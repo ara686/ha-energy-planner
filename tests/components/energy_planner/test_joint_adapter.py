@@ -165,12 +165,12 @@ async def test_joint_options_flow_preserves_mode_and_limits(hass, config_entry):
         user_input={
             **options_flow_input(),
             "joint_planning_mode": "shadow",
-            "joint_grid_import_limit_entity": "sensor.grid_limit",
+            "joint_grid_import_limit_kw": 17.25,
             "joint_ev_phases": 1,
         },
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["data"]["joint_grid_import_limit_entity"] == "sensor.grid_limit"
+    assert result["data"]["joint_grid_import_limit_kw"] == 17.25
     assert result["data"]["joint_ev_phases"] == 1
 
 

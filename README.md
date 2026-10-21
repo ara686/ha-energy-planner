@@ -393,12 +393,17 @@ Joint-planner options include:
   voltage (230 V), and current range (6–16 A). Match these to the external
   wallbox modes. The planner limits power and merges mixed-source charging into
   one command per interval; the controller handles switching and anti-cycling.
-- Optional **power entities in W or kW** for shared grid import, battery charge
-  and discharge on the AC side, export, and per-phase load limits. Use the
-  installation's actual limits. An AC input-current setting in A or a BMS DC
-  current limit cannot be entered as a power entity without a correct conversion.
-  The export limit is read, never changed. Battery charging and discharging
-  efficiencies are applied once, at the AC/DC boundary.
+- Optional **fixed power limits in kW** for shared grid import, battery charge
+  and discharge on the AC side, export, and per-phase load. Enter the actual
+  limits from the connection agreement, installation protection, and inverter
+  and battery specifications. Leave unknown limits empty; `0` is a real zero
+  limit, for example no export. Current in A must be correctly converted to
+  power before entry. These settings only constrain the model. Battery charging
+  and discharging efficiencies are applied once, at the AC/DC boundary.
+  Previously configured limit entities remain supported until Options are saved.
+  Their available values are suggested in kW; review them before saving as fixed
+  limits. Saving replaces entity references with the entered numbers; empty
+  fields leave those limits unknown, including unavailable legacy sources.
 - Water targets of 40 °C minimum by 17:00, 45 °C normal, and 65 °C maximum,
   using the average of both configured tank sensors. Optional heating cannot
   increase grid purchases or consume the house reserve. With gas backup selected,

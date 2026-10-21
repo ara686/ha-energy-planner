@@ -287,11 +287,11 @@
           "joint_water_normal": "Water normal target (°C)",
           "joint_water_maximum": "Water surplus target limit (°C)",
           "joint_water_deadline": "Water comfort deadline",
-          "joint_grid_import_limit_entity": "Shared grid import limit (power entity)",
-          "joint_battery_charge_limit_entity": "Battery charging limit (AC power entity)",
-          "joint_battery_discharge_limit_entity": "Battery discharging limit (AC power entity)",
-          "joint_export_limit_entity": "Current export limit (power entity)",
-          "joint_phase_limit_entity": "Per-phase load limit (power entity)",
+          "joint_grid_import_limit_kw": "Shared grid import limit (kW)",
+          "joint_battery_charge_limit_kw": "Battery charging limit on the AC side (kW)",
+          "joint_battery_discharge_limit_kw": "Battery discharging limit on the AC side (kW)",
+          "joint_export_limit_kw": "Export limit (kW)",
+          "joint_phase_limit_kw": "Per-phase load limit (kW)",
           "joint_water_loss_kw": "Estimated tank heat loss (kW)",
           "joint_water_daily_draw_kwh": "Estimated daily hot-water draw (thermal kWh)",
           "joint_solar_ev_phases": "Solar EV charging phases",
@@ -300,7 +300,12 @@
         "data_description": {
           "grid_charging_enabled": "When disabled, the plan and SoC forecasts assume no home-battery charging from the grid. Solar charging and EV grid permissions are unchanged. The dashboard switch uses the same setting. Energy Planner never controls the inverter.",
           "charge_window_start": "Ignored when grid-charging planning is disabled.",
-          "charge_window_end": "Ignored when grid-charging planning is disabled."
+          "charge_window_end": "Ignored when grid-charging planning is disabled.",
+          "joint_grid_import_limit_kw": "Fixed total power limit for the installation, based on your connection agreement and main breaker. Leave empty if unknown; 0 means no grid import.",
+          "joint_battery_charge_limit_kw": "Fixed maximum AC input power for battery charging, based on the inverter and battery specifications. Leave empty if unknown; 0 disables charging in the model.",
+          "joint_battery_discharge_limit_kw": "Fixed maximum AC output power from the battery, based on the inverter and battery specifications. Leave empty if unknown; 0 disables discharging in the model.",
+          "joint_export_limit_kw": "Fixed permitted export power from your connection agreement. Use 0 for no export; leave empty if unknown.",
+          "joint_phase_limit_kw": "Fixed power limit for one phase, based on the installation protection. Enter kW, not amperes. Leave empty if unknown."
         }
       }
     },
