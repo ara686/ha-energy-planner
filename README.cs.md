@@ -383,11 +383,16 @@ Nastavení společného plánovače zahrnuje:
   předpokládané napětí fáze 230 V a rozsah proudu 6–16 A. Hodnoty musí odpovídat
   režimům externího řízení wallboxu. Plán omezuje výkon a slučuje smíšené zdroje
   do jednoho příkazu na interval; přepínání a omezení častého spínání řeší automatika.
-- Volitelné **entity výkonu ve W nebo kW** pro společný limit odběru, nabíjení
-  a vybíjení baterie na AC straně, export a zatížení fáze. Použijte skutečné
-  limity instalace. AC vstupní proud v A ani DC proud BMS nejsou výkonové entity
-  a vyžadují správný převod. Limit exportu se pouze čte. Účinnosti se započítávají
-  právě jednou na rozhraní AC/DC.
+- Volitelné **pevné výkonové limity v kW** pro společný odběr ze sítě, nabíjení
+  a vybíjení baterie na AC straně, přetoky a zatížení jedné fáze. Zadejte skutečné
+  limity podle smlouvy o připojení, jištění instalace a parametrů měniče a baterie.
+  Neznámé limity ponechte prázdné; `0` znamená skutečný nulový limit, například
+  zákaz přetoků. Proud v A vyžaduje správný převod na výkon. Hodnoty omezují pouze
+  model. Účinnosti se započítávají právě jednou na rozhraní AC/DC.
+  Dříve nastavené entity limitů zůstávají funkční do uložení možností integrace.
+  Jejich dostupné hodnoty se nabídnou v kW; před uložením jako pevné limity je
+  zkontrolujte. Uložení nahradí odkazy na entity zadanými čísly; prázdná pole
+  znamenají neznámé limity, včetně nedostupných původních zdrojů.
 - Průměrné teploty vody: minimum 40 °C do 17:00, běžný cíl 45 °C a maximum 65 °C.
   Průměr se počítá ze dvou nastavených čidel. Volitelný dohřev nesmí zvýšit nákup
   elektřiny ani spotřebovat rezervu domu. Při vybrané plynové záloze se plyn

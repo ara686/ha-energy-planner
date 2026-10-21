@@ -287,11 +287,11 @@
           "joint_water_normal": "Běžná cílová teplota vody (°C)",
           "joint_water_maximum": "Maximální teplota vody při přebytcích (°C)",
           "joint_water_deadline": "Termín komfortní teploty vody",
-          "joint_grid_import_limit_entity": "Společný limit odběru ze sítě (entita výkonu)",
-          "joint_battery_charge_limit_entity": "Limit nabíjení baterie (entita výkonu na AC straně)",
-          "joint_battery_discharge_limit_entity": "Limit vybíjení baterie (entita výkonu na AC straně)",
-          "joint_export_limit_entity": "Aktuální limit přetoků (entita výkonu)",
-          "joint_phase_limit_entity": "Limit zátěže na fázi (entita výkonu)",
+          "joint_grid_import_limit_kw": "Společný limit odběru ze sítě (kW)",
+          "joint_battery_charge_limit_kw": "Limit nabíjení baterie na AC straně (kW)",
+          "joint_battery_discharge_limit_kw": "Limit vybíjení baterie na AC straně (kW)",
+          "joint_export_limit_kw": "Limit přetoků (kW)",
+          "joint_phase_limit_kw": "Limit zátěže na fázi (kW)",
           "joint_water_loss_kw": "Odhad tepelných ztrát zásobníku (kW)",
           "joint_water_daily_draw_kwh": "Odhad denního odběru teplé vody (tepelné kWh)",
           "joint_solar_ev_phases": "Počet fází solárního nabíjení auta",
@@ -300,7 +300,12 @@
         "data_description": {
           "grid_charging_enabled": "Při vypnutí plán i předpovědi SoC počítají bez nabíjení domácí baterie ze sítě. Solární nabíjení a povolení sítě pro EV se nemění. Přepínač na dashboardu používá stejné nastavení. Energy Planner měnič neovládá.",
           "charge_window_start": "Při vypnutém plánování nabíjení ze sítě se ignoruje.",
-          "charge_window_end": "Při vypnutém plánování nabíjení ze sítě se ignoruje."
+          "charge_window_end": "Při vypnutém plánování nabíjení ze sítě se ignoruje.",
+          "joint_grid_import_limit_kw": "Pevný celkový výkonový limit přípojky podle smlouvy a hlavního jističe. Při neznámém limitu ponechte prázdné; 0 znamená nulový odběr ze sítě.",
+          "joint_battery_charge_limit_kw": "Pevný maximální příkon nabíjení baterie na AC straně podle parametrů měniče a baterie. Neznámý limit ponechte prázdný; 0 zakáže nabíjení v modelu.",
+          "joint_battery_discharge_limit_kw": "Pevný maximální výkon vybíjení baterie na AC straně podle parametrů měniče a baterie. Neznámý limit ponechte prázdný; 0 zakáže vybíjení v modelu.",
+          "joint_export_limit_kw": "Pevný povolený výkon přetoků podle smlouvy o připojení. Pro zákaz přetoků zadejte 0; neznámý limit ponechte prázdný.",
+          "joint_phase_limit_kw": "Pevný výkonový limit jedné fáze podle jištění instalace. Zadávejte kW, nikoli ampéry. Neznámý limit ponechte prázdný."
         }
       }
     },

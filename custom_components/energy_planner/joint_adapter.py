@@ -8,7 +8,7 @@ from typing import Any
 
 from .const import EV_CHARGING_STRATEGY_SOLAR_ONLY
 from .ev_plan import EVChargingPlanInput
-from .joint_options import normalize_joint_options
+from .joint_options import POWER_LIMIT_ENTITIES, normalize_joint_options
 from .joint_plan import JointLimits, JointWater, calculate_joint_plan, instant
 from .managed_allocation import ElectricVehicleAllocationInput, HotWaterAllocationInput
 from .managed_loads import managed_load_configs
@@ -137,7 +137,9 @@ def add_joint_plan(
             )
 
     def limit(key: str) -> float | None:
-        entity_id = options.get(key)
+        if options.get(key) is not None:
+            return options[key]
+        entity_id = options.get(POWER_LIMIT_ENTITIES[key])
         value = _power_entity_kw(hass, entity_id) if entity_id else None
         if entity_id and (value is None or value < 0):
             warnings.append(f"invalid_limit_source:{entity_id}")
@@ -145,11 +147,11 @@ def add_joint_plan(
         return value
 
     limits = JointLimits(
-        grid_import_kw=limit("joint_grid_import_limit_entity"),
-        battery_charge_kw=limit("joint_battery_charge_limit_entity"),
-        battery_discharge_kw=limit("joint_battery_discharge_limit_entity"),
-        export_kw=limit("joint_export_limit_entity"),
-        phase_limit_kw=limit("joint_phase_limit_entity"),
+        grid_import_kw=limit("joint_grid_import_limit_kw"),
+        battery_charge_kw=limit("joint_battery_charge_limit_kw"),
+        battery_discharge_kw=limit("joint_battery_discharge_limit_kw"),
+        export_kw=limit("joint_export_limit_kw"),
+        phase_limit_kw=limit("joint_phase_limit_kw"),
         discharge_efficiency=options["joint_discharge_efficiency"],
         phases=options["joint_ev_phases"],
         solar_phases=options["joint_solar_ev_phases"],

@@ -112,6 +112,7 @@ from .const import (
 from .joint_options import DEFAULTS as JOINT_DEFAULTS
 from .joint_options import ENTITY_KEYS as JOINT_ENTITY_KEYS
 from .joint_options import OPTIONAL_NUMBERS as JOINT_OPTIONAL_NUMBERS
+from .joint_options import POWER_LIMIT_ENTITIES as JOINT_POWER_LIMIT_ENTITIES
 from .managed_loads import managed_load_configs
 from .options import (
     OptionsValidationError,
@@ -119,7 +120,7 @@ from .options import (
     normalize_options,
 )
 from .sources import parse_float
-from .units import energy_value_to_kwh, is_supported_energy_unit
+from .units import energy_value_to_kwh, is_supported_energy_unit, power_value_to_kw
 
 ERR_BATTERY_CAPACITY_POSITIVE = "battery_capacity_positive"
 ERR_BATTERY_CAPACITY_UNIT = "battery_capacity_unit"
@@ -583,6 +584,8 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                                 k: v
                                 for k, v in saved_options.items()
                                 if k.startswith("joint_")
+                                and k not in JOINT_POWER_LIMIT_ENTITIES
+                                and k not in JOINT_ENTITY_KEYS
                             },
                             **user_input,
                         }
@@ -738,13 +741,22 @@ class EnergyPlannerOptionsFlow(config_entries.OptionsFlow):
                     )
                 )
             extra[vol.Optional(key, default=options.get(key, default))] = field
-        for key in JOINT_ENTITY_KEYS:
-            extra[
-                vol.Optional(key, description={"suggested_value": options.get(key)})
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["sensor", "number", "input_number"]
-                )
+        for key, legacy_key in JOINT_POWER_LIMIT_ENTITIES.items():
+            value = (user_input if user_input is not None else options).get(key)
+            if (
+                user_input is None
+                and value is None
+                and (entity_id := options.get(legacy_key))
+            ):
+                state = self.hass.states.get(entity_id)
+                if state is not None:
+                    value = power_value_to_kw(
+                        state.state, state.attributes.get("unit_of_measurement")
+                    )
+                    if value is not None and value < 0:
+                        value = None
+            extra[vol.Optional(key, description={"suggested_value": value})] = (
+                _number_selector(minimum=0, step=0.01, unit_of_measurement="kW")
             )
         for key in JOINT_OPTIONAL_NUMBERS:
             extra[
